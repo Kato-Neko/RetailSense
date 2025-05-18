@@ -78,6 +78,7 @@ const Register = () => {
               placeholder="Choose a username"
               value={formData.username}
               onChange={handleChange}
+              autoComplete="username"
             />
           </div>
           <div className="form-group">
@@ -110,6 +111,7 @@ const Register = () => {
                 placeholder="Create a password"
                 value={formData.password}
                 onChange={handleChange}
+                autoComplete="new-password"
               />
               <button
                 type="button"
@@ -137,6 +139,7 @@ const Register = () => {
               placeholder="Confirm your password"
               value={formData.confirmPassword}
               onChange={handleChange}
+              autoComplete="new-password"
             />
           </div>
 

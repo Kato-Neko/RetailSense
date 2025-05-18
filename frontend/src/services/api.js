@@ -13,19 +13,11 @@ const apiClient = axios.create({
 apiClient.interceptors.response.use(
   (response) => response,
   (error) => {
-    // Handle network errors more gracefully
-    if (error.code === "ECONNABORTED") {
-      console.error("Request timeout:", error);
-      return Promise.reject({ error: "Request timed out. Please try again." });
+    if (error.response && error.response.status === 401) {
+        localStorage.removeItem('access_token'); // Clear the token
+        // Optionally redirect to login
+        window.location.href = '/login'; // Adjust based on your routing
     }
-
-    if (!error.response) {
-      console.error("Network error:", error);
-      return Promise.reject({
-        error: "Network error. Please check if the backend server is running.",
-      });
-    }
-
     return Promise.reject(error.response.data);
   }
 );
@@ -34,6 +26,7 @@ apiClient.interceptors.response.use(
 apiClient.interceptors.request.use(
   (config) => {
     const token = localStorage.getItem('access_token');
+    console.log("Retrieved token from local storage:", token); // Log the token value
     if (token) {
       config.headers['Authorization'] = `Bearer ${token}`;
     }
@@ -44,15 +37,15 @@ apiClient.interceptors.request.use(
 
 // Authentication services
 export const authService = {
-  login: async (username, password) => {
+ login: async (email, password) => {
     try {
-      const response = await apiClient.post("/login", { username, password });
-      return response.data;
+        const response = await apiClient.post("/login", { email, password });
+        return response.data;  // Ensure this returns the expected structure
     } catch (error) {
-      throw error.response ? error.response.data : error;
+        throw error.response ? error.response.data : error;
     }
-  },
-
+},
+  
   register: async (username, email, password) => {
     try {
       const response = await apiClient.post("/register", {

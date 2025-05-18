@@ -9,7 +9,7 @@ import "../styles/Login.css";
 
 const Login = ({ setIsAuthenticated }) => {
   const [formData, setFormData] = useState({
-    username: "",
+    email: "",
     password: "",
   });
   const [showPassword, setShowPassword] = useState(false);
@@ -26,27 +26,33 @@ const Login = ({ setIsAuthenticated }) => {
   const handleSubmit = async (e) => {
     e.preventDefault();
 
-    if (!formData.username || !formData.password) {
-      toast.error("Please fill in all fields");
-      return;
+    if (!formData.email || !formData.password) {
+        toast.error("Please fill in all fields");
+        return;
     }
 
+    console.log("Submitting login with data:", formData);
+
     try {
-      // Remove any old token
-      localStorage.removeItem('access_token');
-      const response = await authService.login(formData.username, formData.password);
-      if (response.success && response.access_token) {
-        localStorage.setItem('access_token', response.access_token);
-        setIsAuthenticated(true);
-        toast.success("Login successful");
-        navigate("/dashboard");
-      } else {
-        toast.error(response.message || "Login failed");
-      }
+        localStorage.removeItem('access_token');  // Clear any old token
+        const response = await authService.login(formData.email, formData.password);
+        
+        console.log("Login response:", response);
+
+        if (response.success && response.access_token) {
+            localStorage.setItem('access_token', response.access_token);
+            console.log("Access Token stored:", response.access_token);
+            setIsAuthenticated(true);
+            toast.success("Login successful");
+            navigate("/dashboard");
+        } else {
+            toast.error(response.message || "Login failed");
+        }
     } catch (error) {
-      toast.error(error.message || "Login failed");
+        console.error("Login error:", error);
+        toast.error(error.message || "Login failed");
     }
-  };
+};
 
   return (
     <div className="login-container">
@@ -57,17 +63,17 @@ const Login = ({ setIsAuthenticated }) => {
         </div>
         <form className="login-form" onSubmit={handleSubmit}>
           <div className="form-group">
-            <label htmlFor="username" className="form-label">
-              Username
+            <label htmlFor="email" className="form-label">
+              Email
             </label>
             <input
-              id="username"
-              name="username"
+              id="email"
+              name="email"
               type="text"
               required
               className="form-input"
-              placeholder="Enter your username"
-              value={formData.username}
+              placeholder="Enter your email"
+              value={formData.email}
               onChange={handleChange}
             />
           </div>

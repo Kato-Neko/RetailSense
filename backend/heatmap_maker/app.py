@@ -20,6 +20,11 @@ from flask_jwt_extended import JWTManager, create_access_token, jwt_required, ge
 import shutil
 import json
 from object_tracking import detect_and_track
+from supabase import create_client, Client
+from dotenv import load_dotenv  # Import dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 # Configure logging
 logging.basicConfig(level=logging.DEBUG)
@@ -49,6 +54,11 @@ os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 os.makedirs(RESULTS_FOLDER, exist_ok=True)
 
 jobs = {}
+
+# Initialize Supabase client using environment variables
+url = os.getenv("SUPABASE_URL")  # Get Supabase URL from environment variable
+key = os.getenv("SUPABASE_KEY")   # Get Supabase key from environment variable
+supabase: Client = create_client(url, key)
 
 def allowed_file(filename, allowed_extensions):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in allowed_extensions
@@ -313,46 +323,74 @@ def register():
     username = data.get('username')
     password = data.get('password')
     email = data.get('email')
+    
+    # Check for missing fields
     if not all([username, password, email]):
         return jsonify({"error": "Missing required fields"}), 400
-    conn = get_db_connection()
+
     try:
-        cursor = conn.cursor()
-        cursor.execute("SELECT username FROM users WHERE username = ? OR email = ?", (username, email))
-        if cursor.fetchone():
-            return jsonify({"error": "Username or email already exists"}), 400
-        password_hash = hash_password(password)
-        cursor.execute(
-            "INSERT INTO users (username, password_hash, email) VALUES (?, ?, ?)",
-            (username, password_hash, email)
-        )
-        conn.commit()
-        return jsonify({"success": True, "message": "Registration successful"}), 201
+        # Check if the username already exists
+        existing_user = supabase.table('users').select('username').eq('username', username).execute()
+        logger.debug(f"Existing user check: {existing_user.data}")
+        if existing_user.data:
+            return jsonify({"error": "Username already exists"}), 409
+
+        # Use Supabase to create a new user
+        response = supabase.auth.sign_up({
+            "email": email,
+            "password": password
+        })
+        
+        logger.debug(f"Supabase response: {response}")  
+        
+        if response.user:  # Access the user attribute directly
+            # Store the user info in Supabase, including the UID
+            password_hash = hash_password(password)
+            supabase.table('users').insert({
+                'id': response.user.id,  # Store the UID here
+                'username': username,
+                'email': email,
+                'password_hash': password_hash
+            }).execute()
+
+            return jsonify({"success": True, "message": "Registration successful"}), 201
+        else:
+            logger.error(f"Supabase error: {response.error}")
+            return jsonify({"error": response.error}), 400
+            
     except Exception as e:
-        return jsonify({"error": f"Database error: {str(e)}"}), 500
-    finally:
-        conn.close()
+        logger.error(f"Error during registration: {str(e)}")
+        return jsonify({"error": f"Error: {str(e)}"}), 500
 
 @app.route('/api/login', methods=['POST'])
 def login_api():
     data = request.get_json()
-    username = data.get('username')
+    email = data.get('email')
     password = data.get('password')
-    if not username or not password:
-        return jsonify({"error": "Missing username or password"}), 400
-    conn = get_db_connection()
+    
+    if not email or not password:
+        return jsonify({"error": "Missing email or password"}), 400
+
     try:
-        cursor = conn.cursor()
-        cursor.execute("SELECT password_hash FROM users WHERE username = ?", (username,))
-        user = cursor.fetchone()
-        if user and verify_password(user['password_hash'], password):
-            access_token = create_access_token(identity=username)
-            return jsonify({"success": True, "message": "Login successful", "access_token": access_token})
-        return jsonify({"error": "Invalid credentials"}), 401
+        # Use Supabase to log in the user
+        response = supabase.auth.sign_in_with_password({
+            "email": email,
+            "password": password
+        })
+
+        logger.debug(f"Supabase login response: {response}")
+
+        if response.user:  # Check if the user exists
+            # Set a longer expiration time (e.g., 1 day)
+            access_token = create_access_token(identity=response.user.id, expires_delta=datetime.timedelta(days=1))
+            logger.debug(f"Access Token: {access_token}")  # Log the token
+            return jsonify({"success": True, "message": "Login successful", "access_token": access_token}), 200
+        else:
+            logger.error(f"Login failed: {response.error}")
+            return jsonify({"error": "Invalid credentials"}), 401
     except Exception as e:
-        return jsonify({"error": f"Database error: {str(e)}"}), 500
-    finally:
-        conn.close()
+        logger.error(f"Error during login: {str(e)}")
+        return jsonify({"error": f"Error: {str(e)}"}), 500
 
 @app.route('/api/logout', methods=['POST'])
 def logout_api():
@@ -362,15 +400,18 @@ def logout_api():
 @app.route('/api/user', methods=['GET'])
 @jwt_required()
 def get_user_info():
-    username = get_jwt_identity()
-    if not username:
+    logger.debug("Accessing /api/user endpoint")
+    current_user_uid = get_jwt_identity()  # Get the UID from the token
+    logger.debug(f"Current user UID from JWT: {current_user_uid}")
+    
+    if not current_user_uid:
         return jsonify({"error": "Not logged in"}), 401
-    conn = get_db_connection()
+    
+    # Query the users table using the UID
     try:
-        cursor = conn.cursor()
-        cursor.execute("SELECT username, email, created_at FROM users WHERE username = ?", (username,))
-        user = cursor.fetchone()
-        if user:
+        user_data = supabase.table('users').select('username, email, created_at').eq('id', current_user_uid).execute()
+        if user_data.data:
+            user = user_data.data[0]  # Assuming the user data is returned as a list
             return jsonify({
                 "username": user['username'],
                 "email": user['email'],
@@ -378,9 +419,8 @@ def get_user_info():
             })
         return jsonify({"error": "User not found"}), 404
     except Exception as e:
+        logger.error(f"Database error: {str(e)}")
         return jsonify({"error": f"Database error: {str(e)}"}), 500
-    finally:
-        conn.close()
 
 @app.route('/api/heatmap_jobs/<job_id>', methods=['DELETE'])
 @jwt_required()
