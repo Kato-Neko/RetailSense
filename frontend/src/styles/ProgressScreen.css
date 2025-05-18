@@ -1,0 +1,67 @@
+.progress-screen-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background: rgba(24, 25, 26, 0.92);
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.progress-screen-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: var(--card-bg);
+  padding: 48px 56px;
+  border-radius: 18px;
+  box-shadow: var(--shadow);
+  position: relative;
+}
+
+.progress-screen-ring {
+  transform: rotate(-90deg);
+  margin-bottom: 18px;
+}
+
+.progress-screen-bg {
+  stroke: #333;
+  opacity: 0.2;
+}
+
+.progress-screen-bar {
+  stroke: var(--primary-color);
+  transition: stroke-dashoffset 0.5s ease;
+}
+
+.progress-screen-percent {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -120%);
+  font-size: 2.6rem;
+  font-weight: 800;
+  color: var(--text-color);
+  text-shadow: 0 2px 8px rgba(0,0,0,0.2);
+  pointer-events: none;
+}
+
+.progress-screen-label {
+  margin-top: 18px;
+  font-size: 1.2rem;
+  color: var(--text-light);
+  font-weight: 600;
+}
+
+.progress-screen-status {
+  margin-top: 10px;
+  font-size: 1rem;
+  color: var(--text-light);
+  text-align: center;
+  max-width: 340px;
+  word-break: break-word;
+} 

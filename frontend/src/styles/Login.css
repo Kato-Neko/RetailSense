@@ -1,0 +1,134 @@
+.login-container {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background-color: var(--background);
+}
+
+.login-card {
+  max-width: 400px;
+  width: 100%;
+  background-color: var(--card-bg);
+  padding: 40px;
+  border-radius: 8px;
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.25);
+}
+
+.login-header {
+  text-align: center;
+  margin-bottom: 32px;
+}
+
+.login-title {
+  font-size: 2rem;
+  font-weight: 700;
+  color: var(--text-color);
+  margin-bottom: 8px;
+}
+
+.login-subtitle {
+  color: var(--text-light);
+  font-size: 0.875rem;
+}
+
+.login-form {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.form-label {
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--text-color);
+}
+
+.form-input {
+  padding: 12px;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  font-size: 1rem;
+  background: var(--dropbox-bg);
+  color: var(--text-color);
+  transition: border-color 0.3s, background 0.3s;
+}
+
+.form-input:focus {
+  outline: none;
+  border-color: var(--primary-color);
+  box-shadow: 0 0 0 2px rgba(63, 81, 181, 0.12);
+  background: var(--card-bg);
+}
+
+.password-input-container {
+  position: relative;
+}
+
+.password-toggle-btn {
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--text-light);
+}
+
+.password-icon {
+  width: 20px;
+  height: 20px;
+}
+
+.login-btn {
+  margin-top: 8px;
+  padding: 12px;
+  background-color: var(--primary-color);
+  color: white;
+  border: none;
+  border-radius: 4px;
+  font-size: 1rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 0.3s;
+}
+
+.login-btn:hover {
+  background-color: var(--primary-dark);
+}
+
+.login-demo-credentials {
+  margin-top: 16px;
+  text-align: center;
+  font-size: 0.875rem;
+  color: var(--text-light);
+}
+
+.login-footer {
+  margin-top: 16px;
+  text-align: center;
+  font-size: 0.875rem;
+  color: var(--text-light);
+}
+
+.text-link {
+  background: none;
+  border: none;
+  color: var(--primary-color);
+  cursor: pointer;
+  font-size: 0.875rem;
+  padding: 0;
+  text-decoration: underline;
+}
+
+.text-link:hover {
+  color: var(--primary-dark);
+}
