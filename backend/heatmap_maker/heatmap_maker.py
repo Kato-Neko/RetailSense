@@ -63,7 +63,7 @@ def blend_heatmap(detections, floorplan_path, output_heatmap_path, output_video_
             heatmap_norm = cv2.normalize(heatmap_preview, None, 0, 1, cv2.NORM_MINMAX)
             heatmap_img = cv2.normalize(heatmap_preview, None, 0, 255, cv2.NORM_MINMAX)
             heatmap_img = gaussian_filter(heatmap_img, sigma=10)
-            heatmap_colored = cv2.applyColorMap(heatmap_img.astype(np.uint8), cv2.COLORMAP_OCEAN)
+            heatmap_colored = cv2.applyColorMap(heatmap_img.astype(np.uint8), cv2.COLORMAP_JET)
             alpha_mask = heatmap_norm[..., None] * 0.7
             blended = (floorplan * (1 - alpha_mask) + heatmap_colored * alpha_mask).astype(np.uint8)
             preview_path = os.path.join(preview_folder, 'preview_heatmap.jpg')
