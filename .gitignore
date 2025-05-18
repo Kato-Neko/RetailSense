@@ -1,5 +1,8 @@
 #frontend
 /frontend/node_modules/
+/project_results/
+/project_uploads/
+*.db
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
