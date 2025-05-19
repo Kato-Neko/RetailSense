@@ -315,11 +315,12 @@ def get_processed_video(job_id):
 @app.route('/api/heatmap_jobs/history', methods=['GET'])
 @jwt_required()
 def get_job_history():
+    current_user = get_jwt_identity()  # Get the current user's ID from the JWT
     conn = get_db_connection()
     history_jobs_cursor = conn.execute('''
         SELECT job_id, input_video_name, input_floorplan_name, status, message, created_at, updated_at
-        FROM jobs ORDER BY created_at DESC
-    ''')
+        FROM jobs WHERE user = ? ORDER BY created_at DESC
+    ''', (current_user,))
     history_jobs = [dict(row) for row in history_jobs_cursor.fetchall()]
     conn.close()
     return jsonify(history_jobs)
