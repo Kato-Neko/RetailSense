@@ -21,18 +21,8 @@ def init_db():
     logger.debug("Initializing database")
     conn = get_db_connection()
     cursor = conn.cursor()
-    # Only create tables if they do not exist; do NOT drop tables
-    # Create users table
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS users (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            username TEXT UNIQUE NOT NULL,
-            password_hash TEXT NOT NULL,
-            email TEXT UNIQUE NOT NULL,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-    ''')
-    # Create jobs table with nullable user field
+    
+    # Create jobs table with user field
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS jobs (
             job_id TEXT PRIMARY KEY,
@@ -43,9 +33,10 @@ def init_db():
             output_video_path TEXT,
             status TEXT NOT NULL,
             message TEXT,
+            start_datetime TIMESTAMP,
+            end_datetime TIMESTAMP,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (user) REFERENCES users(username)
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     ''')
     conn.commit()
