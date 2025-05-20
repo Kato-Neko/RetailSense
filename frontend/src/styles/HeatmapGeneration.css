@@ -13,7 +13,7 @@
 
 .heatmap-grid {
   display: grid;
-  grid-template-columns: 1fr;
+  grid-template-columns: minmax(300px, 1fr) minmax(600px, 2fr);
   gap: 24px;
   margin-bottom: 24px;
 }
@@ -26,6 +26,7 @@
   box-shadow: var(--shadow);
   padding: 24px;
   border: 1px solid #e0e0e0;
+  min-width: 0;
 }
 
 .section-title {
@@ -56,6 +57,8 @@
 .input-group {
   display: flex;
   align-items: center;
+  gap: 8px;
+  max-width: 420px;
 }
 
 .input-icon {
@@ -65,15 +68,14 @@
   margin-right: 8px;
 }
 
-.form-input,
-.form-select {
-  flex: 1;
-  padding: 8px 12px;
+.form-input {
+  width: 150px;
+  padding: 8px;
   background: #fff;
   color: #222;
   border: 1px solid #ccc;
   border-radius: 4px;
-  font-size: 1rem;
+  font-size: 0.875rem;
   transition: border-color 0.3s;
 }
 
@@ -84,8 +86,25 @@
 }
 
 .input-separator {
-  margin: 0 8px;
   color: var(--text-light);
+  font-size: 0.875rem;
+}
+
+.input-hint {
+  font-size: 0.75rem;
+  color: var(--text-light);
+  margin-left: 8px;
+}
+
+.form-select {
+  flex: 1;
+  padding: 8px 12px;
+  background: #fff;
+  color: #222;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  font-size: 1rem;
+  transition: border-color 0.3s;
 }
 
 .generate-button {
@@ -410,16 +429,16 @@
   }
 }
 
-@media (min-width: 1024px) {
+@media (max-width: 1024px) {
   .heatmap-grid {
-    grid-template-columns: 1fr 2fr;
+    grid-template-columns: 1fr;
   }
 }
 
 .analysis-card {
   background: #fff;
   border-radius: 12px;
-  padding: 1rem;
+  padding: 1.5rem;
   box-shadow: 0 2px 12px rgba(0,0,0,0.08);
   display: flex;
   flex-direction: column;
@@ -427,9 +446,24 @@
   min-width: 0;
 }
 
+.analysis-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.analysis-icon {
+  width: 24px;
+  height: 24px;
+  color: #1976d2;
+}
+
 .analysis-title {
+  font-size: 1.125rem;
+  font-weight: 600;
+  margin: 0;
   color: #1a237e;
-  margin-bottom: 1rem;
 }
 
 .total-visitors {
@@ -518,4 +552,38 @@
 
 .warning-message {
   font-size: 1rem;
+}
+
+.generate-progress-bar {
+  position: relative;
+  width: 100%;
+  height: 44px;
+  background: #e3f0ff;
+  border-radius: 4px;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  margin-top: 8px;
+  box-shadow: 0 1px 4px rgba(25, 118, 210, 0.08);
+}
+
+.generate-progress-fill {
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  background: linear-gradient(90deg, #1976d2 60%, #64b5f6 100%);
+  height: 100%;
+  transition: width 0.3s;
+  z-index: 1;
+}
+
+.generate-progress-label {
+  position: relative;
+  z-index: 2;
+  width: 100%;
+  text-align: center;
+  color: #fff;
+  font-weight: 600;
+  font-size: 1rem;
+  letter-spacing: 0.5px;
+  text-shadow: 0 1px 2px rgba(25, 118, 210, 0.2);
 }

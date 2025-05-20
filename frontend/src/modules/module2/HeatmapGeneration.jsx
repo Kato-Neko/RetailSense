@@ -1,12 +1,12 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { Calendar, Clock, Download, Filter, Map, Loader, Trash2 } from "lucide-react";
+import { Calendar, Clock, Download, Filter, Map, Loader, Trash2, Users, BarChart2, Lightbulb, Timer } from "lucide-react";
 import toast from "react-hot-toast";
 import { useLocation } from "react-router-dom";
 import { heatmapService } from "../../services/api";
 import "../../styles/HeatmapGeneration.css";
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, LineChart, Line, Legend } from 'recharts';
 
 const HeatmapGeneration = () => {
   const location = useLocation();
@@ -297,6 +297,12 @@ const HeatmapGeneration = () => {
     }
   };
 
+  // Prepare data for the Peak Hours line chart
+  const peakHoursData = analysis?.peak_hours?.map(ph => ({
+    x: `${ph.start_minute}-${ph.end_minute}`,
+    y: ph.count,
+  })) || [];
+
   return (
     <div className="heatmap-container">
       <h1 className="page-title">Heatmap Generation</h1>
@@ -359,21 +365,24 @@ const HeatmapGeneration = () => {
               </div>
             )}
 
-            <button
-              onClick={handleGenerateHeatmap}
-              disabled={isGenerating}
-              className="generate-button"
-            >
-              {isGenerating ? (
-                <>
-                  <Loader className="spinner" /> Generating...
-                </>
-              ) : (
-                <>
-                  <Map className="button-icon" /> Generate Heatmap
-                </>
-              )}
-            </button>
+            {isGenerating ? (
+              <div className="generate-progress-bar">
+                <div
+                  className="generate-progress-fill"
+                  style={{ width: `${Math.round(customProgress * 100)}%` }}
+                />
+                <span className="generate-progress-label">
+                  Generating... {Math.round(customProgress * 100)}%
+                </span>
+              </div>
+            ) : (
+              <button
+                onClick={handleGenerateHeatmap}
+                className="generate-button"
+              >
+                <Map className="button-icon" /> Generate Heatmap
+              </button>
+            )}
 
             {isGenerating && statusMessage && (
               <div className="status-message">{statusMessage}</div>
@@ -455,12 +464,6 @@ const HeatmapGeneration = () => {
             </div>
           ) : (
             <div className="heatmap-visualization">
-              {isGenerating && (
-                <div className="loading-overlay">
-                  <p>Generating custom heatmap: {Math.round(customProgress * 100)}%</p>
-                  <progress value={customProgress} max={1} style={{ width: '80%' }} />
-                </div>
-              )}
               {isLoading ? (
                 <div className="loading-heatmap">
                   <Loader className="spinner" />
@@ -501,7 +504,10 @@ const HeatmapGeneration = () => {
         <div className="analysis-grid">
           {/* Total Visitors Card */}
           <div className="analysis-card">
-            <h3 className="analysis-title">Total Visitors</h3>
+            <div className="analysis-header">
+              <Users className="analysis-icon" />
+              <h3 className="analysis-title">Total Visitors</h3>
+            </div>
             {analysisLoading ? (
               <p className="analysis-loading">Loading...</p>
             ) : (
@@ -511,7 +517,10 @@ const HeatmapGeneration = () => {
 
           {/* Traffic Distribution Card */}
           <div className="analysis-card">
-            <h3 className="analysis-title">Traffic Distribution</h3>
+            <div className="analysis-header">
+              <BarChart2 className="analysis-icon" />
+              <h3 className="analysis-title">Traffic Distribution</h3>
+            </div>
             {analysis && (
               <ResponsiveContainer width="100%" height={180}>
                 <BarChart
@@ -534,7 +543,10 @@ const HeatmapGeneration = () => {
 
           {/* Recommendations Card */}
           <div className="analysis-card">
-            <h3 className="analysis-title">Recommendations</h3>
+            <div className="analysis-header">
+              <Lightbulb className="analysis-icon" />
+              <h3 className="analysis-title">Recommendations</h3>
+            </div>
             <ul className="analysis-list">
               {analysis?.recommendations?.length > 0 ? (
                 analysis.recommendations.map((rec, idx) => (
@@ -548,15 +560,21 @@ const HeatmapGeneration = () => {
 
           {/* Peak Hours Card */}
           <div className="analysis-card">
-            <h3 className="analysis-title">Peak Hours</h3>
-            {analysis?.peak_hours?.length > 0 ? (
-              <ul className="analysis-list">
-                {analysis.peak_hours.map((ph, idx) => (
-                  <li key={idx} className="peak-hour">
-                    {ph.start_minute} - {ph.end_minute} min ({ph.count} detections)
-                  </li>
-                ))}
-              </ul>
+            <div className="analysis-header">
+              <Timer className="analysis-icon" />
+              <h3 className="analysis-title">Peak Hours</h3>
+            </div>
+            {peakHoursData.length > 0 ? (
+              <ResponsiveContainer width="100%" height={180}>
+                <LineChart data={peakHoursData} margin={{ top: 20, right: 30, left: 0, bottom: 5 }}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis dataKey="x" label={{ value: 'Minute Range', position: 'insideBottomRight', offset: 0 }} />
+                  <YAxis label={{ value: 'Detections', angle: -90, position: 'insideLeft' }} />
+                  <Tooltip />
+                  <Legend />
+                  <Line type="monotone" dataKey="y" stroke="#1976d2" dot={{ r: 4 }} />
+                </LineChart>
+              </ResponsiveContainer>
             ) : (
               <p className="muted">No peak hours detected.</p>
             )}

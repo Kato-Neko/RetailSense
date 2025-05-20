@@ -17,7 +17,7 @@ import HeatmapGeneration from "./modules/module2/HeatmapGeneration";
 import UserManagement from "./modules/module4/UserManagement";
 import apiClient, { authService } from "./services/api";
 import "./App.css";
-import { ThemeProvider } from "./components/ThemeContext";
+import { ThemeProvider } from "./contexts/ThemeContext";
 import Base from "./pages/Base";
 
 function App() {

@@ -2,9 +2,10 @@
 
 import { useState, useEffect } from "react"
 import { useNavigate, useLocation } from "react-router-dom"
-import { BarChart2, ChevronDown, Map, User } from "lucide-react"
+import { BarChart2, ChevronDown, Map, User, Moon, Sun } from "lucide-react"
 import toast from "react-hot-toast"
 import { authService } from "../services/api"
+import { useTheme } from "../contexts/ThemeContext"
 
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
 
@@ -27,6 +28,7 @@ const SideMenu = ({ isAuthenticated, setIsAuthenticated }) => {
   const location = useLocation()
   const [userInfo, setUserInfo] = useState(null)
   const [isLoading, setIsLoading] = useState(true)
+  const { isDarkMode, toggleTheme } = useTheme()
 
   useEffect(() => {
     if (isAuthenticated) {
@@ -173,16 +175,39 @@ const SideMenu = ({ isAuthenticated, setIsAuthenticated }) => {
       </SidebarContent>
 
       <SidebarFooter>
-        {isAuthenticated && (
-          <div className="flex items-center p-4 mt-4 border-t border-sidebar-border">
-            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-sidebar-primary text-sidebar-primary-foreground">
-              <User className="h-5 w-5" />
-            </div>
-            <div className="ml-3 flex flex-col">
-              <span className="text-base font-semibold">{isLoading ? "Loading..." : userInfo?.username || "User"}</span>
-              <span className="text-sm text-sidebar-foreground/70">{isLoading ? "" : userInfo?.email || ""}</span>
-            </div>
+        <div className="flex items-center justify-center p-2 border-t border-sidebar-border">
+          <div className="flex items-center gap-2">
+            <button
+              onClick={toggleTheme}
+              className="relative inline-flex h-5 w-9 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-sidebar-ring focus:ring-offset-2"
+              style={{
+                backgroundColor: isDarkMode ? '#4a90e2' : '#e5e7eb'
+              }}
+            >
+              <span
+                className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                  isDarkMode ? 'translate-x-4' : 'translate-x-1'
+                }`}
+              />
+            </button>
+            <span className="text-sm text-sidebar-foreground/70">
+              {isDarkMode ? 'Dark Mode' : 'Light Mode'}
+            </span>
           </div>
+        </div>
+        {isAuthenticated && (
+          <>
+            <div className="flex items-center p-4 mt-4 border-t border-sidebar-border">
+              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-sidebar-primary text-sidebar-primary-foreground">
+                <User className="h-5 w-5" />
+              </div>
+              <div className="ml-3 flex flex-col">
+                <span className="text-base font-semibold">{isLoading ? "Loading..." : userInfo?.username || "User"}</span>
+                <span className="text-sm text-sidebar-foreground/70">{isLoading ? "" : userInfo?.email || ""}</span>
+              </div>
+            </div>
+            
+          </>
         )}
       </SidebarFooter>
 
