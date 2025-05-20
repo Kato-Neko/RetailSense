@@ -8,11 +8,10 @@ import {
   Navigate,
 } from "react-router-dom";
 import { Toaster } from "react-hot-toast";
-// import Navbar from "./components/Navbar"; // Commented out
 import Login from "./pages/Login";
 import Register from "./pages/Register";
 import Dashboard from "./pages/Dashboard";
-import VideoProcessing from "./modules/module1/VideoProcessing";
+import CreateHeatmap from "./pages/CreateHeatmap";
 import HeatmapGeneration from "./modules/module2/HeatmapGeneration";
 import UserManagement from "./modules/module4/UserManagement";
 import apiClient, { authService } from "./services/api";
@@ -48,10 +47,6 @@ function App() {
       <Router>
         <div className="app">
           <Toaster position="top-right" />
-          {/* <Navbar
-            isAuthenticated={isAuthenticated}
-            setIsAuthenticated={setIsAuthenticated}
-          /> */}
           <Routes>
             <Route
               path="/"
@@ -77,7 +72,7 @@ function App() {
               <Route
                 path="/video-processing"
                 element={
-                  isAuthenticated ? <VideoProcessing /> : <Navigate to="/" />
+                  isAuthenticated ? <CreateHeatmap /> : <Navigate to="/" />
                 }
               />
               <Route
