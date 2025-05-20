@@ -9,6 +9,7 @@ from ultralytics import YOLO
 from deep_sort_realtime.deepsort_tracker import DeepSort
 import os
 import logging
+from collections import Counter
 
 logger = logging.getLogger(__name__)
 
@@ -23,7 +24,7 @@ def detect_and_track(video_path, output_path, progress_callback=None, preview_fo
         preview_folder: Optional folder to save preview images
         
     Returns:
-        Tuple of (output_video_path, detections)
+        Tuple of (output_video_path, detections, fps)
     """
     # Load YOLO model
     model = YOLO('yolov8n.pt')
@@ -55,6 +56,7 @@ def detect_and_track(video_path, output_path, progress_callback=None, preview_fo
         ret, frame = cap.read()
         if not ret:
             break
+        timestamp = frame_count / fps  # seconds
             
         # Run YOLO detection
         results = model(frame, classes=[0])  # class 0 is person
@@ -88,7 +90,8 @@ def detect_and_track(video_path, output_path, progress_callback=None, preview_fo
             detections_for_heatmap.append({
                 'frame': frame_count,
                 'bbox': [x1, y1, x2, y2],
-                'track_id': track_id
+                'track_id': track_id,
+                'timestamp': timestamp
             })
             
             # Draw bounding box and ID with better contrast
@@ -124,6 +127,45 @@ def detect_and_track(video_path, output_path, progress_callback=None, preview_fo
     cap.release()
     out.release()
     
-    return output_path, detections_for_heatmap
+    return output_path, detections_for_heatmap, fps
+
+def analyze_peak_hours(detections, fps, bin_minutes=5):
+    """
+    Analyze detections to find peak time frames.
+    - detections: list of dicts, each with a 'timestamp' (in seconds)
+    - fps: frames per second of the video
+    - bin_minutes: size of each time bin in minutes
+    Returns: list of (start_time, end_time, count) for the busiest bins
+    """
+    # Gather all timestamps
+    timestamps = [det['timestamp'] for det in detections if 'timestamp' in det]
+    if not timestamps:
+        return []
+
+    # Bin timestamps into intervals
+    bin_seconds = bin_minutes * 60
+    max_time = max(timestamps)
+    num_bins = int(np.ceil(max_time / bin_seconds))
+    bins = [0] * (num_bins + 1)
+
+    for t in timestamps:
+        bin_idx = int(t // bin_seconds)
+        bins[bin_idx] += 1
+
+    # Find the bin(s) with the most detections
+    peak_count = max(bins)
+    peak_bins = [i for i, count in enumerate(bins) if count == peak_count]
+
+    # Format results as readable time ranges
+    results = []
+    for bin_idx in peak_bins:
+        start = bin_idx * bin_minutes
+        end = (bin_idx + 1) * bin_minutes
+        results.append({
+            "start_minute": start,
+            "end_minute": end,
+            "count": peak_count
+        })
+    return results
 
 # Add more tracking-related utilities as needed 

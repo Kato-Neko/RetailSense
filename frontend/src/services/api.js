@@ -148,6 +148,66 @@ export const heatmapService = {
       throw error.response ? error.response.data : error;
     }
   },
+
+  exportHeatmapCsv: async (jobId) => {
+    try {
+      const response = await apiClient.get(`/heatmap_jobs/${jobId}/export/csv`, {
+        responseType: 'blob',
+        headers: {
+          'Accept': 'text/csv'
+        }
+      });
+      return response.data;
+    } catch (error) {
+      if (error.response && error.response.data instanceof Blob) {
+        // If the error response is a blob, read it as text
+        const reader = new FileReader();
+        const text = await new Promise((resolve) => {
+          reader.onload = () => resolve(reader.result);
+          reader.readAsText(error.response.data);
+        });
+        try {
+          const errorData = JSON.parse(text);
+          throw errorData;
+        } catch (e) {
+          throw { error: text };
+        }
+      }
+      throw error.response ? error.response.data : error;
+    }
+  },
+
+  exportHeatmapPdf: async (jobId) => {
+    try {
+      const response = await apiClient.get(`/heatmap_jobs/${jobId}/export/pdf`, {
+        responseType: 'blob',
+        headers: {
+          'Accept': 'application/pdf'
+        }
+      });
+      return response.data;
+    } catch (error) {
+      throw error.response ? error.response.data : error;
+    }
+  },
+
+  getHeatmapAnalysis: async (jobId) => {
+    try {
+      const response = await apiClient.get(`/heatmap_jobs/${jobId}/analysis`);
+      return response.data;
+    } catch (error) {
+      throw error.response ? error.response.data : error;
+    }
+  },
+
+  generateCustomHeatmap: async (jobId, payload) => {
+    const response = await apiClient.post(`/heatmap_jobs/${jobId}/custom_heatmap`, payload);
+    return response.data;
+  },
+
+  getCustomHeatmapImageUrl: (jobId, start, end) => {
+    return `${API_BASE_URL}/heatmap_jobs/${jobId}/custom_heatmap_image?start=${start}&end=${end}`;
+  },
 };
 
 // Export the API client for other custom requests

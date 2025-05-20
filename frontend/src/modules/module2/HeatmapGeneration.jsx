@@ -1,11 +1,12 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { Calendar, Clock, Download, Filter, Map, Loader, Trash2 } from "lucide-react";
+import { Calendar, Clock, Download, Filter, Map, Loader } from "lucide-react";
 import toast from "react-hot-toast";
 import { useLocation } from "react-router-dom";
 import { heatmapService } from "../../services/api";
 import "../../styles/HeatmapGeneration.css";
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
 
 const HeatmapGeneration = () => {
   const location = useLocation();
@@ -23,6 +24,17 @@ const HeatmapGeneration = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [statusMessage, setStatusMessage] = useState("");
   const imageRef = useRef(null);
+  const [analysis, setAnalysis] = useState(null);
+  const [analysisLoading, setAnalysisLoading] = useState(false);
+  const [analysisError, setAnalysisError] = useState(null);
+  const [startTimestamp, setStartTimestamp] = useState('');
+  const [endTimestamp, setEndTimestamp] = useState('');
+  const [videoDuration, setVideoDuration] = useState(null);
+  const [warning, setWarning] = useState('');
+  const videoRef = useRef(null);
+  const [customHeatmapUrl, setCustomHeatmapUrl] = useState(null);
+  const [customProgress, setCustomProgress] = useState(0);
+  const [customJobId, setCustomJobId] = useState(null);
 
   // Initialize date range to today and yesterday
   useEffect(() => {
@@ -104,94 +116,170 @@ const HeatmapGeneration = () => {
     };
   }, [jobId, isGenerating]);
 
+  // When a job is selected, load the processed video to get its duration
+  useEffect(() => {
+    if (selectedJob && selectedJob.job_id) {
+      const videoUrl = heatmapService.getProcessedVideoUrl(selectedJob.job_id);
+      const video = document.createElement('video');
+      video.src = videoUrl;
+      video.preload = 'metadata';
+      video.onloadedmetadata = () => {
+        setVideoDuration(video.duration);
+      };
+    }
+  }, [selectedJob]);
+
   const handleSelectJob = (job) => {
     setSelectedJob(job);
     setHeatmapGenerated(true);
   };
 
   const handleGenerateHeatmap = async () => {
-    if (!dateRange.start || !dateRange.end) {
-      toast.error("Please select a date range");
+    if (!selectedJob) {
+      setWarning('Please select a job first.');
       return;
     }
-
-    // 1. Flip on your loading state
+    if (!startTimestamp || !endTimestamp) {
+      setWarning('Please enter both start and end time.');
+      return;
+    }
+    if (videoDuration && Number(endTimestamp) > videoDuration) {
+      setWarning('End time cannot be greater than video duration.');
+      return;
+    }
+    setWarning('');
+    setCustomJobId(selectedJob.job_id);
+    setCustomProgress(0);
     setIsGenerating(true);
-    setStatusMessage("Sending request…");
-
-    // 2. Build your payload from state
+    setStatusMessage('Sending request…');
     const payload = {
-      start_date: dateRange.start,
-      end_date: dateRange.end,
-      start_time: timeRange.start,
-      end_time: timeRange.end,
+      start_time: startTimestamp,
+      end_time: endTimestamp,
       area: selectedArea,
     };
-
     try {
-      // 3. POST to /api/heatmap via Vite proxy
-      const res = await fetch("/api/heatmap_jobs", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-
-      if (!res.ok) {
-        const errText = await res.text();
-        throw new Error(`Status ${res.status}: ${errText}`);
-      }
-
-      const { job_id } = await res.json();
-
-      // 4. Store the returned job ID so your polling useEffect starts
-      setStatusMessage("Job queued; waiting for completion…");
-      // note: you'll need to lift `jobId` into state if it isn't already:
-      // const [jobId, setJobId] = useState(initialJobId);
-      setJobId(job_id);
-
-      toast.success("Heatmap request submitted!");
+      const response = await heatmapService.generateCustomHeatmap(selectedJob.job_id, payload);
+      setStatusMessage('Custom heatmap generated!');
+      setHeatmapGenerated(true);
+      setCustomHeatmapUrl(heatmapService.getCustomHeatmapImageUrl(selectedJob.job_id, startTimestamp, endTimestamp));
+      toast.success('Custom heatmap generated!');
     } catch (err) {
-      console.error("Heatmap request failed:", err);
-      toast.error(`Failed to start heatmap: ${err.message}`);
+      console.error('Custom heatmap request failed:', err);
+      toast.error(`Failed to generate custom heatmap: ${err.message}`);
       setIsGenerating(false);
     }
   };
 
-  const handleExport = (format) => {
+  const handleExport = async (format) => {
     if (!heatmapGenerated || !selectedJob) {
       toast.error("Please generate or select a heatmap first");
       return;
     }
 
-    if (format === "png" && imageRef.current) {
-      // For PNG, we can actually download the image
-      const link = document.createElement("a");
-      link.href = imageRef.current.src;
-      link.download = `heatmap_${selectedJob.job_id}.png`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      toast.success("Heatmap exported as PNG");
-    } else {
-      // For other formats, just show a success message
-      toast.success(`Heatmap exported as ${format.toUpperCase()}`);
+    try {
+      let blob;
+      let filename;
+      let mimeType;
+
+      switch (format) {
+        case "png":
+          if (imageRef.current) {
+            // For PNG, we can use the image source directly
+            const link = document.createElement("a");
+            link.href = imageRef.current.src;
+            link.download = `heatmap_${selectedJob.job_id}.png`;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            toast.success("Heatmap exported as PNG");
+          }
+          break;
+
+        case "csv":
+          mimeType = 'text/csv';
+          filename = `heatmap_${selectedJob.job_id}.csv`;
+          blob = await heatmapService.exportHeatmapCsv(selectedJob.job_id);
+          break;
+
+        case "pdf":
+          mimeType = 'application/pdf';
+          filename = `heatmap_${selectedJob.job_id}.pdf`;
+          blob = await heatmapService.exportHeatmapPdf(selectedJob.job_id);
+          break;
+
+        default:
+          toast.error("Unsupported export format");
+          return;
+      }
+
+      // For CSV and PDF, create and trigger download
+      if (format !== "png") {
+        // Create a blob with the correct MIME type
+        const fileBlob = new Blob([blob], { type: mimeType });
+        
+        // Create a temporary URL for the blob
+        const url = window.URL.createObjectURL(fileBlob);
+        
+        // Create a temporary link element
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = filename;
+        
+        // Append to body, click, and cleanup
+        document.body.appendChild(link);
+        link.click();
+        
+        // Cleanup
+        document.body.removeChild(link);
+        window.URL.revokeObjectURL(url);
+        
+        toast.success(`Heatmap exported as ${format.toUpperCase()}`);
+      }
+    } catch (error) {
+      console.error(`Error exporting heatmap as ${format}:`, error);
+      toast.error(`Failed to export heatmap as ${format.toUpperCase()}`);
     }
   };
 
-  const handleDeleteJob = async (job) => {
-    if (!window.confirm(`Are you sure you want to delete heatmap for "${job.input_video_name || 'Heatmap'}"? This cannot be undone.`)) return;
+  const fetchAnalysis = async (jobId) => {
+    setAnalysisLoading(true);
+    setAnalysisError(null);
     try {
-      await heatmapService.deleteJob(job.job_id);
-      toast.success("Heatmap deleted.");
-      setJobHistory((prev) => prev.filter((j) => j.job_id !== job.job_id));
-      if (selectedJob && selectedJob.job_id === job.job_id) {
-        setSelectedJob(null);
-        setHeatmapGenerated(false);
-      }
-    } catch (error) {
-      toast.error(error.message || "Failed to delete heatmap.");
+      const data = await heatmapService.getHeatmapAnalysis(jobId);
+      setAnalysis(data);
+    } catch (err) {
+      setAnalysisError(err.error || "Failed to fetch analysis");
+      setAnalysis(null);
+    } finally {
+      setAnalysisLoading(false);
     }
   };
+
+  useEffect(() => {
+    if (selectedJob && selectedJob.job_id && selectedJob.status === "completed") {
+      fetchAnalysis(selectedJob.job_id);
+    } else {
+      setAnalysis(null);
+    }
+  }, [selectedJob]);
+
+  useEffect(() => {
+    if (!customJobId) return;
+    const interval = setInterval(async () => {
+      try {
+        const res = await fetch(`/api/heatmap_jobs/${customJobId}/custom_heatmap_progress`);
+        const data = await res.json();
+        setCustomProgress(data.progress);
+        if (data.progress >= 1) {
+          clearInterval(interval);
+          setIsGenerating(false);
+        }
+      } catch (e) {
+        // Optionally handle error
+      }
+    }, 500);
+    return () => clearInterval(interval);
+  }, [customJobId]);
 
   return (
     <div className="heatmap-container">
@@ -203,50 +291,30 @@ const HeatmapGeneration = () => {
 
           <div className="settings-form">
             <div className="form-group">
-              <label className="form-label">Date Range</label>
+              <label className="form-label">Time Range (seconds)</label>
               <div className="input-group">
-                <Calendar className="input-icon" />
                 <input
-                  type="date"
+                  type="number"
                   className="form-input"
-                  value={dateRange.start}
-                  onChange={(e) =>
-                    setDateRange({ ...dateRange, start: e.target.value })
-                  }
+                  placeholder="Start (s)"
+                  value={startTimestamp}
+                  min={0}
+                  max={videoDuration || undefined}
+                  onChange={e => setStartTimestamp(e.target.value)}
                 />
                 <span className="input-separator">to</span>
                 <input
-                  type="date"
+                  type="number"
                   className="form-input"
-                  value={dateRange.end}
-                  onChange={(e) =>
-                    setDateRange({ ...dateRange, end: e.target.value })
-                  }
+                  placeholder="End (s)"
+                  value={endTimestamp}
+                  min={0}
+                  max={videoDuration || undefined}
+                  onChange={e => setEndTimestamp(e.target.value)}
                 />
-              </div>
-            </div>
-
-            <div className="form-group">
-              <label className="form-label">Time Range</label>
-              <div className="input-group">
-                <Clock className="input-icon" />
-                <input
-                  type="time"
-                  className="form-input"
-                  value={timeRange.start}
-                  onChange={(e) =>
-                    setTimeRange({ ...timeRange, start: e.target.value })
-                  }
-                />
-                <span className="input-separator">to</span>
-                <input
-                  type="time"
-                  className="form-input"
-                  value={timeRange.end}
-                  onChange={(e) =>
-                    setTimeRange({ ...timeRange, end: e.target.value })
-                  }
-                />
+                {videoDuration && (
+                  <span className="input-hint">(Video duration: {Math.floor(videoDuration)}s)</span>
+                )}
               </div>
             </div>
 
@@ -267,6 +335,8 @@ const HeatmapGeneration = () => {
                 </select>
               </div>
             </div>
+
+            {warning && <div style={{ color: 'red', marginBottom: 8 }}>{warning}</div>}
 
             <button
               onClick={handleGenerateHeatmap}
@@ -301,24 +371,13 @@ const HeatmapGeneration = () => {
                           : ""
                       }`}
                       onClick={() => handleSelectJob(job)}
-                      style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}
                     >
-                      <div>
-                        <div className="history-item-name">
-                          {job.input_video_name || "Heatmap"}
-                        </div>
-                        <div className="history-item-date">
-                          {new Date(job.created_at).toLocaleDateString()}
-                        </div>
+                      <div className="history-item-name">
+                        {job.input_video_name || "Heatmap"}
                       </div>
-                      <button
-                        className="delete-btn"
-                        title="Delete heatmap"
-                        onClick={e => { e.stopPropagation(); handleDeleteJob(job); }}
-                        style={{ background: "none", border: "none", cursor: "pointer", color: "#e53935", marginLeft: 8 }}
-                      >
-                        <Trash2 size={20} />
-                      </button>
+                      <div className="history-item-date">
+                        {new Date(job.created_at).toLocaleDateString()}
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -364,6 +423,12 @@ const HeatmapGeneration = () => {
             </div>
           ) : (
             <div className="heatmap-visualization">
+              {isGenerating && (
+                <div className="loading-overlay">
+                  <p>Generating custom heatmap: {Math.round(customProgress * 100)}%</p>
+                  <progress value={customProgress} max={1} style={{ width: '80%' }} />
+                </div>
+              )}
               {isLoading ? (
                 <div className="loading-heatmap">
                   <Loader className="spinner" />
@@ -373,10 +438,7 @@ const HeatmapGeneration = () => {
                 <>
                   <img
                     ref={imageRef}
-                    src={
-                      heatmapService.getHeatmapImageUrl(selectedJob.job_id) ||
-                      "/placeholder.svg"
-                    }
+                    src={customHeatmapUrl || heatmapService.getHeatmapImageUrl(selectedJob.job_id) || "/placeholder.svg"}
                     alt="Foot traffic heatmap"
                     className="heatmap-image"
                     onLoad={() => setIsLoading(false)}
@@ -404,58 +466,80 @@ const HeatmapGeneration = () => {
       </div>
 
       {heatmapGenerated && selectedJob && (
-        <div className="analysis-card">
-          <h2 className="section-title">Heatmap Analysis</h2>
-
-          <div className="analysis-grid">
-            <div className="analysis-section high-traffic">
-              <h3 className="analysis-title">High Traffic Areas</h3>
-              <ul className="analysis-list">
-                <li>Store entrance (78% density)</li>
-                <li>Right side display (65% density)</li>
-                <li>Center display (58% density)</li>
-              </ul>
-            </div>
-
-            <div className="analysis-section medium-traffic">
-              <h3 className="analysis-title">Medium Traffic Areas</h3>
-              <ul className="analysis-list">
-                <li>Main pathways (45% density)</li>
-                <li>Left side shelves (42% density)</li>
-                <li>Checkout area (38% density)</li>
-              </ul>
-            </div>
-
-            <div className="analysis-section low-traffic">
-              <h3 className="analysis-title">Low Traffic Areas</h3>
-              <ul className="analysis-list">
-                <li>Back corner shelves (15% density)</li>
-                <li>Seasonal display (12% density)</li>
-                <li>Promotional area (8% density)</li>
-              </ul>
-            </div>
+        <div className="analysis-grid">
+          {/* Total Visitors Card */}
+          <div className="analysis-card">
+            <h3 className="analysis-title">Total Visitors</h3>
+            {analysisLoading ? (
+              <p className="analysis-loading">Loading...</p>
+            ) : (
+              <p className="total-visitors">{analysis?.total_visitors ?? 0}</p>
+            )}
           </div>
 
-          <div className="recommendations">
-            <h3 className="recommendations-title">Recommendations</h3>
-            <ul className="recommendations-list">
-              <li>
-                Consider moving high-margin products to high-traffic areas
-              </li>
-              <li>
-                Redesign low-traffic areas to improve visibility and customer
-                flow
-              </li>
-              <li>
-                Adjust staffing based on peak traffic hours identified in the
-                heatmap
-              </li>
-              <li>
-                Test different promotional placements in medium-traffic zones
-              </li>
+          {/* Traffic Distribution Card */}
+          <div className="analysis-card">
+            <h3 className="analysis-title">Traffic Distribution</h3>
+            {analysis && (
+              <ResponsiveContainer width="100%" height={180}>
+                <BarChart
+                  data={[
+                    { name: 'High', value: analysis.areas?.high?.percentage ?? 0 },
+                    { name: 'Medium', value: analysis.areas?.medium?.percentage ?? 0 },
+                    { name: 'Low', value: analysis.areas?.low?.percentage ?? 0 }
+                  ]}
+                  margin={{ top: 20, right: 30, left: 0, bottom: 5 }}
+                >
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis dataKey="name" />
+                  <YAxis unit="%" />
+                  <Tooltip />
+                  <Bar dataKey="value" fill="#1976d2" />
+                </BarChart>
+              </ResponsiveContainer>
+            )}
+          </div>
+
+          {/* Recommendations Card */}
+          <div className="analysis-card">
+            <h3 className="analysis-title">Recommendations</h3>
+            <ul className="analysis-list">
+              {analysis?.recommendations?.length > 0 ? (
+                analysis.recommendations.map((rec, idx) => (
+                  <li key={idx} className="recommendation">{rec}</li>
+                ))
+              ) : (
+                <li className="muted">No recommendations available.</li>
+              )}
             </ul>
           </div>
+
+          {/* Peak Hours Card */}
+          <div className="analysis-card">
+            <h3 className="analysis-title">Peak Hours</h3>
+            {analysis?.peak_hours?.length > 0 ? (
+              <ul className="analysis-list">
+                {analysis.peak_hours.map((ph, idx) => (
+                  <li key={idx} className="peak-hour">
+                    {ph.start_minute} - {ph.end_minute} min ({ph.count} detections)
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="muted">No peak hours detected.</p>
+            )}
+          </div>
         </div>
+      )}
+
+      {/* Hidden video element for duration calculation */}
+      {selectedJob && (
+        <video
+          ref={videoRef}
+          src={heatmapService.getProcessedVideoUrl(selectedJob.job_id)}
+          style={{ display: 'none' }}
+          onLoadedMetadata={e => setVideoDuration(e.target.duration)}
+        />
       )}
     </div>
   );
