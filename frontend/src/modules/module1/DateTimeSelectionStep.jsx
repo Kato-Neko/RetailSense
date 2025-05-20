@@ -3,7 +3,7 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { ChevronUp, ChevronDown, Clock } from "lucide-react"
+import { ChevronUp, ChevronDown, Clock, Calendar } from "lucide-react"
 
 const DateTimeSelectionStep = ({
   startDate,
@@ -157,80 +157,81 @@ const DateTimeSelectionStep = ({
 
   // Time input component with helpers
   const TimeInput = ({ label, value, onChange, onAdjust }) => (
-    <div className="mb-4">
-      <div className="flex items-center mb-2">
-        <Label className="w-16">{label}:</Label>
+    <div className="mb-3">
+      <div className="flex items-center mb-1">
         <Input
           type="text"
           value={value}
           onChange={onChange}
           placeholder="HH:MM:SS"
           pattern="[0-9]{2}:[0-9]{2}:[0-9]{2}"
-          className={`w-full ${!/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]$/.test(value) ? "border-red-500" : ""}`}
+          className={`w-full h-9 py-1 bg-slate-800/50 border-slate-700 text-center text-slate-200 focus-visible:ring-blue-500 ${
+            !/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]$/.test(value) ? "border-red-500" : ""
+          }`}
         />
       </div>
-      <div className="flex justify-between ml-16">
-        <div className="flex flex-col items-center w-1/3">
+      <div className="flex justify-center ml-5 space-x-10">
+        <div className="flex items-center gap-1 w-1/3">
           <Button
             type="button"
             onClick={() => onAdjust("hours", 1)}
             variant="outline"
             size="sm"
-            className="mb-1 h-6 w-6 p-0"
+            className="h-6 w-6 p-0 border-slate-700 bg-slate-800 hover:bg-slate-700 text-slate-300"
           >
-            <ChevronUp className="h-4 w-4" />
+            <ChevronUp className="h-3 w-3" />
           </Button>
-          <span className="text-xs">Hours</span>
+          <span className="text-xs text-slate-400">H</span>
           <Button
             type="button"
             onClick={() => onAdjust("hours", -1)}
             variant="outline"
             size="sm"
-            className="mt-1 h-6 w-6 p-0"
+            className="h-6 w-6 p-0 border-slate-700 bg-slate-800 hover:bg-slate-700 text-slate-300"
           >
-            <ChevronDown className="h-4 w-4" />
+            <ChevronDown className="h-3 w-3" />
           </Button>
         </div>
-        <div className="flex flex-col items-center w-1/3">
+        <div className="flex items-center gap-1 w-1/3">
           <Button
             type="button"
             onClick={() => onAdjust("minutes", 1)}
             variant="outline"
             size="sm"
-            className="mb-1 h-6 w-6 p-0"
+            className="h-6 w-6 p-0 border-slate-700 bg-slate-800 hover:bg-slate-700 text-slate-300"
           >
-            <ChevronUp className="h-4 w-4" />
+            <ChevronUp className="h-3 w-3" />
           </Button>
-          <span className="text-xs">Minutes</span>
+          <span className="text-xs text-slate-400">M</span>
           <Button
             type="button"
             onClick={() => onAdjust("minutes", -1)}
             variant="outline"
             size="sm"
-            className="mt-1 h-6 w-6 p-0"
+            className="h-6 w-6 p-0 border-slate-700 bg-slate-800 hover:bg-slate-700 text-slate-300"
           >
-            <ChevronDown className="h-4 w-4" />
+            <ChevronDown className="h-3 w-3" />
           </Button>
         </div>
-        <div className="flex flex-col items-center w-1/3">
+        <div className="flex items-center gap-1 w-1/3">
           <Button
             type="button"
             onClick={() => onAdjust("seconds", 1)}
             variant="outline"
             size="sm"
-            className="mb-1 h-6 w-6 p-0"
+            className="h-6 w-6 p-0 border-slate-700 bg-slate-800 hover:bg-slate-700 text-slate-300"
           >
-            <ChevronUp className="h-4 w-4" />
+            <ChevronUp className="h-3 w-3" />
           </Button>
-          <span className="text-xs">Seconds</span>
+          <span className="text-xs text-slate-400">S</span>
           <Button
             type="button"
             onClick={() => onAdjust("seconds", -1)}
             variant="outline"
             size="sm"
-            className="mt-1 h-6 w-6 p-0"
+            className="h-6 w-6 p-0 border-slate-700 bg-slate-800 hover:bg-slate-700 text-slate-300"
           >
-            <ChevronDown className="h-4 w-4" />
+            <ChevronDown className="h-3 w-3" />
           </Button>
         </div>
       </div>
@@ -238,106 +239,127 @@ const DateTimeSelectionStep = ({
   )
 
   return (
-    <Card className="w-full h-full">
-      <CardContent className="p-5 h-full flex flex-col">
-        <h2 className="text-xl font-semibold mb-3">Step 2: Set Date and Time Range</h2>
+    <Card className="w-full border-none bg-transparent shadow-none">
+      <CardContent className="p-6">
+        <h2 className="text-xl font-semibold mb-3 bg-gradient-to-r from-blue-400 to-cyan-400 text-transparent bg-clip-text">
+          Step 2: Set Date and Time Range
+        </h2>
 
-        <div className="flex-1 overflow-y-auto mb-3">
-          <p className="text-sm text-muted-foreground mb-2">
-            Please select the appropriate date and time for this
-            <span className="text-green-600 font-medium">{` ${formatDuration(duration)}`}</span> video.
-          </p>
-          <p className="text-xs text-muted-foreground mb-4">
-            <strong>Note:</strong> For validation purposes, the duration is rounded down to{" "}
-            <span className="text-blue-600 font-medium">{roundedDuration} seconds</span>.
-          </p>
+        <p className="text-sm text-slate-300 mb-1">
+          Please select the appropriate date and time for this
+          <span className="text-green-400 font-medium">{` ${formatDuration(duration)}`}</span> video.
+        </p>
+        <p className="text-xs text-slate-400 mb-4">
+          <strong>Note:</strong> For validation purposes, the duration is rounded down to{" "}
+          <span className="text-blue-400 font-medium">{roundedDuration} seconds</span>.
+        </p>
 
-          <div className="mb-4">
-            <Label className="block mb-2">Date Range:</Label>
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <Label className="text-xs">Start Date</Label>
+        <div className="grid grid-cols-2 gap-6 mb-10 mt-10">
+          <div className="bg-slate-800/30 p-4 rounded-lg border border-slate-800">
+            <div className="flex items-center mb-3">
+              <Calendar className="h-6 w-6 mr-3 text-blue-400" />
+              <Label className="block text-slate-300 font-medium text-lg">Date Range:</Label>
+            </div>
+            <div className="space-y-3">
+              <div className="mt-10 mb-10"> 
+                <Label className="text-sm pl-3 mb-1 text-slate-400">Start Date</Label>
                 <Input
                   type="date"
                   value={startDate}
                   onChange={(e) => setStartDate(e.target.value)}
-                  className="w-full"
+                  className="w-full h-9 py-1 bg-slate-800/50 border-slate-700 text-slate-200 justify-center focus-visible:ring-blue-500"
                 />
               </div>
-              <div>
-                <Label className="text-xs">End Date</Label>
-                <Input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} className="w-full" />
+              <div className="mb-10">
+                <Label className="text-sm pl-3 mb-1 text-slate-400">End Date</Label>
+                <Input
+                  type="date"
+                  value={endDate}
+                  onChange={(e) => setEndDate(e.target.value)}
+                  className="w-full h-9 py-1 bg-slate-800/50 border-slate-700 text-slate-200 justify-center focus-visible:ring-blue-500"
+                />
               </div>
             </div>
           </div>
 
-          <div className="mb-4">
-            <div className="flex justify-between items-center mb-2">
-              <Label>Time Range (HH:MM:SS):</Label>
+          <div className="bg-slate-800/30 p-4 rounded-lg border border-slate-800">
+            <div className="flex justify-between items-center mb-3">
+              <div className="flex items-center">
+                <Clock className="h-6 w-6 mr-3 text-blue-400" />
+                <Label className="text-slate-300 font-medium text-lg">Time Range:</Label>
+              </div>
               <Button
                 type="button"
                 onClick={setToCurrentTime}
                 variant="outline"
                 size="sm"
-                className="flex items-center text-xs"
+                className="flex items-center text-xs h-7 border-slate-700 bg-slate-800 hover:bg-slate-700 text-slate-300"
               >
-                <Clock className="h-3 w-3 mr-1" /> Now
+                <Clock className="h-3 w-3 mr-1 text-blue-400" /> Now
               </Button>
             </div>
 
-            <TimeInput label="Start" value={startTime} onChange={handleStartTimeChange} onAdjust={adjustStartTime} />
-
+            <Label className="text-sm pl-3 mt-10 mb-1 text-slate-400">Start Time</Label>
+            <TimeInput className="justify-center" value={startTime} onChange={handleStartTimeChange} onAdjust={adjustStartTime} />
+            <Label className="text-sm pl-3 mt-3 mb-1 text-slate-400">End Time</Label>
             <TimeInput
-              label="End"
+              className="justify-center"
               value={endTime}
               onChange={(e) => setEndTime(e.target.value)}
               onAdjust={adjustEndTime}
             />
           </div>
+        </div>
 
-          {/* Validation status */}
-          <div className="p-3 bg-gray-100 rounded-lg border border-gray-300">
-            <h3 className="text-sm font-semibold text-gray-800 mb-1">Validation Status:</h3>
-            <div className={`text-sm font-medium ${isValid ? "text-green-600" : "text-red-600"} flex items-center`}>
-              {isValid ? (
-                <>
-                  <svg
-                    className="w-4 h-4 mr-1"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                    xmlns="http://www.w3.org/2000/svg"
-                  >
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7"></path>
-                  </svg>
-                  Time range is valid
-                </>
-              ) : (
-                <>
-                  <svg
-                    className="w-4 h-4 mr-1"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                    xmlns="http://www.w3.org/2000/svg"
-                  >
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"></path>
-                  </svg>
-                  Time range is invalid
-                </>
-              )}
-            </div>
-            <p className="text-xs text-gray-700 mt-1">
-              The time range must be greater than 0 and not exceed the video duration.
-            </p>
+        {/* Validation status */}
+        <div className="p-3 bg-slate-800/30 rounded-lg border border-slate-800 mb-6">
+          <div className={`text-sm font-medium ${isValid ? "text-green-400" : "text-red-400"} flex items-center`}>
+            {isValid ? (
+              <>
+                <svg
+                  className="w-4 h-4 mr-1"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                  xmlns="http://www.w3.org/2000/svg"
+                >
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7"></path>
+                </svg>
+                Time range is valid
+              </>
+            ) : (
+              <>
+                <svg
+                  className="w-4 h-4 mr-1"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                  xmlns="http://www.w3.org/2000/svg"
+                >
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"></path>
+                </svg>
+                Time range is invalid
+              </>
+            )}
           </div>
+          <p className="text-xs text-slate-400">
+            The time range must be greater than 0 and not exceed the video duration.
+          </p>
         </div>
 
         <div className="flex justify-between">
-          <Button onClick={onPrevious} variant="outline" className="px-6">
+          <Button
+            onClick={onPrevious}
+            variant="outline"
+            className="px-6 border-slate-700 bg-slate-800/50 text-slate-300 hover:bg-slate-700 hover:text-white"
+          >
             Previous
           </Button>
-          <Button onClick={onNext} disabled={!isValid} className="px-6">
+          <Button
+            onClick={onNext}
+            disabled={!isValid}
+            className="px-6 bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-700 hover:to-cyan-700 text-white"
+          >
             Next
           </Button>
         </div>
@@ -347,3 +369,4 @@ const DateTimeSelectionStep = ({
 }
 
 export default DateTimeSelectionStep
+

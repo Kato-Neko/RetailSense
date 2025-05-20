@@ -4,7 +4,6 @@ import { useState, useEffect, useCallback, useRef } from "react"
 import { useNavigate } from "react-router-dom"
 import { heatmapService } from "../services/api"
 import { Carousel, CarouselContent, CarouselItem } from "../components/ui/carousel"
-import { Pagination, PaginationContent, PaginationItem, PaginationLink } from "../components/ui/pagination"
 import VideoSelectionStep from "../modules/module1/VideoSelectionStep"
 import DateTimeSelectionStep from "../modules/module1/DateTimeSelectionStep"
 import CoordinateSelectionStep from "../modules/module1/CoordinateSelectionStep"
@@ -428,28 +427,37 @@ const CreateHeatmap = () => {
   }
 
   return (
-    <div className="container mx-auto px-4 py-4 max-w-4xl h-[calc(100vh-100px)] overflow-hidden flex flex-col">
+    <div className="container mx-auto px-4 py-4 max-w-4xl">
       {/* Step Pagination */}
-      <Pagination className="mb-2">
-        <PaginationContent>
-          {["Select Video", "Set Time Range", "Select Points", "Confirm"].map((step, index) => (
-            <PaginationItem key={index}>
-              <PaginationLink
+      <div className="mb-6">
+        <div className="flex justify-center mb-6">
+          <div className="flex space-x-2">
+            {["Select", "Date", "Points", "Confirm"].map((step, index) => (
+              <button
+                key={index}
                 onClick={() => goToStep(index)}
-                isActive={currentStep === index}
-                className={`cursor-pointer ${
-                  index > 0 && !isStepValid(index - 1) && index > currentStep ? "opacity-50 pointer-events-none" : ""
+                disabled={index > 0 && !isStepValid(index - 1) && index > currentStep}
+                className={`relative w-10 h-10 rounded-full flex items-center justify-center transition-all duration-200 ${
+                  currentStep === index
+                    ? "bg-blue-600 text-white"
+                    : index < currentStep
+                      ? "bg-slate-700 text-slate-300"
+                      : "bg-slate-800 text-slate-500"
+                } ${
+                  index > 0 && !isStepValid(index - 1) && index > currentStep
+                    ? "opacity-50 cursor-not-allowed"
+                    : "cursor-pointer"
                 }`}
               >
                 {index + 1}
-              </PaginationLink>
-            </PaginationItem>
-          ))}
-        </PaginationContent>
-      </Pagination>
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
 
       {/* Carousel for steps */}
-      <div className="flex-1 overflow-hidden">
+      <div className="bg-slate-900/50 rounded-lg border border-slate-800">
         <Carousel
           setApi={setApi}
           opts={{
@@ -457,11 +465,10 @@ const CreateHeatmap = () => {
             dragFree: false,
             draggable: false,
           }}
-          className="h-full"
         >
-          <CarouselContent className="h-full">
+          <CarouselContent>
             {/* Step 1: Video Selection */}
-            <CarouselItem className="h-full">
+            <CarouselItem>
               <VideoSelectionStep
                 file={file}
                 videoPreviewUrl={videoPreviewUrl}
@@ -472,7 +479,7 @@ const CreateHeatmap = () => {
             </CarouselItem>
 
             {/* Step 2: Date/Time Selection */}
-            <CarouselItem className="h-full">
+            <CarouselItem>
               <DateTimeSelectionStep
                 startDate={startDate}
                 endDate={endDate}
@@ -491,7 +498,7 @@ const CreateHeatmap = () => {
             </CarouselItem>
 
             {/* Step 3: Coordinate Selection */}
-            <CarouselItem className="h-full">
+            <CarouselItem>
               <CoordinateSelectionStep
                 firstFrame={firstFrame}
                 pointsData={pointsData}
@@ -504,7 +511,7 @@ const CreateHeatmap = () => {
             </CarouselItem>
 
             {/* Step 4: Confirmation */}
-            <CarouselItem className="h-full">
+            <CarouselItem>
               <ConfirmationStep
                 file={file}
                 startDate={startDate}
