@@ -315,17 +315,29 @@
 
 .analysis-grid {
   display: grid;
-  grid-template-columns: 1fr;
-  gap: 16px;
-  margin-bottom: 24px;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 1.5rem;
+  margin-top: 2rem;
 }
 
 .analysis-section {
-  padding: 16px;
-  border-radius: 8px;
   background: #fff;
-  border: 1px solid #e0e0e0;
-  color: #222;
+  border-radius: 8px;
+  padding: 1.5rem;
+  margin-top: 2rem;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.07);
+}
+
+.analysis-section h2 {
+  margin-bottom: 1rem;
+}
+
+.analysis-section ul {
+  margin: 0 0 1rem 1.5rem;
+}
+
+.analysis-section li {
+  margin-bottom: 0.5rem;
 }
 
 .high-traffic {
@@ -402,4 +414,80 @@
   .heatmap-grid {
     grid-template-columns: 1fr 2fr;
   }
+}
+
+.analysis-card {
+  background: #fff;
+  border-radius: 12px;
+  padding: 1rem;
+  box-shadow: 0 2px 12px rgba(0,0,0,0.08);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  min-width: 0;
+}
+
+.analysis-title {
+  color: #1a237e;
+  margin-bottom: 1rem;
+}
+
+.total-visitors {
+  font-size: 2.5rem;
+  font-weight: bold;
+  color: #1976d2;
+  margin-top: 1rem;
+}
+
+.analysis-list {
+  color: #333;
+  margin-bottom: 1.5rem;
+  margin-left: 1.5rem;
+}
+
+.recommendation {
+  color: #388e3c;
+}
+
+.peak-hour {
+  color: #7b1fa2;
+}
+
+.muted {
+  color: #757575;
+}
+
+.analysis-loading {
+  color: #1976d2;
+}
+
+.analysis-error {
+  color: #d32f2f;
+}
+
+@media (max-width: 1200px) {
+  .analysis-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+@media (max-width: 700px) {
+  .analysis-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.loading-overlay {
+  position: absolute;
+  top: 0; left: 0; right: 0; bottom: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255,255,255,0.7);
+  z-index: 10;
+}
+.spinner {
+  width: 48px;
+  height: 48px;
+  margin-bottom: 12px;
 }
