@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { Calendar, Clock, Download, Filter, Map, Loader } from "lucide-react";
+import { Calendar, Clock, Download, Filter, Map, Loader, Trash2 } from "lucide-react";
 import toast from "react-hot-toast";
 import { useLocation } from "react-router-dom";
 import { heatmapService } from "../../services/api";
@@ -281,6 +281,22 @@ const HeatmapGeneration = () => {
     return () => clearInterval(interval);
   }, [customJobId]);
 
+  const handleDeleteJob = async (jobId) => {
+    if (!window.confirm("Are you sure you want to delete this heatmap?")) return;
+    try {
+      await heatmapService.deleteJob(jobId);
+      setJobHistory((prev) => prev.filter((job) => job.job_id !== jobId));
+      if (selectedJob && selectedJob.job_id === jobId) {
+        setSelectedJob(null);
+        setHeatmapGenerated(false);
+        setCustomHeatmapUrl(null);
+      }
+      toast.success("Heatmap deleted!");
+    } catch (err) {
+      toast.error("Failed to delete heatmap.");
+    }
+  };
+
   return (
     <div className="heatmap-container">
       <h1 className="page-title">Heatmap Generation</h1>
@@ -336,7 +352,12 @@ const HeatmapGeneration = () => {
               </div>
             </div>
 
-            {warning && <div style={{ color: 'red', marginBottom: 8 }}>{warning}</div>}
+            {warning && (
+              <div className="warning-card">
+                <span className="warning-title">⚠️ Warning</span>
+                <div className="warning-message">{warning}</div>
+              </div>
+            )}
 
             <button
               onClick={handleGenerateHeatmap}
@@ -378,6 +399,17 @@ const HeatmapGeneration = () => {
                       <div className="history-item-date">
                         {new Date(job.created_at).toLocaleDateString()}
                       </div>
+                      <button
+                        className="delete-heatmap-btn"
+                        onClick={e => {
+                          e.stopPropagation();
+                          handleDeleteJob(job.job_id);
+                        }}
+                        title="Delete heatmap"
+                        style={{ background: "none", border: "none", cursor: "pointer", marginLeft: 8 }}
+                      >
+                        <Trash2 size={18} color="#d32f2f" />
+                      </button>
                     </div>
                   ))}
                 </div>

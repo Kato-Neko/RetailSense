@@ -491,3 +491,31 @@
   height: 48px;
   margin-bottom: 12px;
 }
+
+.delete-heatmap-btn:hover svg {
+  color: #b71c1c;
+  transform: scale(1.1);
+}
+
+.warning-card {
+  background: #fff3cd;
+  border: 1px solid #ffeeba;
+  color: #856404;
+  border-radius: 6px;
+  padding: 12px 16px;
+  margin-bottom: 12px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  box-shadow: 0 2px 8px rgba(255, 193, 7, 0.08);
+}
+
+.warning-title {
+  font-weight: bold;
+  margin-bottom: 4px;
+  color: #b8860b;
+}
+
+.warning-message {
+  font-size: 1rem;
+}
