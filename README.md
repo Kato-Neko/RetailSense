@@ -51,6 +51,18 @@
    npm run dev
    ```
 
+If you want to add more shadcn components to use, visit the website https://ui.shadcn.com/docs/components/accordion. Adding components are as easy as follows
+
+```bash
+1.) Navigate to your frontend folder
+      cd frontend
+2.) Paste the CLI command from the component you want to add.
+    For example, you want to add button.
+      npx shadcn@latest add button
+
+The button.jsx will be automatically added into the src/components/ui
+```
+
 ## Supabase Setup
 
 1. Send a private message to either of the collaborators of this project:

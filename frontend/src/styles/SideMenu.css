@@ -1,0 +1,84 @@
+/* src/styles/SideMenu.css */
+
+/* Sidebar container */
+.sidebar-menu {
+  width: 70px; /* Default width for icons only */
+  transition: width 0.3s; /* Smooth transition for width change */
+  display: flex;
+  flex-direction: column; /* Stack items vertically */
+  height: 100vh; /* Full height */
+  align-items: center; /* Center items horizontally in default state */
+}
+
+/* Expanded state on hover */
+.sidebar-menu:hover {
+  width: 200px; /* Expanded width for full menu */
+  align-items: flex-start; /* Align items to the left when expanded */
+}
+
+/* Sidebar menu item */
+.sidebar-menu-item {
+  width: 100%; /* Make the item take full width */
+  display: flex; /* Use flexbox for alignment */
+  justify-content: flex-start; /* Align items to the left */
+}
+
+/* Sidebar menu button */
+.sidebar-menu-button {
+  display: flex;          /* get icon+text aligned nicely */
+  align-items: center;    /* vertically center icon/text */
+  justify-content: flex-start; /* Align the icon and text to the left */
+  height: 40px;           /* Fixed height for uniformity */
+  width: 100%;            /* Full width of the sidebar */
+  padding: 0 10px;       /* Horizontal padding for spacing */
+  line-height: 1.2;       /* tighter line spacing */
+  font-size: 13px;        /* optional: slightly smaller text */
+  white-space: nowrap;    /* prevent wrapping */
+}
+
+/* Show text when sidebar is hovered */
+.sidebar-menu:hover .menu-text {
+  display: inline; /* Show text when sidebar is hovered */
+}
+
+/* Add left indent for menu items when sidebar is expanded */
+.sidebar-menu:hover .sidebar-menu-item {
+  margin-left: 20px; /* Adjust the value for desired indent */
+}
+
+/* Hide text by default */
+.menu-text {
+  display: none; /* Hide text by default */
+}
+
+/* Logo container */
+.logo-container {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  margin-bottom: 1rem;
+}
+
+/* Circular logo styling */
+.logo-placeholder {
+  width: 50px; /* Adjust size as needed */
+  height: 50px; /* Adjust size as needed */
+  border-radius: 50%; /* Make it circular */
+  background-color: #e2e6ea; /* Placeholder background color */
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  font-size: 1rem;
+  font-weight: bold;
+  color: #333; /* Text color */
+}
+
+/* User info styling */
+.user-info {
+  display: flex;
+  align-items: center;
+  justify-content: center; /* Center the user info */
+  margin-top: auto; /* Push to the bottom */
+  margin-bottom: 1rem; /* Space from the bottom */
+  font-size: 0.9rem;
+}

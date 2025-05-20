@@ -159,6 +159,12 @@ def update_job_progress(job_id, stage, progress):
     conn.commit()
     conn.close()
 
+def get_video_duration(video_path):
+    cap = cv2.VideoCapture(video_path)
+    duration = int(cap.get(cv2.CAP_PROP_FRAME_COUNT) / cap.get(cv2.CAP_PROP_FPS))
+    cap.release()
+    return duration  # Duration in seconds
+
 @app.route('/api/heatmap_jobs', methods=['POST'])
 @jwt_required()
 def create_heatmap_job():
@@ -222,7 +228,28 @@ def create_heatmap_job():
         output_heatmap_image_path = os.path.join(job_results_folder, f"video_{job_id}_heatmap.jpg")
         output_processed_video_path = os.path.join(job_results_folder, f"video_{job_id}.mp4")
 
-        # Create job entry
+        # Get date and time from the request
+        start_date = request.form.get('start_date')
+        end_date = request.form.get('end_date')
+        start_time = request.form.get('start_time')
+        end_time = request.form.get('end_time')
+
+        # Validate date and time inputs
+        if not (start_date and end_date and start_time and end_time):
+            return jsonify({"error": "Missing date or time inputs"}), 400
+
+        # Combine date and time into datetime objects
+        start_datetime = datetime.datetime.strptime(f"{start_date} {start_time}", "%Y-%m-%d %H:%M:%S")
+        end_datetime = datetime.datetime.strptime(f"{end_date} {end_time}", "%Y-%m-%d %H:%M:%S")
+
+        # Validate that the time range does not exceed the video duration
+        video_duration = get_video_duration(input_video_path)
+        if (end_datetime - start_datetime).total_seconds() > video_duration:
+            return jsonify({"error": "Time range exceeds video duration"}), 400
+        if (end_datetime - start_datetime).total_seconds() <= 0:
+            return jsonify({"error": "Time range must be greater than zero."}), 400
+
+        # Store the date and time in the job entry
         jobs[job_id] = {
             'status': 'pending',
             'message': 'Job submitted, awaiting processing.',
@@ -234,6 +261,10 @@ def create_heatmap_job():
             'output_files_expected': {
                 'image': output_heatmap_image_path,
                 'video': output_processed_video_path
+            },
+            'time_range': {
+                'start': start_datetime,
+                'end': end_datetime
             }
         }
 
@@ -246,9 +277,9 @@ def create_heatmap_job():
         try:
             logger.debug("Creating database entry")
             conn.execute('''
-                INSERT INTO jobs (job_id, user, input_video_name, input_floorplan_name, status, message)
-                VALUES (?, ?, ?, ?, ?, ?)''',
-                (job_id, current_user, video_filename, floorplan_filename, 'pending', 'Job submitted, awaiting processing.'))
+                INSERT INTO jobs (job_id, user, input_video_name, input_floorplan_name, status, message, start_datetime, end_datetime)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)''',
+                (job_id, current_user, video_filename, floorplan_filename, 'pending', 'Job submitted, awaiting processing.', start_datetime, end_datetime))
             conn.commit()
             logger.debug("Database entry created successfully")
         except Exception as db_error:
