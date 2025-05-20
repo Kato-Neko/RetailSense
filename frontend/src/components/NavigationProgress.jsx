@@ -1,6 +1,7 @@
 "use client"
 
 import { useLocation } from "react-router-dom"
+import { ChevronRight } from "lucide-react"
 
 const NavigationProgress = () => {
   const location = useLocation()
@@ -34,14 +35,14 @@ const NavigationProgress = () => {
       <h1 className="text-xl font-semibold">RetailSense</h1>
       {currentSection && (
         <>
-          <span className="text-muted-foreground mx-2">/</span>
-          <span className="text-muted-foreground">{currentSection}</span>
+          <ChevronRight className="mx-2 h-5 w-5 text-muted-foreground" />
+          <span className="font-semibold">{currentSection}</span>
         </>
       )}
       {currentTitle && (
         <>
-          <span className="text-muted-foreground mx-2">/</span>
-          <span className="text-muted-foreground">{currentTitle}</span>
+          <ChevronRight className="mx-2 h-5 w-5 text-muted-foreground" />
+          <span className="font-semibold">{currentTitle}</span>
         </>
       )}
     </div>

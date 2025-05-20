@@ -65,30 +65,34 @@ const SideMenu = ({ isAuthenticated, setIsAuthenticated }) => {
   return (
     <Sidebar>
       <SidebarHeader>
-        <div className="flex h-14 items-center px-2">
-          <div className="flex h-10 w-10 items-center justify-center rounded-full bg-sidebar-primary text-sidebar-primary-foreground">
-            <span className="text-xs font-bold">RS</span>
+        <div className="flex h-16 items-center px-3 my-2">
+          <div className="flex h-12 w-12 items-center justify-center rounded-full bg-sidebar-primary text-sidebar-primary-foreground">
+            <span className="text-base font-bold">RS</span>
           </div>
-          <span className="ml-2 text-sm font-semibold">RetailSense</span>
+          <span className="ml-3 text-lg font-semibold">RetailSense</span>
         </div>
       </SidebarHeader>
 
-      <SidebarContent>
-        <SidebarMenu>
+      <SidebarContent className="px-2">
+        <SidebarMenu className="space-y-3">
           {/* Analytics Section */}
           <Collapsible defaultOpen={isActiveGroup(["/dashboard"])} className="group/collapsible">
             <SidebarMenuItem>
               <CollapsibleTrigger asChild>
-                <SidebarMenuButton>
-                  <BarChart2 className="h-4 w-4" />
-                  <span>Analytics</span>
-                  <ChevronDown className="ml-auto h-4 w-4 transition-transform group-data-[state=open]/collapsible:rotate-180" />
+                <SidebarMenuButton className="px-3 py-3 text-base">
+                  <BarChart2 className="h-5 w-5" />
+                  <span className="ml-1">Analytics</span>
+                  <ChevronDown className="ml-auto h-5 w-5 transition-transform group-data-[state=open]/collapsible:rotate-180" />
                 </SidebarMenuButton>
               </CollapsibleTrigger>
               <CollapsibleContent>
-                <SidebarMenuSub>
+                <SidebarMenuSub className="ml-10 pl-4 space-y-2 mt-1">
                   <SidebarMenuSubItem>
-                    <SidebarMenuSubButton onClick={() => navigate("/dashboard")} isActive={isActive("/dashboard")}>
+                    <SidebarMenuSubButton
+                      onClick={() => navigate("/dashboard")}
+                      isActive={isActive("/dashboard")}
+                      className="py-2.5 text-sm"
+                    >
                       <span>Dashboard</span>
                     </SidebarMenuSubButton>
                   </SidebarMenuSubItem>
@@ -104,18 +108,19 @@ const SideMenu = ({ isAuthenticated, setIsAuthenticated }) => {
           >
             <SidebarMenuItem>
               <CollapsibleTrigger asChild>
-                <SidebarMenuButton>
-                  <Map className="h-4 w-4" />
-                  <span>Heatmap</span>
-                  <ChevronDown className="ml-auto h-4 w-4 transition-transform group-data-[state=open]/collapsible:rotate-180" />
+                <SidebarMenuButton className="px-3 py-3 text-base">
+                  <Map className="h-5 w-5" />
+                  <span className="ml-1">Heatmap</span>
+                  <ChevronDown className="ml-auto h-5 w-5 transition-transform group-data-[state=open]/collapsible:rotate-180" />
                 </SidebarMenuButton>
               </CollapsibleTrigger>
               <CollapsibleContent>
-                <SidebarMenuSub>
+                <SidebarMenuSub className="ml-10 pl-4 space-y-2 mt-1">
                   <SidebarMenuSubItem>
                     <SidebarMenuSubButton
                       onClick={() => navigate("/heatmap-generation")}
                       isActive={isActive("/heatmap-generation")}
+                      className="py-2.5 text-sm"
                     >
                       <span>View Heatmaps</span>
                     </SidebarMenuSubButton>
@@ -124,6 +129,7 @@ const SideMenu = ({ isAuthenticated, setIsAuthenticated }) => {
                     <SidebarMenuSubButton
                       onClick={() => navigate("/video-processing")}
                       isActive={isActive("/video-processing")}
+                      className="py-2.5 text-sm"
                     >
                       <span>Create Heatmaps</span>
                     </SidebarMenuSubButton>
@@ -137,24 +143,25 @@ const SideMenu = ({ isAuthenticated, setIsAuthenticated }) => {
           <Collapsible defaultOpen={isActiveGroup(["/user-management"])} className="group/collapsible">
             <SidebarMenuItem>
               <CollapsibleTrigger asChild>
-                <SidebarMenuButton>
-                  <User className="h-4 w-4" />
-                  <span>User</span>
-                  <ChevronDown className="ml-auto h-4 w-4 transition-transform group-data-[state=open]/collapsible:rotate-180" />
+                <SidebarMenuButton className="px-3 py-3 text-base">
+                  <User className="h-5 w-5" />
+                  <span className="ml-1">User</span>
+                  <ChevronDown className="ml-auto h-5 w-5 transition-transform group-data-[state=open]/collapsible:rotate-180" />
                 </SidebarMenuButton>
               </CollapsibleTrigger>
               <CollapsibleContent>
-                <SidebarMenuSub>
+                <SidebarMenuSub className="ml-10 pl-4 space-y-2 mt-1">
                   <SidebarMenuSubItem>
                     <SidebarMenuSubButton
                       onClick={() => navigate("/user-management")}
                       isActive={isActive("/user-management")}
+                      className="py-2.5 text-sm"
                     >
                       <span>Account Management</span>
                     </SidebarMenuSubButton>
                   </SidebarMenuSubItem>
                   <SidebarMenuSubItem>
-                    <SidebarMenuSubButton onClick={handleLogout}>
+                    <SidebarMenuSubButton onClick={handleLogout} className="py-2.5 text-sm">
                       <span>Logout</span>
                     </SidebarMenuSubButton>
                   </SidebarMenuSubItem>
@@ -167,13 +174,13 @@ const SideMenu = ({ isAuthenticated, setIsAuthenticated }) => {
 
       <SidebarFooter>
         {isAuthenticated && (
-          <div className="flex items-center p-2 border-t border-sidebar-border">
-            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-sidebar-primary text-sidebar-primary-foreground">
-              <User className="h-4 w-4" />
+          <div className="flex items-center p-4 mt-4 border-t border-sidebar-border">
+            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-sidebar-primary text-sidebar-primary-foreground">
+              <User className="h-5 w-5" />
             </div>
-            <div className="ml-2 flex flex-col">
-              <span className="text-sm font-semibold">{isLoading ? "Loading..." : userInfo?.username || "User"}</span>
-              <span className="text-xs text-sidebar-foreground/70">{isLoading ? "" : userInfo?.email || ""}</span>
+            <div className="ml-3 flex flex-col">
+              <span className="text-base font-semibold">{isLoading ? "Loading..." : userInfo?.username || "User"}</span>
+              <span className="text-sm text-sidebar-foreground/70">{isLoading ? "" : userInfo?.email || ""}</span>
             </div>
           </div>
         )}
