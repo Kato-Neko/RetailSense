@@ -16,7 +16,7 @@ apiClient.interceptors.response.use(
     if (error.response && error.response.status === 401) {
         localStorage.removeItem('access_token'); // Clear the token
         // Optionally redirect to login
-        window.location.href = '/login'; // Adjust based on your routing
+        window.location.href = '/'; // Adjust based on your routing
     }
     return Promise.reject(error.response.data);
   }

@@ -1,134 +1,114 @@
+/* Login.css */
+
+/* General styles for the login container */
 .login-container {
-  min-height: 100vh;
   display: flex;
-  align-items: center;
   justify-content: center;
-  padding: 24px;
-  background-color: var(--background);
+  align-items: center;
+  height: 100vh; /* Full viewport height */
+  background-color: var(--background); /* Use the background color variable */
 }
 
+/* Styles for the login card */
 .login-card {
-  max-width: 400px;
-  width: 100%;
-  background-color: var(--card-bg);
-  padding: 40px;
-  border-radius: 8px;
-  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.25);
+  background-color: var(--card); /* Use the card color variable */
+  border-radius: 8px; /* Rounded corners */
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1); /* Subtle shadow */
+  padding: 2rem; /* Padding inside the card */
+  width: 400px; /* Fixed width for the card */
 }
 
+/* Header styles */
 .login-header {
-  text-align: center;
-  margin-bottom: 32px;
+  text-align: center; /* Centered text */
+  margin-bottom: 1.5rem; /* Space below the header */
 }
 
 .login-title {
-  font-size: 2rem;
-  font-weight: 700;
-  color: var(--text-color);
-  margin-bottom: 8px;
+  font-size: 1.5rem; /* Title font size */
+  font-weight: bold; /* Bold title */
+  color: var(--foreground); /* Use the foreground color variable */
 }
 
 .login-subtitle {
-  color: var(--text-light);
-  font-size: 0.875rem;
+  font-size: 1rem; /* Subtitle font size */
+  color: var(--muted-foreground); /* Use the muted foreground color variable */
 }
 
-.login-form {
-  display: flex;
-  flex-direction: column;
-  gap: 20px;
-}
-
-.form-group {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
+/* Form styles */
+.form-item {
+  margin-bottom: 1rem; /* Space between form items */
 }
 
 .form-label {
-  font-size: 0.875rem;
-  font-weight: 500;
-  color: var(--text-color);
+  display: block; /* Block display for labels */
+  margin-bottom: 0.5rem; /* Space below labels */
+  font-weight: 500; /* Medium font weight */
+  color: var(--foreground); /* Use the foreground color variable */
 }
 
-.form-input {
-  padding: 12px;
-  border: 1px solid var(--border-color);
-  border-radius: 4px;
-  font-size: 1rem;
-  background: var(--dropbox-bg);
-  color: var(--text-color);
-  transition: border-color 0.3s, background 0.3s;
+.form-control {
+  position: relative; /* Position relative for absolute children */
 }
 
-.form-input:focus {
-  outline: none;
-  border-color: var(--primary-color);
-  box-shadow: 0 0 0 2px rgba(63, 81, 181, 0.12);
-  background: var(--card-bg);
+.input {
+  width: 100%; /* Full width for inputs */
+  padding: 0.75rem; /* Padding inside inputs */
+  border: 1px solid var(--border); /* Use the border color variable */
+  border-radius: 4px; /* Rounded corners */
+  font-size: 1rem; /* Font size */
+  transition: border-color 0.3s; /* Smooth border color transition */
+  background-color: var(--input); /* Use the input background color variable */
+  color: var(--foreground); /* Ensure text color is visible */
 }
 
-.password-input-container {
-  position: relative;
+.input:focus {
+  border-color: var(--primary); /* Use the primary color for focus */
+  outline: none; /* Remove default outline */
 }
 
-.password-toggle-btn {
-  position: absolute;
-  right: 12px;
-  top: 50%;
-  transform: translateY(-50%);
-  background: none;
-  border: none;
-  cursor: pointer;
-  color: var(--text-light);
+/* Autofill styles */
+.input:-webkit-autofill {
+  -webkit-box-shadow: 0 0 0 30px var(--input) inset !important; /* Match input background */
+  box-shadow: 0 0 0 30px var(--input) inset !important; /* Match input background */
+  -webkit-text-fill-color: var(--foreground) !important; /* Match input text color */
 }
 
-.password-icon {
-  width: 20px;
-  height: 20px;
+.input:-webkit-autofill:focus {
+  -webkit-box-shadow: 0 0 0 30px var(--input) inset !important; /* Match input background */
+  box-shadow: 0 0 0 30px var(--input) inset !important; /* Match input background */
 }
 
-.login-btn {
-  margin-top: 8px;
-  padding: 12px;
-  background-color: var(--primary-color);
-  color: white;
-  border: none;
-  border-radius: 4px;
-  font-size: 1rem;
-  font-weight: 500;
-  cursor: pointer;
-  transition: background-color 0.3s;
+/* Button styles */
+.button {
+  width: 100%; /* Full width for buttons */
+  padding: 0.75rem; /* Padding inside buttons */
+  background-color: var(--primary); /* Use the primary color variable */
+  color: var(--primary-foreground); /* Use the primary foreground color */
+  border: none; /* No border */
+  border-radius: 4px; /* Rounded corners */
+  font-size: 1rem; /* Font size */
+  cursor: pointer; /* Pointer cursor on hover */
+  transition: background-color 0.3s; /* Smooth background color transition */
 }
 
-.login-btn:hover {
-  background-color: var(--primary-dark);
+.button:hover {
+  background-color: var(--primary-foreground); /* Use a contrasting color on hover */
+  color: var(--primary); /* Change text color to primary on hover */
 }
 
-.login-demo-credentials {
-  margin-top: 16px;
-  text-align: center;
-  font-size: 0.875rem;
-  color: var(--text-light);
-}
-
+/* Footer styles */
 .login-footer {
-  margin-top: 16px;
-  text-align: center;
-  font-size: 0.875rem;
-  color: var(--text-light);
+  text-align: center; /* Centered text */
+  margin-top: 1rem; /* Space above footer */
+  color: var(--foreground); /* Ensure the text color is visible */
 }
 
 .text-link {
-  background: none;
-  border: none;
-  color: var(--primary-color);
-  cursor: pointer;
-  font-size: 0.875rem;
-  padding: 0;
-  text-decoration: underline;
+  color: var(--primary); /* Use the primary color for links */
+  text-decoration: none; /* Remove underline */
 }
 
 .text-link:hover {
-  color: var(--primary-dark);
+  text-decoration: underline; /* Underline on hover */
 }
