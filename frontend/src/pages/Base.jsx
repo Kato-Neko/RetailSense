@@ -1,44 +1,38 @@
-import React, { useState } from "react";
-import { Outlet } from "react-router-dom"; // This will render the matched child route
-import SideMenu from "../components/SideMenu"; // Adjust the import path as needed
-import { SidebarProvider } from "../components/ui/sidebar"; // Import SidebarProvider
-import "../styles/Base.css"; // Import the CSS for Base
-import "../styles/SideMenu.css"; // Import the CSS for SideMenu
+"use client"
+
+import { useState } from "react"
+import { Outlet } from "react-router-dom"
+import SideMenu from "../components/SideMenu"
+import NavigationProgress from "../components/NavigationProgress"
+import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar"
 
 const Base = () => {
-  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
-
-  const toggleSidebar = () => {
-    setIsSidebarOpen((prev) => !prev);
-  };
+  // Control the sidebar open/closed state
+  const [open, setOpen] = useState(false)
 
   return (
-    <div className="flex h-screen">
-      {" "}
-      {/* Main flex container */}
-      <div className={`sidebar-container ${isSidebarOpen ? 'open' : 'closed'}`}>
-        {" "}
-        {/* Container for SideMenu */}
-        <SidebarProvider>
-          <SideMenu 
-            isAuthenticated={true} // Pass actual authentication state
-            setIsAuthenticated={() => {}} // Pass actual set function
-            isSidebarOpen={isSidebarOpen} 
-            toggleSidebar={toggleSidebar} 
-          />
-        </SidebarProvider>
-      </div>
-      <div className="content-container">
-        {" "}
-        {/* Container for Outlet */}
-        <div className="content">
-          {" "}
-          {/* Main content area */}
-          <Outlet /> {/* This will render the routed components */}
-        </div>
-      </div>
-    </div>
-  );
-};
+    <SidebarProvider open={open} onOpenChange={setOpen}>
+      <div className="flex h-screen w-full overflow-hidden bg-background">
+        <SideMenu
+          isAuthenticated={true} // Pass actual authentication state
+          setIsAuthenticated={() => {}} // Pass actual set function
+        />
 
-export default Base;
+        {/* Main content area that expands to fill available space */}
+        <main className="flex flex-col flex-1 h-screen w-full min-h-screen">
+          <header className="flex h-16 shrink-0 items-center gap-2 border-b px-4">
+            <SidebarTrigger className="mr-2" />
+            <NavigationProgress />
+          </header>
+
+          {/* Content area that fills remaining space */}
+          <div className="flex-1 w-full h-full overflow-auto p-4 bg-background">
+            <Outlet />
+          </div>
+        </main>
+      </div>
+    </SidebarProvider>
+  )
+}
+
+export default Base
