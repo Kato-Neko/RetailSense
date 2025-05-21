@@ -1,12 +1,17 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { Calendar, Clock, Download, Filter, Map, Loader } from "lucide-react";
+import { Map, Loader, Trash2, Users, BarChart2, Lightbulb, Timer, Filter, Download } from "lucide-react";
 import toast from "react-hot-toast";
 import { useLocation } from "react-router-dom";
 import { heatmapService } from "../../services/api";
-import "../../styles/HeatmapGeneration.css";
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, LineChart, Line, Legend } from 'recharts';
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+//import { Select } from "@/components/ui/select";
+import { Progress } from "@/components/ui/progress";
 
 const HeatmapGeneration = () => {
   const location = useLocation();
@@ -281,49 +286,71 @@ const HeatmapGeneration = () => {
     return () => clearInterval(interval);
   }, [customJobId]);
 
+  const handleDeleteJob = async (jobId) => {
+    if (!window.confirm("Are you sure you want to delete this heatmap?")) return;
+    try {
+      await heatmapService.deleteJob(jobId);
+      setJobHistory((prev) => prev.filter((job) => job.job_id !== jobId));
+      if (selectedJob && selectedJob.job_id === jobId) {
+        setSelectedJob(null);
+        setHeatmapGenerated(false);
+        setCustomHeatmapUrl(null);
+      }
+      toast.success("Heatmap deleted!");
+    } catch (err) {
+      toast.error("Failed to delete heatmap.");
+    }
+  };
+
+  // Prepare data for the Peak Hours line chart
+  const peakHoursData = analysis?.peak_hours?.map(ph => ({
+    x: `${ph.start_minute}-${ph.end_minute}`,
+    y: ph.count,
+  })) || [];
+
   return (
-    <div className="heatmap-container">
-      <h1 className="page-title">Heatmap Generation</h1>
-
-      <div className="heatmap-grid">
-        <div className="settings-card">
-          <h2 className="section-title">Heatmap Settings</h2>
-
-          <div className="settings-form">
-            <div className="form-group">
-              <label className="form-label">Time Range (seconds)</label>
-              <div className="input-group">
-                <input
+    <div className="container mx-auto max-w-7xl px-4 py-8">
+      <h1 className="text-3xl font-bold text-white mb-8">Heatmap Generation</h1>
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        {/* Settings Card */}
+        <Card className="col-span-1 bg-slate-900/80 border-slate-800">
+          <CardHeader>
+            <CardTitle className="text-lg text-white">Heatmap Settings</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-6">
+            <div>
+              <Label className="text-slate-300 mb-1 block">Time Range (seconds)</Label>
+              <div className="flex gap-2 items-center">
+                <Input
                   type="number"
-                  className="form-input"
                   placeholder="Start (s)"
                   value={startTimestamp}
                   min={0}
                   max={videoDuration || undefined}
                   onChange={e => setStartTimestamp(e.target.value)}
+                  className="w-28"
                 />
-                <span className="input-separator">to</span>
-                <input
+                <span className="text-slate-400">to</span>
+                <Input
                   type="number"
-                  className="form-input"
                   placeholder="End (s)"
                   value={endTimestamp}
                   min={0}
                   max={videoDuration || undefined}
                   onChange={e => setEndTimestamp(e.target.value)}
+                  className="w-28"
                 />
                 {videoDuration && (
-                  <span className="input-hint">(Video duration: {Math.floor(videoDuration)}s)</span>
+                  <span className="text-xs text-slate-400 ml-2">(Video duration: {Math.floor(videoDuration)}s)</span>
                 )}
               </div>
             </div>
-
-            <div className="form-group">
-              <label className="form-label">Store Area</label>
-              <div className="input-group">
-                <Filter className="input-icon" />
+            <div>
+              <Label className="text-slate-300 mb-1 block">Store Area</Label>
+              <div className="flex gap-2 items-center">
+                <Filter className="text-slate-400" />
                 <select
-                  className="form-select"
+                  className="w-full bg-slate-800 text-white rounded-md border border-slate-700 px-3 py-2"
                   value={selectedArea}
                   onChange={(e) => setSelectedArea(e.target.value)}
                 >
@@ -335,203 +362,204 @@ const HeatmapGeneration = () => {
                 </select>
               </div>
             </div>
-
-            {warning && <div style={{ color: 'red', marginBottom: 8 }}>{warning}</div>}
-
-            <button
-              onClick={handleGenerateHeatmap}
-              disabled={isGenerating}
-              className="generate-button"
-            >
-              {isGenerating ? (
-                <>
-                  <Loader className="spinner" /> Generating...
-                </>
-              ) : (
-                <>
-                  <Map className="button-icon" /> Generate Heatmap
-                </>
-              )}
-            </button>
-
-            {isGenerating && statusMessage && (
-              <div className="status-message">{statusMessage}</div>
+            {warning && (
+              <div className="rounded-md bg-yellow-100/80 border border-yellow-300 text-yellow-900 px-4 py-2 flex flex-col">
+                <span className="font-semibold mb-1">⚠️ Warning</span>
+                <span>{warning}</span>
+              </div>
             )}
-
+            {isGenerating ? (
+              <div className="w-full">
+                <Progress value={Math.round(customProgress * 100)} className="h-4" />
+                <div className="text-center text-sm text-slate-300 mt-2">
+                  Generating... {Math.round(customProgress * 100)}%
+                </div>
+              </div>
+            ) : (
+              <Button
+                onClick={handleGenerateHeatmap}
+                className="w-full bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-700 hover:to-cyan-700 text-white font-semibold"
+              >
+                <Map className="mr-2 h-5 w-5" /> Generate Heatmap
+              </Button>
+            )}
+            {isGenerating && statusMessage && (
+              <div className="text-xs text-blue-300 mt-2">{statusMessage}</div>
+            )}
             {jobHistory.length > 0 && (
-              <div className="job-history">
-                <h3 className="history-title">Previous Heatmaps</h3>
-                <div className="history-list">
+              <Card className="mt-6 bg-slate-900/70 border-slate-800">
+                <CardHeader>
+                  <CardTitle className="text-base text-white">Previous Heatmaps</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-2 max-h-48 overflow-y-auto">
                   {jobHistory.map((job) => (
                     <div
                       key={job.job_id}
-                      className={`history-item ${
-                        selectedJob && selectedJob.job_id === job.job_id
-                          ? "selected"
-                          : ""
-                      }`}
+                      className={`flex items-center justify-between px-2 py-2 rounded-md cursor-pointer transition-colors ${selectedJob && selectedJob.job_id === job.job_id ? "bg-blue-900/40" : "hover:bg-slate-800/60"}`}
                       onClick={() => handleSelectJob(job)}
                     >
-                      <div className="history-item-name">
-                        {job.input_video_name || "Heatmap"}
+                      <div className="min-w-0">
+                        <div className="font-medium text-white truncate max-w-[160px]">{job.input_video_name || "Heatmap"}</div>
+                        <div className="text-xs text-slate-400">{new Date(job.created_at).toLocaleDateString()}</div>
                       </div>
-                      <div className="history-item-date">
-                        {new Date(job.created_at).toLocaleDateString()}
-                      </div>
+                      <Button
+                        variant="destructive"
+                        size="icon"
+                        onClick={e => { e.stopPropagation(); handleDeleteJob(job.job_id); }}
+                        className="ml-2"
+                        title="Delete heatmap"
+                      >
+                        <Trash2 className="h-5 w-5" />
+                      </Button>
                     </div>
                   ))}
-                </div>
-              </div>
+                </CardContent>
+              </Card>
             )}
-
             {heatmapGenerated && selectedJob && (
-              <div className="export-buttons">
-                <button
-                  onClick={() => handleExport("csv")}
-                  className="export-button"
-                >
-                  <Download className="export-icon" /> CSV
-                </button>
-                <button
-                  onClick={() => handleExport("pdf")}
-                  className="export-button"
-                >
-                  <Download className="export-icon" /> PDF
-                </button>
-                <button
-                  onClick={() => handleExport("png")}
-                  className="export-button"
-                >
-                  <Download className="export-icon" /> PNG
-                </button>
+              <div className="flex gap-2 mt-4">
+                <Button onClick={() => handleExport("csv")} variant="outline" className="flex-1">
+                  <Download className="mr-2 h-4 w-4" /> CSV
+                </Button>
+                <Button onClick={() => handleExport("pdf")} variant="outline" className="flex-1">
+                  <Download className="mr-2 h-4 w-4" /> PDF
+                </Button>
+                <Button onClick={() => handleExport("png")} variant="outline" className="flex-1">
+                  <Download className="mr-2 h-4 w-4" /> PNG
+                </Button>
               </div>
             )}
-          </div>
-        </div>
-
-        <div className="visualization-card">
-          <h2 className="section-title">Heatmap Visualization</h2>
-
-          {!heatmapGenerated || !selectedJob ? (
-            <div className="empty-heatmap">
-              <Map className="empty-icon" />
-              <p className="empty-text">
-                {jobHistory.length > 0
-                  ? "Select a previous heatmap or generate a new one"
-                  : "Configure settings and generate a heatmap to visualize foot traffic"}
-              </p>
-            </div>
-          ) : (
-            <div className="heatmap-visualization">
-              {isGenerating && (
-                <div className="loading-overlay">
-                  <p>Generating custom heatmap: {Math.round(customProgress * 100)}%</p>
-                  <progress value={customProgress} max={1} style={{ width: '80%' }} />
-                </div>
-              )}
-              {isLoading ? (
-                <div className="loading-heatmap">
-                  <Loader className="spinner" />
-                  <p>Loading heatmap...</p>
-                </div>
-              ) : (
-                <>
-                  <img
-                    ref={imageRef}
-                    src={customHeatmapUrl || heatmapService.getHeatmapImageUrl(selectedJob.job_id) || "/placeholder.svg"}
-                    alt="Foot traffic heatmap"
-                    className="heatmap-image"
-                    onLoad={() => setIsLoading(false)}
-                    onError={() => {
-                      setIsLoading(false);
-                      toast.error("Failed to load heatmap image");
-                    }}
-                  />
-                  <div className="heatmap-legend">
-                    <div className="legend-labels">
-                      <span className="legend-title">Traffic Density:</span>
-                      <div className="legend-gradient"></div>
-                    </div>
-                    <div className="legend-values">
-                      <span className="legend-value">Low</span>
-                      <span className="legend-value">Medium</span>
-                      <span className="legend-value">High</span>
-                    </div>
+          </CardContent>
+        </Card>
+        {/* Visualization Card */}
+        <Card className="col-span-2 bg-slate-900/80 border-slate-800 flex flex-col">
+          <CardHeader>
+            <CardTitle className="text-lg text-white">Heatmap Visualization</CardTitle>
+          </CardHeader>
+          <CardContent className="flex-1 flex flex-col justify-center items-center">
+            {!heatmapGenerated || !selectedJob ? (
+              <div className="flex flex-col items-center justify-center h-80 w-full">
+                <Map className="h-16 w-16 text-slate-700 mb-4" />
+                <p className="text-slate-400 text-lg text-center">
+                  {jobHistory.length > 0
+                    ? "Select a previous heatmap or generate a new one"
+                    : "Configure settings and generate a heatmap to visualize foot traffic"}
+                </p>
+              </div>
+            ) : (
+              <div className="w-full flex flex-col items-center">
+                <img
+                  ref={imageRef}
+                  src={customHeatmapUrl || heatmapService.getHeatmapImageUrl(selectedJob.job_id) || "/placeholder.svg"}
+                  alt="Foot traffic heatmap"
+                  className="rounded-lg border border-slate-800 w-full max-w-2xl mb-4"
+                  onLoad={() => setIsLoading(false)}
+                  onError={() => {
+                    setIsLoading(false);
+                    toast.error("Failed to load heatmap image");
+                  }}
+                />
+                <div className="w-full flex flex-col items-center mt-2">
+                  <span className="text-slate-300 font-medium mb-1">Traffic Density:</span>
+                  <div className="w-64 h-4 rounded bg-gradient-to-r from-blue-600 via-yellow-300 to-red-600 mb-1" />
+                  <div className="flex justify-between w-64 text-xs text-slate-400">
+                    <span>Low</span>
+                    <span>Medium</span>
+                    <span>High</span>
                   </div>
-                </>
-              )}
-            </div>
-          )}
-        </div>
+                </div>
+              </div>
+            )}
+          </CardContent>
+        </Card>
       </div>
-
+      {/* Analysis Section */}
       {heatmapGenerated && selectedJob && (
-        <div className="analysis-grid">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mt-10">
           {/* Total Visitors Card */}
-          <div className="analysis-card">
-            <h3 className="analysis-title">Total Visitors</h3>
-            {analysisLoading ? (
-              <p className="analysis-loading">Loading...</p>
-            ) : (
-              <p className="total-visitors">{analysis?.total_visitors ?? 0}</p>
-            )}
-          </div>
-
-          {/* Traffic Distribution Card */}
-          <div className="analysis-card">
-            <h3 className="analysis-title">Traffic Distribution</h3>
-            {analysis && (
-              <ResponsiveContainer width="100%" height={180}>
-                <BarChart
-                  data={[
-                    { name: 'High', value: analysis.areas?.high?.percentage ?? 0 },
-                    { name: 'Medium', value: analysis.areas?.medium?.percentage ?? 0 },
-                    { name: 'Low', value: analysis.areas?.low?.percentage ?? 0 }
-                  ]}
-                  margin={{ top: 20, right: 30, left: 0, bottom: 5 }}
-                >
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="name" />
-                  <YAxis unit="%" />
-                  <Tooltip />
-                  <Bar dataKey="value" fill="#1976d2" />
-                </BarChart>
-              </ResponsiveContainer>
-            )}
-          </div>
-
-          {/* Recommendations Card */}
-          <div className="analysis-card">
-            <h3 className="analysis-title">Recommendations</h3>
-            <ul className="analysis-list">
-              {analysis?.recommendations?.length > 0 ? (
-                analysis.recommendations.map((rec, idx) => (
-                  <li key={idx} className="recommendation">{rec}</li>
-                ))
+          <Card className="bg-slate-900/80 border-slate-800">
+            <CardHeader className="flex flex-row items-center gap-2">
+              <Users className="text-blue-400 h-6 w-6" />
+              <CardTitle className="text-base text-white">Total Visitors</CardTitle>
+            </CardHeader>
+            <CardContent>
+              {analysisLoading ? (
+                <p className="text-blue-300">Loading...</p>
               ) : (
-                <li className="muted">No recommendations available.</li>
+                <p className="text-3xl font-bold text-blue-400">{analysis?.total_visitors ?? 0}</p>
               )}
-            </ul>
-          </div>
-
-          {/* Peak Hours Card */}
-          <div className="analysis-card">
-            <h3 className="analysis-title">Peak Hours</h3>
-            {analysis?.peak_hours?.length > 0 ? (
-              <ul className="analysis-list">
-                {analysis.peak_hours.map((ph, idx) => (
-                  <li key={idx} className="peak-hour">
-                    {ph.start_minute} - {ph.end_minute} min ({ph.count} detections)
-                  </li>
-                ))}
+            </CardContent>
+          </Card>
+          {/* Traffic Distribution Card */}
+          <Card className="bg-slate-900/80 border-slate-800">
+            <CardHeader className="flex flex-row items-center gap-2">
+              <BarChart2 className="text-cyan-400 h-6 w-6" />
+              <CardTitle className="text-base text-white">Traffic Distribution</CardTitle>
+            </CardHeader>
+            <CardContent>
+              {analysis && (
+                <ResponsiveContainer width="100%" height={120}>
+                  <BarChart
+                    data={[
+                      { name: 'High', value: analysis.areas?.high?.percentage ?? 0 },
+                      { name: 'Medium', value: analysis.areas?.medium?.percentage ?? 0 },
+                      { name: 'Low', value: analysis.areas?.low?.percentage ?? 0 }
+                    ]}
+                    margin={{ top: 20, right: 30, left: 0, bottom: 5 }}
+                  >
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis dataKey="name" />
+                    <YAxis unit="%" />
+                    <Tooltip />
+                    <Bar dataKey="value" fill="#1976d2" />
+                  </BarChart>
+                </ResponsiveContainer>
+              )}
+            </CardContent>
+          </Card>
+          {/* Recommendations Card */}
+          <Card className="bg-slate-900/80 border-slate-800">
+            <CardHeader className="flex flex-row items-center gap-2">
+              <Lightbulb className="text-yellow-400 h-6 w-6" />
+              <CardTitle className="text-base text-white">Recommendations</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <ul className="list-disc pl-5 text-slate-200">
+                {analysis?.recommendations?.length > 0 ? (
+                  analysis.recommendations.map((rec, idx) => (
+                    <li key={idx} className="mb-1 text-green-400">{rec}</li>
+                  ))
+                ) : (
+                  <li className="text-slate-400">No recommendations available.</li>
+                )}
               </ul>
-            ) : (
-              <p className="muted">No peak hours detected.</p>
-            )}
-          </div>
+            </CardContent>
+          </Card>
+          {/* Peak Hours Card */}
+          <Card className="bg-slate-900/80 border-slate-800">
+            <CardHeader className="flex flex-row items-center gap-2">
+              <Timer className="text-purple-400 h-6 w-6" />
+              <CardTitle className="text-base text-white">Peak Hours</CardTitle>
+            </CardHeader>
+            <CardContent>
+              {peakHoursData.length > 0 ? (
+                <ResponsiveContainer width="100%" height={120}>
+                  <LineChart data={peakHoursData} margin={{ top: 20, right: 30, left: 0, bottom: 5 }}>
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis dataKey="x" label={{ value: 'Minute Range', position: 'insideBottomRight', offset: 0 }} />
+                    <YAxis label={{ value: 'Detections', angle: -90, position: 'insideLeft' }} />
+                    <Tooltip />
+                    <Legend />
+                    <Line type="monotone" dataKey="y" stroke="#1976d2" dot={{ r: 4 }} />
+                  </LineChart>
+                </ResponsiveContainer>
+              ) : (
+                <p className="text-slate-400">No peak hours detected.</p>
+              )}
+            </CardContent>
+          </Card>
         </div>
       )}
-
       {/* Hidden video element for duration calculation */}
       {selectedJob && (
         <video

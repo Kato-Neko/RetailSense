@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
 import {
-  BarChart,
+  BarChart as ReBarChart,
   Bar,
   XAxis,
   YAxis,
@@ -14,7 +14,8 @@ import {
 import { Video, Map, Users, Clock } from "lucide-react";
 import { heatmapService } from "../services/api";
 import toast from "react-hot-toast";
-import "../styles/Dashboard.css";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 
 const Dashboard = () => {
   const [stats, setStats] = useState({
@@ -112,136 +113,100 @@ const Dashboard = () => {
   }, []);
 
   return (
-    <div className="dashboard-container">
-      <h1 className="dashboard-title">Dashboard</h1>
-
-      <div className="stats-grid">
-        <div className="stat-card">
-          <div className="stat-content">
-            <div className="stat-icon-container users-icon">
-              <Users className="stat-icon" />
-            </div>
-            <div className="stat-info">
-              <p className="stat-label">Total Visitors</p>
-              <p className="stat-value">
-                {isLoading ? "Loading..." : stats.totalVisitors}
-              </p>
-            </div>
-          </div>
-        </div>
-
-        <div className="stat-card">
-          <div className="stat-content">
-            <div className="stat-icon-container clock-icon">
-              <Clock className="stat-icon" />
-            </div>
-            <div className="stat-info">
-              <p className="stat-label">Peak Hour</p>
-              <p className="stat-value">
-                {isLoading ? "Loading..." : stats.peakHour}
-              </p>
-            </div>
-          </div>
-        </div>
-
-        <div className="stat-card">
-          <div className="stat-content">
-            <div className="stat-icon-container video-icon">
-              <Video className="stat-icon" />
-            </div>
-            <div className="stat-info">
-              <p className="stat-label">Processed Videos</p>
-              <p className="stat-value">
-                {isLoading ? "Loading..." : stats.processedVideos}
-              </p>
-            </div>
-          </div>
-        </div>
-
-        <div className="stat-card">
-          <div className="stat-content">
-            <div className="stat-icon-container map-icon">
-              <Map className="stat-icon" />
-            </div>
-            <div className="stat-info">
-              <p className="stat-label">Generated Heatmaps</p>
-              <p className="stat-value">
-                {isLoading ? "Loading..." : stats.generatedHeatmaps}
-              </p>
-            </div>
-          </div>
-        </div>
+    <div className="container mx-auto max-w-7xl px-4 py-8">
+      <h1 className="text-3xl font-bold text-white mb-8">Dashboard</h1>
+      {/* Stats Grid */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-6 mb-10">
+        <Card className="bg-slate-900/80 border-slate-800 flex flex-col items-center py-6">
+          <Users className="text-blue-400 h-8 w-8 mb-2" />
+          <span className="text-2xl font-bold text-white">{isLoading ? "..." : stats.totalVisitors}</span>
+          <span className="text-xs text-slate-400 mt-1">Total Visitors</span>
+        </Card>
+        <Card className="bg-slate-900/80 border-slate-800 flex flex-col items-center py-6">
+          <Clock className="text-yellow-400 h-8 w-8 mb-2" />
+          <span className="text-2xl font-bold text-white">{isLoading ? "..." : stats.peakHour}</span>
+          <span className="text-xs text-slate-400 mt-1">Peak Hour</span>
+        </Card>
+        <Card className="bg-slate-900/80 border-slate-800 flex flex-col items-center py-6">
+          <Video className="text-cyan-400 h-8 w-8 mb-2" />
+          <span className="text-2xl font-bold text-white">{isLoading ? "..." : stats.processedVideos}</span>
+          <span className="text-xs text-slate-400 mt-1">Processed Videos</span>
+        </Card>
+        <Card className="bg-slate-900/80 border-slate-800 flex flex-col items-center py-6">
+          <Map className="text-green-400 h-8 w-8 mb-2" />
+          <span className="text-2xl font-bold text-white">{isLoading ? "..." : stats.generatedHeatmaps}</span>
+          <span className="text-xs text-slate-400 mt-1">Generated Heatmaps</span>
+        </Card>
       </div>
-
-      <div className="dashboard-grid">
-        <div className="chart-card">
-          <h2 className="chart-title">Hourly Foot Traffic</h2>
-          <div className="chart-container">
+      {/* Main Grid */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+        {/* Chart Card */}
+        <Card className="col-span-2 bg-slate-900/80 border-slate-800">
+          <CardHeader>
+            <CardTitle className="text-lg text-white">Hourly Foot Traffic</CardTitle>
+          </CardHeader>
+          <CardContent className="h-72 flex items-center justify-center">
             {isLoading ? (
-              <div className="loading-indicator">Loading chart data...</div>
+              <div className="text-slate-400">Loading chart data...</div>
             ) : (
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={trafficData}>
+                <ReBarChart data={trafficData}>
                   <CartesianGrid strokeDasharray="3 3" />
                   <XAxis dataKey="hour" />
                   <YAxis />
                   <Tooltip />
                   <Bar dataKey="visitors" fill="#3f51b5" />
-                </BarChart>
+                </ReBarChart>
               </ResponsiveContainer>
             )}
-          </div>
-        </div>
-
-        <div className="actions-card">
-          <h2 className="actions-title">Quick Actions</h2>
-          <div className="actions-buttons">
-            <Link to="/video-processing" className="action-btn video-btn">
-              <Video className="action-icon" /> Process New Video
-            </Link>
-            <Link to="/heatmap-generation" className="action-btn heatmap-btn">
-              <Map className="action-icon" /> Generate Heatmap
-            </Link>
-          </div>
-
-          <div className="recent-activity">
-            <h3 className="activity-title">Recent Activity</h3>
-            {isLoading ? (
-              <div className="loading-indicator">
-                Loading recent activity...
-              </div>
-            ) : recentJobs.length > 0 ? (
-              <div className="activity-list">
-                {recentJobs.map((job) => (
-                  <div className="activity-item" key={job.id}>
-                    <div
-                      className={`activity-indicator ${
-                        job.status === "completed"
-                          ? "green"
-                          : job.status === "error"
-                          ? "red"
-                          : "blue"
-                      }`}
-                    ></div>
-                    <p className="activity-text">
-                      {job.status === "completed"
-                        ? `Completed "${job.name}"`
-                        : job.status === "error"
-                        ? `Error processing "${job.name}"`
-                        : `Processing "${job.name}"`}
-                    </p>
-                    <span className="activity-time">{job.time}</span>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <p className="no-activity">
-                No recent activity found. Start by processing a video or
-                generating a heatmap.
-              </p>
-            )}
-          </div>
-        </div>
+          </CardContent>
+        </Card>
+        {/* Actions & Recent Activity Card */}
+        <Card className="bg-slate-900/80 border-slate-800 flex flex-col">
+          <CardHeader>
+            <CardTitle className="text-lg text-white">Quick Actions</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="flex flex-col gap-4 mb-6">
+              <Button asChild className="w-full bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-700 hover:to-cyan-700 text-white font-semibold">
+                <Link to="/video-processing">
+                  <Video className="mr-2 h-5 w-5" /> Process New Video
+                </Link>
+              </Button>
+              <Button asChild className="w-full bg-gradient-to-r from-cyan-600 to-green-500 hover:from-cyan-700 hover:to-green-600 text-white font-semibold">
+                <Link to="/heatmap-generation">
+                  <Map className="mr-2 h-5 w-5" /> Generate Heatmap
+                </Link>
+              </Button>
+            </div>
+            <div>
+              <h3 className="text-base font-semibold text-white mb-3">Recent Activity</h3>
+              {isLoading ? (
+                <div className="text-slate-400">Loading recent activity...</div>
+              ) : recentJobs.length > 0 ? (
+                <div className="space-y-3">
+                  {recentJobs.map((job) => (
+                    <div key={job.id} className="flex items-center gap-3 bg-slate-800/60 rounded-lg px-3 py-2">
+                      <div className={`w-2 h-2 rounded-full mt-1 ${job.status === "completed" ? "bg-green-400" : job.status === "error" ? "bg-red-400" : "bg-blue-400"}`}></div>
+                      <div className="flex-1 min-w-0">
+                        <div className="text-slate-200 text-sm truncate max-w-[180px]">
+                          {job.status === "completed"
+                            ? `Completed "${job.name}"`
+                            : job.status === "error"
+                            ? `Error processing "${job.name}"`
+                            : `Processing "${job.name}"`}
+                        </div>
+                        <div className="text-xs text-slate-400">{job.time}</div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-slate-400">No recent activity found. Start by processing a video or generating a heatmap.</p>
+              )}
+            </div>
+          </CardContent>
+        </Card>
       </div>
     </div>
   );

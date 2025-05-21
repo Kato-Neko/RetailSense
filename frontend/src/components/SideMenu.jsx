@@ -71,8 +71,8 @@ const SideMenu = ({ isAuthenticated, setIsAuthenticated }) => {
     <Sidebar className="bg-gradient-to-b from-slate-900 via-slate-900 to-slate-950 border-r border-slate-800">
       <SidebarHeader className="border-b border-slate-800/50">
         <div className="flex h-16 items-center px-4 my-2">
-          <div className="flex items-center justify-center h-10 w-10 bg-white rounded-full p-1 shadow-lg shadow-blue-500/10">
-            <img src="/retailsense.svg" alt="RetailSense Logo" className="h-7 w-7 object-contain" />
+          <div className="flex items-center justify-center h-10 w-10 bg-transparent rounded-full p-1 shadow-lg shadow-blue-500/10">
+            <img src="/rs_logo.svg" alt="RetailSense Logo" className="h-7 w-7 object-contain" />
           </div>
           <div className="ml-3">
             <span className="text-lg font-bold bg-gradient-to-r from-blue-400 to-cyan-400 text-transparent bg-clip-text">

@@ -48,8 +48,8 @@ const LandingPage = ({ setIsAuthenticated }) => {
       <header className="border-b border-slate-800 bg-slate-950/95 backdrop-blur supports-[backdrop-filter]:bg-slate-950/60 sticky top-0 z-50">
         <div className="container mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 flex h-16 items-center justify-between">
           <div className="flex items-center gap-2">
-            <div className="flex items-center justify-center h-10 w-10 bg-white rounded-full p-1">
-              <img src="/retailsense.svg" alt="RetailSense Logo" className="h-7 w-7 object-contain" />
+            <div className="flex items-center justify-center h-10 w-10 bg-transparent rounded-full p-1">
+              <img src="/rs_logo.svg" alt="RetailSense Logo" className="h-7 w-7 object-contain" />
             </div>
             <span className="text-xl font-bold bg-gradient-to-r from-blue-400 to-cyan-400 text-transparent bg-clip-text">
               RetailSense
@@ -89,8 +89,8 @@ const LandingPage = ({ setIsAuthenticated }) => {
               </SheetTrigger>
               <SheetContent side="right" className="border-slate-800 bg-slate-900">
                 <div className="flex items-center gap-2 mb-8">
-                  <div className="flex items-center justify-center h-8 w-8 bg-white rounded-full p-1">
-                    <img src="/retailsense.svg" alt="RetailSense Logo" className="h-5 w-5 object-contain" />
+                  <div className="flex items-center justify-center h-8 w-8 bg-transparent rounded-full p-1">
+                    <img src="/rs_logo.svg" alt="RetailSense Logo" className="h-5 w-5 object-contain" />
                   </div>
                   <span className="text-lg font-bold bg-gradient-to-r from-blue-400 to-cyan-400 text-transparent bg-clip-text">
                     RetailSense
@@ -339,8 +339,8 @@ const LandingPage = ({ setIsAuthenticated }) => {
           <div className="grid grid-cols-1 md:grid-cols-4 gap-8">
             <div className="space-y-4">
               <div className="flex items-center gap-2">
-                <div className="flex items-center justify-center h-8 w-8 bg-white rounded-full p-1">
-                  <img src="/retailsense.svg" alt="RetailSense Logo" className="h-5 w-5 object-contain" />
+                <div className="flex items-center justify-center h-8 w-8 bg-transparent rounded-full p-1">
+                  <img src="/rs_logo.svg" alt="RetailSense Logo" className="h-5 w-5 object-contain" />
                 </div>
                 <span className="text-lg font-bold bg-gradient-to-r from-blue-400 to-cyan-400 text-transparent bg-clip-text">
                   RetailSense
