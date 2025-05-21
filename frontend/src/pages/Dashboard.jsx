@@ -171,40 +171,40 @@ const Dashboard = () => {
               <Button asChild className="w-full bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-700 hover:to-cyan-700 text-white font-semibold">
                 <Link to="/video-processing">
                   <Video className="mr-2 h-5 w-5" /> Process New Video
-                </Link>
+            </Link>
               </Button>
               <Button asChild className="w-full bg-gradient-to-r from-cyan-600 to-green-500 hover:from-cyan-700 hover:to-green-600 text-white font-semibold">
                 <Link to="/heatmap-generation">
                   <Map className="mr-2 h-5 w-5" /> Generate Heatmap
-                </Link>
+            </Link>
               </Button>
-            </div>
+          </div>
             <div>
               <h3 className="text-base font-semibold text-white mb-3">Recent Activity</h3>
-              {isLoading ? (
+            {isLoading ? (
                 <div className="text-slate-400">Loading recent activity...</div>
-              ) : recentJobs.length > 0 ? (
+            ) : recentJobs.length > 0 ? (
                 <div className="space-y-3">
-                  {recentJobs.map((job) => (
+                {recentJobs.map((job) => (
                     <div key={job.id} className="flex items-center gap-3 bg-slate-800/60 rounded-lg px-3 py-2">
                       <div className={`w-2 h-2 rounded-full mt-1 ${job.status === "completed" ? "bg-green-400" : job.status === "error" ? "bg-red-400" : "bg-blue-400"}`}></div>
                       <div className="flex-1 min-w-0">
                         <div className="text-slate-200 text-sm truncate max-w-[180px]">
-                          {job.status === "completed"
-                            ? `Completed "${job.name}"`
-                            : job.status === "error"
-                            ? `Error processing "${job.name}"`
-                            : `Processing "${job.name}"`}
+                      {job.status === "completed"
+                        ? `Completed "${job.name}"`
+                        : job.status === "error"
+                        ? `Error processing "${job.name}"`
+                        : `Processing "${job.name}"`}
                         </div>
                         <div className="text-xs text-slate-400">{job.time}</div>
                       </div>
-                    </div>
-                  ))}
-                </div>
-              ) : (
+                  </div>
+                ))}
+              </div>
+            ) : (
                 <p className="text-slate-400">No recent activity found. Start by processing a video or generating a heatmap.</p>
-              )}
-            </div>
+            )}
+          </div>
           </CardContent>
         </Card>
       </div>

@@ -436,8 +436,8 @@ def receive_live_detections(job_id):
 @app.route('/api/user/username', methods=['PUT'])
 @jwt_required()
 def update_username():
-    username = get_jwt_identity()
-    if not username:
+    user_id = get_jwt_identity()
+    if not user_id:
         return jsonify({"error": "Not logged in"}), 401
     
     data = request.get_json()
@@ -455,8 +455,8 @@ def update_username():
             return jsonify({"error": "Username already exists"}), 400
         
         # Update username
-        cursor.execute("UPDATE users SET username = ? WHERE username = ?", 
-                      (new_username, username))
+        cursor.execute("UPDATE users SET username = ? WHERE id = ?", 
+                      (new_username, user_id))
         conn.commit()
         
         return jsonify({

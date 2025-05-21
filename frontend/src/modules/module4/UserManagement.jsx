@@ -200,10 +200,10 @@ const UserManagement = () => {
             <div className="flex gap-4 mt-2">
               <div className="flex items-center gap-2 text-slate-400 text-sm">
                 <Mail className="h-4 w-4" /> {userInfo.email}
-              </div>
+          </div>
               <div className="flex items-center gap-2 text-slate-400 text-sm">
                 <Calendar className="h-4 w-4" /> Member since {new Date(userInfo.created_at).toLocaleDateString()}
-              </div>
+        </div>
             </div>
           </div>
         </CardHeader>
@@ -238,27 +238,27 @@ const UserManagement = () => {
                 <div key={index} className="flex items-center gap-4 bg-slate-800/60 rounded-lg px-4 py-3">
                   <div className="rounded-full bg-slate-900 p-2 flex-shrink-0">
                     {activity.type === 'video' ? <Video className="h-5 w-5 text-cyan-400" /> : <Map className="h-5 w-5 text-green-400" />}
-                  </div>
+            </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
                       <span className="font-medium text-white">{activity.type === 'video' ? 'Video Processing' : 'Heatmap Generation'}</span>
                       <span className="text-xs text-slate-400">{activity.date.toLocaleDateString()} {activity.date.toLocaleTimeString()}</span>
-                    </div>
+          </div>
                     <div className="text-slate-300 text-sm truncate max-w-[180px]">{activity.name}</div>
                     {activity.peopleCount && (
                       <div className="flex items-center gap-1 text-xs text-blue-300 mt-1">
                         <BarChart2 className="h-4 w-4" /> {activity.peopleCount} people detected
-                      </div>
+        </div>
                     )}
                     <span className={`inline-block mt-1 px-2 py-0.5 rounded text-xs ${activity.status === 'completed' ? 'bg-green-700/40 text-green-300' : activity.status === 'error' ? 'bg-red-700/40 text-red-300' : 'bg-yellow-700/40 text-yellow-300'}`}>{activity.status}</span>
                   </div>
                   <Button size="icon" variant="destructive" onClick={() => handleDeleteActivity(index)} title="Delete activity">
                     <Trash2 className="h-5 w-5" />
                   </Button>
-                </div>
-              ))}
-            </div>
+              </div>
+            ))}
           </div>
+        </div>
         </CardContent>
       </Card>
       {/* Password Card */}
@@ -319,7 +319,7 @@ const UserManagement = () => {
             <Button type="submit" className="w-full bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-700 hover:to-cyan-700 text-white font-semibold">
               <Key className="mr-2 h-5 w-5" /> Update Password
             </Button>
-          </form>
+        </form>
         </CardContent>
       </Card>
     </div>
