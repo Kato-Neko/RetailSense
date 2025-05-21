@@ -214,7 +214,7 @@ const UserManagement = () => {
               </div>
               <div className="flex items-center gap-2 text-muted-foreground text-sm">
                 <Calendar className="h-4 w-4" /> Member since {new Date(userInfo.created_at).toLocaleDateString()}
-              </div>
+        </div>
             </div>
           </div>
         </CardHeader>
@@ -249,7 +249,7 @@ const UserManagement = () => {
                 <div key={index} className="flex items-center gap-4 bg-muted/60 dark:bg-slate-800/60 rounded-lg px-4 py-3">
                   <div className="rounded-full bg-muted dark:bg-slate-900 p-2 flex-shrink-0">
                     {activity.type === 'video' ? <Video className="h-5 w-5 text-cyan-400" /> : <Map className="h-5 w-5 text-green-400" />}
-                  </div>
+            </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
                       <span className="font-medium text-foreground">{activity.type === 'video' ? 'Video Processing' : 'Heatmap Generation'}</span>
@@ -259,17 +259,17 @@ const UserManagement = () => {
                     {activity.peopleCount && (
                       <div className="flex items-center gap-1 text-xs text-blue-300 mt-1">
                         <BarChart2 className="h-4 w-4" /> {activity.peopleCount} people detected
-                      </div>
+        </div>
                     )}
                     <span className={`inline-block mt-1 px-2 py-0.5 rounded text-xs ${activity.status === 'completed' ? 'bg-green-700/40 text-green-300' : activity.status === 'error' ? 'bg-red-700/40 text-red-300' : 'bg-yellow-700/40 text-yellow-300'}`}>{activity.status}</span>
                   </div>
                   <Button size="icon" variant="destructive" onClick={() => handleDeleteActivity(index)} title="Delete activity">
                     <Trash2 className="h-5 w-5" />
                   </Button>
-                </div>
-              ))}
-            </div>
+              </div>
+            ))}
           </div>
+        </div>
         </CardContent>
       </Card>
       {/* Password Card */}
@@ -330,7 +330,7 @@ const UserManagement = () => {
             <Button type="submit" className="w-full bg-gradient-to-r from-white to-cyan-200 text-black font-semibold shadow-md border border-border py-2 text-sm hover:opacity-90 dark:from-blue-900 dark:to-cyan-800 dark:text-white">
               <Key className="mr-2 h-5 w-5" /> Update Password
             </Button>
-          </form>
+        </form>
         </CardContent>
       </Card>
     </div>

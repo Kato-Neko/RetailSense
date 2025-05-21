@@ -1,11 +1,11 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { Map, Loader, Trash2, Users, BarChart2, Lightbulb, Timer, Filter, Download } from "lucide-react";
+import { Map, Loader, Trash2, Users, BarChart2, Lightbulb, Timer, Filter, Download, Calendar } from "lucide-react";
 import toast from "react-hot-toast";
 import { useLocation } from "react-router-dom";
 import { heatmapService } from "../../services/api";
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, LineChart, Line, Legend } from 'recharts';
+import { BarChart as ReBarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, LineChart, Line, Legend } from 'recharts';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -40,6 +40,8 @@ const HeatmapGeneration = () => {
   const [customHeatmapUrl, setCustomHeatmapUrl] = useState(null);
   const [customProgress, setCustomProgress] = useState(0);
   const [customJobId, setCustomJobId] = useState(null);
+  const [videoDateRange, setVideoDateRange] = useState({ start: null, end: null });
+  const [isMultiDay, setIsMultiDay] = useState(false);
 
   // Initialize date range to today and yesterday
   useEffect(() => {
@@ -121,7 +123,7 @@ const HeatmapGeneration = () => {
     };
   }, [jobId, isGenerating]);
 
-  // When a job is selected, load the processed video to get its duration
+  // When a job is selected, load the processed video to get its duration and date range
   useEffect(() => {
     if (selectedJob && selectedJob.job_id) {
       const videoUrl = heatmapService.getProcessedVideoUrl(selectedJob.job_id);
@@ -131,6 +133,28 @@ const HeatmapGeneration = () => {
       video.onloadedmetadata = () => {
         setVideoDuration(video.duration);
       };
+
+      // Set video date range from job data
+      if (selectedJob.start_datetime && selectedJob.end_datetime) {
+        const startDate = new Date(selectedJob.start_datetime);
+        const endDate = new Date(selectedJob.end_datetime);
+        setVideoDateRange({ start: startDate, end: endDate });
+        
+        // Check if video spans multiple days
+        const isMultiDayVideo = startDate.toDateString() !== endDate.toDateString();
+        setIsMultiDay(isMultiDayVideo);
+
+        // Set default time range from video metadata with seconds
+        const startTime = startDate.toTimeString().slice(0, 8);
+        const endTime = endDate.toTimeString().slice(0, 8);
+        setTimeRange({ start: startTime, end: endTime });
+
+        // Set default date range
+        setDateRange({
+          start: startDate.toISOString().split('T')[0],
+          end: endDate.toISOString().split('T')[0]
+        });
+      }
     }
   }, [selectedJob]);
 
@@ -141,43 +165,98 @@ const HeatmapGeneration = () => {
 
   const handleGenerateHeatmap = async () => {
     if (!selectedJob) {
-      setWarning('Please select a job first.');
+      toast.error("Please select a job first.", {
+        position: "top-right",
+        style: {
+          background: '#1a1a1a',
+          color: '#fff',
+          border: '1px solid #333',
+          borderRadius: '8px',
+          padding: '16px'
+        }
+      });
       return;
     }
-    if (!startTimestamp || !endTimestamp) {
-      setWarning('Please enter both start and end time.');
+
+    const startDate = new Date(`${dateRange.start}T${timeRange.start}`);
+    const endDate = new Date(`${dateRange.end}T${timeRange.end}`);
+    const videoStart = new Date(selectedJob.start_datetime);
+    const videoEnd = new Date(selectedJob.end_datetime);
+
+    if (startDate < videoStart || endDate > videoEnd) {
+      toast.error("Selected date/time range is outside video recording period.", {
+        position: "top-right",
+        style: {
+          background: '#1a1a1a',
+          color: '#fff',
+          border: '1px solid #333',
+          borderRadius: '8px',
+          padding: '16px'
+        }
+      });
       return;
     }
-    if (videoDuration && Number(endTimestamp) > videoDuration) {
-      setWarning('End time cannot be greater than video duration.');
-      return;
-    }
+
     setWarning('');
     setCustomJobId(selectedJob.job_id);
     setCustomProgress(0);
     setIsGenerating(true);
-    setStatusMessage('Sending request…');
+    setStatusMessage('Generating heatmap...');
+
+    // Convert datetime to seconds from video start
+    const startTimeInSeconds = (startDate - videoStart) / 1000;
+    const endTimeInSeconds = (endDate - videoStart) / 1000;
+
     const payload = {
-      start_time: startTimestamp,
-      end_time: endTimestamp,
+      start_time: startTimeInSeconds,
+      end_time: endTimeInSeconds,
       area: selectedArea,
     };
+
     try {
       const response = await heatmapService.generateCustomHeatmap(selectedJob.job_id, payload);
       setStatusMessage('Custom heatmap generated!');
       setHeatmapGenerated(true);
-      setCustomHeatmapUrl(heatmapService.getCustomHeatmapImageUrl(selectedJob.job_id, startTimestamp, endTimestamp));
-      toast.success('Custom heatmap generated!');
+      setCustomHeatmapUrl(heatmapService.getCustomHeatmapImageUrl(selectedJob.job_id, startTimeInSeconds, endTimeInSeconds));
+      toast.success('Heatmap generated successfully!', {
+        position: "top-right",
+        style: {
+          background: '#1a1a1a',
+          color: '#fff',
+          border: '1px solid #333',
+          borderRadius: '8px',
+          padding: '16px'
+        }
+      });
     } catch (err) {
       console.error('Custom heatmap request failed:', err);
-      toast.error(`Failed to generate custom heatmap: ${err.message}`);
+      toast.error(`Failed to generate heatmap: ${err.message}`, {
+        position: "top-right",
+        style: {
+          background: '#1a1a1a',
+          color: '#fff',
+          border: '1px solid #333',
+          borderRadius: '8px',
+          padding: '16px'
+        }
+      });
       setIsGenerating(false);
+      setStatusMessage('');
     }
   };
 
   const handleExport = async (format) => {
     if (!heatmapGenerated || !selectedJob) {
-      toast.error("Please generate or select a heatmap first");
+      toast.error("Please generate or select a heatmap first", {
+        position: "top-right",
+        style: {
+          background: '#1a1a1a',
+          color: '#fff',
+          border: '1px solid #333',
+          borderRadius: '8px',
+          padding: '16px'
+        }
+      });
       return;
     }
 
@@ -186,63 +265,121 @@ const HeatmapGeneration = () => {
       let filename;
       let mimeType;
 
+      // Format date and time for filename
+      const formatDateTime = (date, time) => {
+        const dateStr = date.split('T')[0];
+        const timeStr = time.replace(/:/g, '-');
+        return `${dateStr}_${timeStr}`;
+      };
+
+      const startDateTime = formatDateTime(dateRange.start, timeRange.start);
+      const endDateTime = formatDateTime(dateRange.end, timeRange.end);
+      const timeRangeStr = `${startDateTime}_to_${endDateTime}`;
+
+      // Format date and time for display
+      const formatDisplayDateTime = (date, time) => {
+        return `${date} ${time}`;
+      };
+
+      const displayStartDateTime = formatDisplayDateTime(dateRange.start, timeRange.start);
+      const displayEndDateTime = formatDisplayDateTime(dateRange.end, timeRange.end);
+
+      // Calculate time in seconds for custom heatmap
+      const videoStart = new Date(selectedJob.start_datetime);
+      const startDate = new Date(`${dateRange.start}T${timeRange.start}`);
+      const endDate = new Date(`${dateRange.end}T${timeRange.end}`);
+      const startTimeInSeconds = (startDate - videoStart) / 1000;
+      const endTimeInSeconds = (endDate - videoStart) / 1000;
+
       switch (format) {
         case "png":
-          if (imageRef.current) {
-            // For PNG, we can use the image source directly
-            const link = document.createElement("a");
-            link.href = imageRef.current.src;
-            link.download = `heatmap_${selectedJob.job_id}.png`;
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
-            toast.success("Heatmap exported as PNG");
-          }
+          // Fetch the image as a blob
+          const imageUrl = customHeatmapUrl || heatmapService.getHeatmapImageUrl(selectedJob.job_id);
+          const response = await fetch(imageUrl);
+          blob = await response.blob();
+          mimeType = 'image/png';
+          filename = `heatmap_${selectedJob.job_id}_${timeRangeStr}.png`;
           break;
 
         case "csv":
           mimeType = 'text/csv';
-          filename = `heatmap_${selectedJob.job_id}.csv`;
-          blob = await heatmapService.exportHeatmapCsv(selectedJob.job_id);
+          filename = `heatmap_${selectedJob.job_id}_${timeRangeStr}.csv`;
+          blob = await heatmapService.exportHeatmapCsv(selectedJob.job_id, {
+            start_datetime: displayStartDateTime,
+            end_datetime: displayEndDateTime,
+            area: selectedArea,
+            start_time: startTimeInSeconds,
+            end_time: endTimeInSeconds
+          });
           break;
 
         case "pdf":
           mimeType = 'application/pdf';
-          filename = `heatmap_${selectedJob.job_id}.pdf`;
-          blob = await heatmapService.exportHeatmapPdf(selectedJob.job_id);
+          filename = `heatmap_${selectedJob.job_id}_${timeRangeStr}.pdf`;
+          blob = await heatmapService.exportHeatmapPdf(selectedJob.job_id, {
+            start_datetime: displayStartDateTime,
+            end_datetime: displayEndDateTime,
+            area: selectedArea,
+            start_time: startTimeInSeconds,
+            end_time: endTimeInSeconds
+          });
           break;
 
         default:
-          toast.error("Unsupported export format");
+          toast.error("Unsupported export format", {
+            position: "top-right",
+            style: {
+              background: '#1a1a1a',
+              color: '#fff',
+              border: '1px solid #333',
+              borderRadius: '8px',
+              padding: '16px'
+            }
+          });
           return;
       }
 
-      // For CSV and PDF, create and trigger download
-      if (format !== "png") {
-        // Create a blob with the correct MIME type
-        const fileBlob = new Blob([blob], { type: mimeType });
-        
-        // Create a temporary URL for the blob
-        const url = window.URL.createObjectURL(fileBlob);
-        
-        // Create a temporary link element
-        const link = document.createElement("a");
-        link.href = url;
-        link.download = filename;
-        
-        // Append to body, click, and cleanup
-        document.body.appendChild(link);
-        link.click();
-        
-        // Cleanup
-        document.body.removeChild(link);
-        window.URL.revokeObjectURL(url);
-        
-        toast.success(`Heatmap exported as ${format.toUpperCase()}`);
-      }
+      // Create a blob with the correct MIME type
+      const fileBlob = new Blob([blob], { type: mimeType });
+      
+      // Create a temporary URL for the blob
+      const url = window.URL.createObjectURL(fileBlob);
+      
+      // Create a temporary link element
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = filename;
+      
+      // Append to body, click, and cleanup
+      document.body.appendChild(link);
+      link.click();
+      
+      // Cleanup
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+      
+      toast.success(`Heatmap exported as ${format.toUpperCase()}`, {
+        position: "top-right",
+        style: {
+          background: '#1a1a1a',
+          color: '#fff',
+          border: '1px solid #333',
+          borderRadius: '8px',
+          padding: '16px'
+        }
+      });
     } catch (error) {
       console.error(`Error exporting heatmap as ${format}:`, error);
-      toast.error(`Failed to export heatmap as ${format.toUpperCase()}`);
+      toast.error(`Failed to export heatmap as ${format.toUpperCase()}`, {
+        position: "top-right",
+        style: {
+          background: '#1a1a1a',
+          color: '#fff',
+          border: '1px solid #333',
+          borderRadius: '8px',
+          padding: '16px'
+        }
+      });
     }
   };
 
@@ -250,7 +387,23 @@ const HeatmapGeneration = () => {
     setAnalysisLoading(true);
     setAnalysisError(null);
     try {
-      const data = await heatmapService.getHeatmapAnalysis(jobId);
+      let data;
+      if (customHeatmapUrl) {
+        // Calculate time in seconds for custom heatmap
+        const videoStart = new Date(selectedJob.start_datetime);
+        const startDate = new Date(`${dateRange.start}T${timeRange.start}`);
+        const endDate = new Date(`${dateRange.end}T${timeRange.end}`);
+        const startTimeInSeconds = (startDate - videoStart) / 1000;
+        const endTimeInSeconds = (endDate - videoStart) / 1000;
+
+        data = await heatmapService.getCustomHeatmapAnalysis(jobId, {
+          start_time: startTimeInSeconds,
+          end_time: endTimeInSeconds,
+          area: selectedArea
+        });
+      } else {
+        data = await heatmapService.getHeatmapAnalysis(jobId);
+      }
       setAnalysis(data);
     } catch (err) {
       setAnalysisError(err.error || "Failed to fetch analysis");
@@ -266,7 +419,7 @@ const HeatmapGeneration = () => {
     } else {
       setAnalysis(null);
     }
-  }, [selectedJob]);
+  }, [selectedJob, customHeatmapUrl, dateRange, timeRange, selectedArea]);
 
   useEffect(() => {
     if (!customJobId) return;
@@ -296,9 +449,27 @@ const HeatmapGeneration = () => {
         setHeatmapGenerated(false);
         setCustomHeatmapUrl(null);
       }
-      toast.success("Heatmap deleted!");
+      toast.success("Heatmap deleted!", {
+        position: "top-right",
+        style: {
+          background: '#1a1a1a',
+          color: '#fff',
+          border: '1px solid #333',
+          borderRadius: '8px',
+          padding: '16px'
+        }
+      });
     } catch (err) {
-      toast.error("Failed to delete heatmap.");
+      toast.error("Failed to delete heatmap.", {
+        position: "top-right",
+        style: {
+          background: '#1a1a1a',
+          color: '#fff',
+          border: '1px solid #333',
+          borderRadius: '8px',
+          padding: '16px'
+        }
+      });
     }
   };
 
@@ -325,30 +496,61 @@ const HeatmapGeneration = () => {
             </CardHeader>
             <CardContent className="space-y-6">
               <div>
-                <Label className="text-muted-foreground mb-1 block">Time Range (seconds)</Label>
+                <Label className="text-muted-foreground mb-1 block">Date Range</Label>
                 <div className="flex gap-2 items-center">
-                  <Input
-                    type="number"
-                    placeholder="Start (s)"
-                    value={startTimestamp}
-                    min={0}
-                    max={videoDuration || undefined}
-                    onChange={e => setStartTimestamp(e.target.value)}
-                    className="w-28"
-                  />
+                  <div className="relative w-full">
+                    <Input
+                      type="date"
+                      value={dateRange.start}
+                      min={videoDateRange.start?.toISOString().split('T')[0]}
+                      max={videoDateRange.end?.toISOString().split('T')[0]}
+                      onChange={e => setDateRange(prev => ({ ...prev, start: e.target.value }))}
+                      className="w-full pr-8 [&::-webkit-calendar-picker-indicator]:opacity-100 [&::-webkit-calendar-picker-indicator]:absolute [&::-webkit-calendar-picker-indicator]:right-2 [&::-webkit-calendar-picker-indicator]:top-1/2 [&::-webkit-calendar-picker-indicator]:-translate-y-1/2 bg-muted text-foreground border border-border"
+                      disabled={!isMultiDay}
+                    />
+                    <Calendar className="absolute right-2 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                  </div>
                   <span className="text-muted-foreground">to</span>
-                  <Input
-                    type="number"
-                    placeholder="End (s)"
-                    value={endTimestamp}
-                    min={0}
-                    max={videoDuration || undefined}
-                    onChange={e => setEndTimestamp(e.target.value)}
-                    className="w-28"
-                  />
-                  {videoDuration && (
-                    <span className="text-xs text-muted-foreground ml-2">(Video duration: {Math.floor(videoDuration)}s)</span>
-                  )}
+                  <div className="relative w-full">
+                    <Input
+                      type="date"
+                      value={dateRange.end}
+                      min={videoDateRange.start?.toISOString().split('T')[0]}
+                      max={videoDateRange.end?.toISOString().split('T')[0]}
+                      onChange={e => setDateRange(prev => ({ ...prev, end: e.target.value }))}
+                      className="w-full pr-8 [&::-webkit-calendar-picker-indicator]:opacity-100 [&::-webkit-calendar-picker-indicator]:absolute [&::-webkit-calendar-picker-indicator]:right-2 [&::-webkit-calendar-picker-indicator]:top-1/2 [&::-webkit-calendar-picker-indicator]:-translate-y-1/2 bg-muted text-foreground border border-border"
+                      disabled={!isMultiDay}
+                    />
+                    <Calendar className="absolute right-2 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                  </div>
+                </div>
+              </div>
+              <div>
+                <Label className="text-muted-foreground mb-1 block">Time Range</Label>
+                <div className="flex gap-2 items-center">
+                  <div className="relative w-full">
+                    <Input
+                      type="time"
+                      value={timeRange.start}
+                      min={videoDateRange.start?.toTimeString().slice(0, 8)}
+                      max={videoDateRange.end?.toTimeString().slice(0, 8)}
+                      onChange={e => setTimeRange(prev => ({ ...prev, start: e.target.value }))}
+                      className="w-full pr-12 [&::-webkit-calendar-picker-indicator]:opacity-100 [&::-webkit-calendar-picker-indicator]:absolute [&::-webkit-calendar-picker-indicator]:right-2 [&::-webkit-calendar-picker-indicator]:top-1/2 [&::-webkit-calendar-picker-indicator]:-translate-y-1/2 bg-muted text-foreground border border-border"
+                      step="1"
+                    />
+                  </div>
+                  <span className="text-muted-foreground">to</span>
+                  <div className="relative w-full">
+                    <Input
+                      type="time"
+                      value={timeRange.end}
+                      min={videoDateRange.start?.toTimeString().slice(0, 8)}
+                      max={videoDateRange.end?.toTimeString().slice(0, 8)}
+                      onChange={e => setTimeRange(prev => ({ ...prev, end: e.target.value }))}
+                      className="w-full pr-12 [&::-webkit-calendar-picker-indicator]:opacity-100 [&::-webkit-calendar-picker-indicator]:absolute [&::-webkit-calendar-picker-indicator]:right-2 [&::-webkit-calendar-picker-indicator]:top-1/2 [&::-webkit-calendar-picker-indicator]:-translate-y-1/2 bg-muted text-foreground border border-border"
+                      step="1"
+                    />
+                  </div>
                 </div>
               </div>
               <div>
@@ -374,6 +576,15 @@ const HeatmapGeneration = () => {
                   <span>{warning}</span>
                 </div>
               )}
+              {statusMessage && (
+                <div className="rounded-md bg-blue-100/80 border border-blue-300 text-blue-900 px-4 py-2 flex flex-col dark:bg-blue-900/30 dark:border-blue-600 dark:text-blue-100">
+                  <div className="flex justify-between items-center">
+                    <span className="font-semibold">Status</span>
+                    <button onClick={() => setStatusMessage('')} className="text-blue-900 dark:text-blue-100 hover:text-blue-700 dark:hover:text-blue-300">✕</button>
+                  </div>
+                  <span>{statusMessage}</span>
+                </div>
+              )}
               {isGenerating ? (
                 <div className="w-full">
                   <Progress value={Math.round(customProgress * 100)} className="h-4" />
@@ -385,12 +596,10 @@ const HeatmapGeneration = () => {
                 <Button
                   onClick={handleGenerateHeatmap}
                   className="w-full bg-gradient-to-r from-white to-cyan-200 text-black font-semibold shadow-md border border-border py-2 text-sm hover:opacity-90 dark:from-blue-900 dark:to-cyan-800 dark:text-white"
+                  disabled={isGenerating && !customHeatmapUrl}
                 >
                   <Map className="mr-2 h-5 w-5" /> Generate Heatmap
                 </Button>
-              )}
-              {isGenerating && statusMessage && (
-                <div className="text-xs text-blue-400 mt-2">{statusMessage}</div>
               )}
               {jobHistory.length > 0 && (
                 <Card className="mt-6 bg-gradient-to-br from-muted/80 to-background/90 dark:from-slate-900/70 dark:to-slate-950/80 border border-border shadow-md backdrop-blur rounded-xl">
@@ -505,7 +714,7 @@ const HeatmapGeneration = () => {
               <CardContent>
                 {analysis && (
                   <ResponsiveContainer width="100%" height={120}>
-                    <BarChart
+                    <ReBarChart
                       data={[
                         { name: 'High', value: analysis.areas?.high?.percentage ?? 0 },
                         { name: 'Medium', value: analysis.areas?.medium?.percentage ?? 0 },
@@ -518,7 +727,7 @@ const HeatmapGeneration = () => {
                       <YAxis unit="%" />
                       <Tooltip />
                       <Bar dataKey="value" fill="#1976d2" />
-                    </BarChart>
+                    </ReBarChart>
                   </ResponsiveContainer>
                 )}
               </CardContent>

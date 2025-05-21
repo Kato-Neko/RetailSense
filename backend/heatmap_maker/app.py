@@ -7,7 +7,7 @@ import os
 import uuid
 import threading
 import logging
-from flask import Flask, request, jsonify, session, send_from_directory, Response
+from flask import Flask, request, jsonify, session, send_from_directory, Response, send_file
 from flask_cors import CORS, cross_origin
 from werkzeug.utils import secure_filename
 import datetime
@@ -23,9 +23,10 @@ import io
 from reportlab.pdfgen import canvas
 from reportlab.lib.pagesizes import letter
 from reportlab.lib import colors
-from reportlab.platypus import Image, Paragraph, Spacer
-from reportlab.lib.styles import getSampleStyleSheet
+from reportlab.platypus import Image, Paragraph, Spacer, SimpleDocTemplate
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 import numpy as np
+from io import BytesIO
 
 # Import from backend files
 from job_manager import init_db, get_db_connection
@@ -489,8 +490,8 @@ def receive_live_detections(job_id):
 @app.route('/api/user/username', methods=['PUT'])
 @jwt_required()
 def update_username():
-    username = get_jwt_identity()
-    if not username:
+    user_id = get_jwt_identity()
+    if not user_id:
         return jsonify({"error": "Not logged in"}), 401
     
     data = request.get_json()
@@ -508,8 +509,8 @@ def update_username():
             return jsonify({"error": "Username already exists"}), 400
         
         # Update username
-        cursor.execute("UPDATE users SET username = ? WHERE username = ?", 
-                      (new_username, username))
+        cursor.execute("UPDATE users SET username = ? WHERE id = ?", 
+                      (new_username, user_id))
         conn.commit()
         
         return jsonify({
@@ -537,6 +538,13 @@ def export_heatmap_csv(job_id):
             logger.error(f"Job {job_id} status is {job_row['status']}, not completed")
             return jsonify({"error": "Job not completed"}), 404
 
+        # Get date and time range from query parameters
+        start_datetime = request.args.get('start_datetime', '')
+        end_datetime = request.args.get('end_datetime', '')
+        area = request.args.get('area', 'all')
+        start_time = request.args.get('start_time', type=float)
+        end_time = request.args.get('end_time', type=float)
+
         detections_path = os.path.join(RESULTS_FOLDER, job_id, 'detections.json')
         logger.debug(f"Looking for detections at: {detections_path}")
         
@@ -553,35 +561,47 @@ def export_heatmap_csv(job_id):
             logger.warning(f"No detections found in {detections_path}")
             return jsonify({"error": "No detections data available"}), 404
 
+        # Filter detections by time range if specified
+        if start_time is not None and end_time is not None:
+            detections = [
+                det for det in detections
+                if 'timestamp' in det and start_time <= det['timestamp'] <= end_time
+            ]
+
         # --- Load analysis data ---
-        heatmap_path = job_row['output_heatmap_path']
+        if start_time is not None and end_time is not None:
+            # Use custom heatmap for analysis
+            heatmap_path = os.path.join(
+                RESULTS_FOLDER, job_id, f"custom_heatmap_{float(start_time):.1f}_{float(end_time):.1f}.jpg"
+            )
+        else:
+            heatmap_path = job_row['output_heatmap_path']
+
         if not os.path.exists(heatmap_path):
             logger.error(f"Heatmap file not found at {heatmap_path}")
             return jsonify({"error": "Heatmap file not found"}), 404
-            
-        floorplan_filename = job_row['input_floorplan_name']
-        floorplan_path = os.path.join(UPLOAD_FOLDER, job_id, floorplan_filename)
-        if not os.path.exists(floorplan_path):
-            logger.error(f"Floorplan file not found at {floorplan_path}")
-            return jsonify({"error": "Floorplan file not found"}), 404
 
         heatmap = cv2.imread(heatmap_path, cv2.IMREAD_GRAYSCALE)
         if heatmap is None:
             logger.error(f"Could not load heatmap from {heatmap_path}")
             return jsonify({"error": "Could not load heatmap"}), 500
-            
-        floorplan = cv2.imread(floorplan_path)
-        if floorplan is None:
-            logger.error(f"Could not load floorplan from {floorplan_path}")
-            return jsonify({"error": "Could not load floorplan"}), 500
 
-        analysis = analyze_heatmap(heatmap, floorplan.shape[:2], detections=detections, fps=fps)
+        analysis = analyze_heatmap(heatmap, (1080, 1920), detections=detections, fps=fps)
 
         output = io.StringIO()
         writer = csv.writer(output)
 
-        # Write analysis summary at the top
-        writer.writerow(['Heatmap Analysis'])
+        # Write date and time range information
+        writer.writerow(['Heatmap Analysis Report'])
+        writer.writerow([])
+        writer.writerow(['Date and Time Range'])
+        writer.writerow(['Start:', start_datetime if start_datetime else 'Full video duration'])
+        writer.writerow(['End:', end_datetime if end_datetime else 'Full video duration'])
+        writer.writerow(['Area:', area])
+        writer.writerow([])
+
+        # Write analysis summary
+        writer.writerow(['Traffic Distribution'])
         writer.writerow(['High Traffic (%)', 'Medium Traffic (%)', 'Low Traffic (%)'])
         writer.writerow([
             analysis['areas']['high']['percentage'],
@@ -630,86 +650,137 @@ def export_heatmap_csv(job_id):
         return jsonify({"error": f"Error generating CSV export: {str(e)}"}), 500
 
 @app.route('/api/heatmap_jobs/<job_id>/export/pdf', methods=['GET'])
-@jwt_required()
 def export_heatmap_pdf(job_id):
-    conn = get_db_connection()
-    job_row = conn.execute("SELECT * FROM jobs WHERE job_id = ?", (job_id,)).fetchone()
-    conn.close()
-    if not job_row or job_row['status'] != 'completed':
-        return jsonify({"error": "Job not found or not completed"}), 404
+    try:
+        # Get query parameters
+        start_datetime = request.args.get('start_datetime', 'Full video duration')
+        end_datetime = request.args.get('end_datetime', 'Full video duration')
+        area = request.args.get('area', 'all')
+        start_time = request.args.get('start_time', type=float)
+        end_time = request.args.get('end_time', type=float)
 
-    heatmap_path = job_row['output_heatmap_path']
-    if not os.path.exists(heatmap_path):
-        return jsonify({"error": "Heatmap image not found"}), 404
+        # Get job data from database
+        conn = get_db_connection()
+        job_row = conn.execute("SELECT * FROM jobs WHERE job_id = ?", (job_id,)).fetchone()
+        conn.close()
+        
+        if not job_row:
+            return jsonify({'error': 'Job not found'}), 404
+            
+        if job_row['status'] != 'completed':
+            return jsonify({'error': 'Job not completed'}), 404
 
-    # --- Load analysis data ---
-    floorplan_filename = job_row['input_floorplan_name']
-    floorplan_path = os.path.join(UPLOAD_FOLDER, job_id, floorplan_filename)
-    heatmap = cv2.imread(heatmap_path, cv2.IMREAD_GRAYSCALE)
-    floorplan = cv2.imread(floorplan_path)
-    # Load detections and fps if you use them in analyze_heatmap
-    detections_path = os.path.join(RESULTS_FOLDER, job_id, 'detections.json')
-    if os.path.exists(detections_path):
+        # Load detections
+        detections_path = os.path.join(RESULTS_FOLDER, job_id, 'detections.json')
+        if not os.path.exists(detections_path):
+            return jsonify({'error': 'Detections file not found'}), 404
+
         with open(detections_path, 'r') as f:
             det_data = json.load(f)
-            fps = det_data.get("fps")
             detections = det_data.get("detections", [])
-    else:
-        fps = None
-        detections = None
-    analysis = analyze_heatmap(heatmap, floorplan.shape[:2], detections=detections, fps=fps)
+            fps = det_data.get("fps")
 
-    buffer = io.BytesIO()
-    c = canvas.Canvas(buffer, pagesize=letter)
-    c.setFont("Helvetica-Bold", 16)
-    c.drawString(50, 750, f"Heatmap Report for Job {job_id}")
+        # Filter detections by time range if specified
+        if start_time is not None and end_time is not None:
+            detections = [
+                det for det in detections
+                if 'timestamp' in det and start_time <= det['timestamp'] <= end_time
+            ]
 
-    # Draw heatmap image
-    c.drawImage(heatmap_path, 50, 400, width=400, height=300)
+        # Get analysis data
+        if start_time is not None and end_time is not None:
+            # Use custom heatmap for analysis
+            heatmap_path = os.path.join(
+                RESULTS_FOLDER, job_id, f"custom_heatmap_{float(start_time):.1f}_{float(end_time):.1f}.jpg"
+            )
+        else:
+            heatmap_path = job_row['output_heatmap_path']
 
-    y = 370
-    c.setFont("Helvetica-Bold", 12)
-    c.drawString(50, y, "Traffic Distribution:")
-    y -= 20
-    c.setFont("Helvetica", 11)
-    c.drawString(60, y, f"High Traffic: {analysis['areas']['high']['percentage']}%")
-    y -= 15
-    c.drawString(60, y, f"Medium Traffic: {analysis['areas']['medium']['percentage']}%")
-    y -= 15
-    c.drawString(60, y, f"Low Traffic: {analysis['areas']['low']['percentage']}%")
-    y -= 25
+        if not os.path.exists(heatmap_path):
+            return jsonify({'error': 'Heatmap file not found'}), 404
 
-    c.setFont("Helvetica-Bold", 12)
-    c.drawString(50, y, "Recommendations:")
-    y -= 20
-    c.setFont("Helvetica", 11)
-    for rec in analysis['recommendations']:
-        c.drawString(60, y, f"- {rec}")
-        y -= 15
-    if not analysis['recommendations']:
-        c.drawString(60, y, "No recommendations available.")
-        y -= 15
-    y -= 10
+        heatmap = cv2.imread(heatmap_path, cv2.IMREAD_GRAYSCALE)
+        if heatmap is None:
+            return jsonify({'error': 'Could not load heatmap'}), 500
 
-    c.setFont("Helvetica-Bold", 12)
-    c.drawString(50, y, "Peak Hours:")
-    y -= 20
-    c.setFont("Helvetica", 11)
-    if analysis['peak_hours']:
+        analysis = analyze_heatmap(heatmap, (1080, 1920), detections=detections, fps=fps)
+        if not analysis:
+            return jsonify({'error': 'Analysis not found'}), 404
+
+        # Create PDF
+        buffer = BytesIO()
+        doc = SimpleDocTemplate(buffer, pagesize=letter)
+        elements = []
+
+        # Add title
+        styles = getSampleStyleSheet()
+        title_style = ParagraphStyle(
+            'CustomTitle',
+            parent=styles['Heading1'],
+            fontSize=24,
+            spaceAfter=30
+        )
+        elements.append(Paragraph(f"Heatmap Analysis Report - {job_row['input_video_name']}", title_style))
+
+        # Add date and time range
+        date_style = ParagraphStyle(
+            'DateStyle',
+            parent=styles['Normal'],
+            fontSize=12,
+            spaceAfter=20
+        )
+        elements.append(Paragraph(f"Date and Time Range:", date_style))
+        elements.append(Paragraph(f"Start: {start_datetime}", date_style))
+        elements.append(Paragraph(f"End: {end_datetime}", date_style))
+        elements.append(Paragraph(f"Area: {area}", date_style))
+        elements.append(Spacer(1, 20))
+
+        # Add heatmap image
+        if os.path.exists(heatmap_path):
+            img = Image(heatmap_path, width=400, height=300)
+            elements.append(img)
+
+        elements.append(Spacer(1, 20))
+
+        # Add analysis data
+        elements.append(Paragraph("Analysis Results:", styles['Heading2']))
+        elements.append(Paragraph(f"Total Visitors: {analysis['total_visitors']}", styles['Normal']))
+        elements.append(Spacer(1, 10))
+
+        # Add traffic distribution
+        elements.append(Paragraph("Traffic Distribution:", styles['Heading3']))
+        elements.append(Paragraph(f"High Traffic Areas: {analysis['areas']['high']['percentage']}%", styles['Normal']))
+        elements.append(Paragraph(f"Medium Traffic Areas: {analysis['areas']['medium']['percentage']}%", styles['Normal']))
+        elements.append(Paragraph(f"Low Traffic Areas: {analysis['areas']['low']['percentage']}%", styles['Normal']))
+        elements.append(Spacer(1, 10))
+
+        # Add recommendations
+        elements.append(Paragraph("Recommendations:", styles['Heading3']))
+        for rec in analysis['recommendations']:
+            elements.append(Paragraph(f"• {rec}", styles['Normal']))
+        elements.append(Spacer(1, 10))
+
+        # Add peak hours
+        elements.append(Paragraph("Peak Hours:", styles['Heading3']))
         for ph in analysis['peak_hours']:
-            c.drawString(60, y, f"{ph['start_minute']} - {ph['end_minute']} min ({ph['count']} detections)")
-            y -= 15
-    else:
-        c.drawString(60, y, "No peak hours detected.")
-        y -= 15
+            elements.append(Paragraph(
+                f"• {ph['start_minute']}-{ph['end_minute']} minutes: {ph['count']} detections",
+                styles['Normal']
+            ))
 
-    c.save()
-    buffer.seek(0)
-    return Response(
-        buffer,
-        mimetype='application/pdf',
-        headers={'Content-Disposition': f'attachment; filename=heatmap_{job_id}.pdf'}
-    )
+        # Build PDF
+        doc.build(elements)
+        buffer.seek(0)
+        return send_file(
+            buffer,
+            mimetype='application/pdf',
+            as_attachment=True,
+            download_name=f'heatmap_{job_id}_report.pdf'
+        )
+
+    except Exception as e:
+        logger.error(f"Error generating PDF: {str(e)}")
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/api/heatmap_jobs/<job_id>/analysis', methods=['GET'])
 @jwt_required()
@@ -796,7 +867,7 @@ def generate_custom_heatmap(job_id):
             filtered_detections,
             floorplan_path,
             custom_heatmap_path,
-            job_row['output_video_path'],
+            os.path.join(RESULTS_FOLDER, job_id, f"video_{job_id}.mp4"),
             os.path.join(UPLOAD_FOLDER, job_id, job_row['input_video_name']),
             progress_callback=progress_callback
         )
@@ -859,6 +930,66 @@ def get_detections_from_json(job_id):
     except Exception as e:
         logger.error(f"Error reading detections file for job ID {job_id}: {str(e)}")
         return jsonify({"error": "Failed to read detections data"}), 500
+
+@app.route('/api/heatmap_jobs/<job_id>/custom_analysis', methods=['GET'])
+@jwt_required()
+def get_custom_heatmap_analysis(job_id):
+    try:
+        # Get time range parameters
+        start_time = request.args.get('start_time', type=float)
+        end_time = request.args.get('end_time', type=float)
+        area = request.args.get('area', 'all')
+
+        # Get job data from database
+        conn = get_db_connection()
+        job_row = conn.execute("SELECT * FROM jobs WHERE job_id = ?", (job_id,)).fetchone()
+        conn.close()
+        
+        if not job_row:
+            return jsonify({'error': 'Job not found'}), 404
+            
+        if job_row['status'] != 'completed':
+            return jsonify({'error': 'Job not completed'}), 404
+
+        # Load detections
+        detections_path = os.path.join(RESULTS_FOLDER, job_id, 'detections.json')
+        if not os.path.exists(detections_path):
+            return jsonify({'error': 'Detections file not found'}), 404
+
+        with open(detections_path, 'r') as f:
+            det_data = json.load(f)
+            detections = det_data.get("detections", [])
+            fps = det_data.get("fps")
+
+        # Filter detections by time range
+        filtered_detections = [
+            det for det in detections
+            if 'timestamp' in det and start_time <= det['timestamp'] <= end_time
+        ]
+
+        # Load the custom heatmap
+        custom_heatmap_path = os.path.join(
+            RESULTS_FOLDER, job_id, f"custom_heatmap_{float(start_time):.1f}_{float(end_time):.1f}.jpg"
+        )
+        if not os.path.exists(custom_heatmap_path):
+            return jsonify({'error': 'Custom heatmap not found'}), 404
+
+        # Analyze the custom heatmap
+        heatmap = cv2.imread(custom_heatmap_path, cv2.IMREAD_GRAYSCALE)
+        if heatmap is None:
+            return jsonify({'error': 'Could not load custom heatmap'}), 500
+
+        analysis = analyze_heatmap(
+            heatmap,
+            (1080, 1920),  # Default dimensions
+            detections=filtered_detections,
+            fps=fps
+        )
+
+        return jsonify(analysis)
+    except Exception as e:
+        logger.error(f"Error getting custom heatmap analysis: {str(e)}")
+        return jsonify({'error': str(e)}), 500
 
 if __name__ == '__main__':
     init_db()

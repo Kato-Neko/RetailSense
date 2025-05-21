@@ -463,7 +463,7 @@ const Dashboard = () => {
                 >
                 <Link to="/video-processing">
                   <Video className="mr-2 h-5 w-5" /> Process New Video
-                </Link>
+            </Link>
               </Button>
                 <Button
                   asChild
@@ -471,9 +471,9 @@ const Dashboard = () => {
                 >
                 <Link to="/heatmap-generation">
                   <Map className="mr-2 h-5 w-5" /> Generate Heatmap
-                </Link>
+            </Link>
               </Button>
-            </div>
+          </div>
             <div>
                 <h3 className="text-sm font-semibold text-foreground mb-3">Recent Activity</h3>
               {isLoading ? (
