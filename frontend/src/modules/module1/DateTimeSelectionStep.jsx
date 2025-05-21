@@ -70,7 +70,7 @@ const DateTimeSelectionStep = ({
     const videoDurationSeconds = roundedDuration // Use rounded duration
 
     // Add duration to start time (in seconds)
-    const endTotalSeconds = startTotalSeconds + videoDurationSeconds
+    const endTotalSeconds = startTotalSeconds + videoDurationSeconds - 1
 
     // Convert back to hours, minutes, and seconds
     const endHours = Math.floor(endTotalSeconds / 3600) % 24 // Use modulo 24 to handle day wraparound
@@ -165,7 +165,7 @@ const DateTimeSelectionStep = ({
           onChange={onChange}
           placeholder="HH:MM:SS"
           pattern="[0-9]{2}:[0-9]{2}:[0-9]{2}"
-          className={`w-full h-9 py-1 bg-slate-800/50 border-slate-700 text-center text-slate-200 focus-visible:ring-blue-500 ${
+          className={`w-full h-9 py-1 bg-muted/60 border-border text-center text-foreground focus-visible:ring-blue-500 dark:bg-slate-800 dark:text-slate-200 ${
             !/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]$/.test(value) ? "border-red-500" : ""
           }`}
         />
@@ -177,17 +177,17 @@ const DateTimeSelectionStep = ({
             onClick={() => onAdjust("hours", 1)}
             variant="outline"
             size="sm"
-            className="h-6 w-6 p-0 border-slate-700 bg-slate-800 hover:bg-slate-700 text-slate-300"
+            className="h-6 w-6 p-0 border-border bg-muted/60 text-foreground hover:bg-muted/80 dark:bg-slate-800 dark:text-slate-200"
           >
             <ChevronUp className="h-3 w-3" />
           </Button>
-          <span className="text-xs text-slate-400">H</span>
+          <span className="text-xs text-muted-foreground">H</span>
           <Button
             type="button"
             onClick={() => onAdjust("hours", -1)}
             variant="outline"
             size="sm"
-            className="h-6 w-6 p-0 border-slate-700 bg-slate-800 hover:bg-slate-700 text-slate-300"
+            className="h-6 w-6 p-0 border-border bg-muted/60 text-foreground hover:bg-muted/80 dark:bg-slate-800 dark:text-slate-200"
           >
             <ChevronDown className="h-3 w-3" />
           </Button>
@@ -198,17 +198,17 @@ const DateTimeSelectionStep = ({
             onClick={() => onAdjust("minutes", 1)}
             variant="outline"
             size="sm"
-            className="h-6 w-6 p-0 border-slate-700 bg-slate-800 hover:bg-slate-700 text-slate-300"
+            className="h-6 w-6 p-0 border-border bg-muted/60 text-foreground hover:bg-muted/80 dark:bg-slate-800 dark:text-slate-200"
           >
             <ChevronUp className="h-3 w-3" />
           </Button>
-          <span className="text-xs text-slate-400">M</span>
+          <span className="text-xs text-muted-foreground">M</span>
           <Button
             type="button"
             onClick={() => onAdjust("minutes", -1)}
             variant="outline"
             size="sm"
-            className="h-6 w-6 p-0 border-slate-700 bg-slate-800 hover:bg-slate-700 text-slate-300"
+            className="h-6 w-6 p-0 border-border bg-muted/60 text-foreground hover:bg-muted/80 dark:bg-slate-800 dark:text-slate-200"
           >
             <ChevronDown className="h-3 w-3" />
           </Button>
@@ -219,17 +219,17 @@ const DateTimeSelectionStep = ({
             onClick={() => onAdjust("seconds", 1)}
             variant="outline"
             size="sm"
-            className="h-6 w-6 p-0 border-slate-700 bg-slate-800 hover:bg-slate-700 text-slate-300"
+            className="h-6 w-6 p-0 border-border bg-muted/60 text-foreground hover:bg-muted/80 dark:bg-slate-800 dark:text-slate-200"
           >
             <ChevronUp className="h-3 w-3" />
           </Button>
-          <span className="text-xs text-slate-400">S</span>
+          <span className="text-xs text-muted-foreground">S</span>
           <Button
             type="button"
             onClick={() => onAdjust("seconds", -1)}
             variant="outline"
             size="sm"
-            className="h-6 w-6 p-0 border-slate-700 bg-slate-800 hover:bg-slate-700 text-slate-300"
+            className="h-6 w-6 p-0 border-border bg-muted/60 text-foreground hover:bg-muted/80 dark:bg-slate-800 dark:text-slate-200"
           >
             <ChevronDown className="h-3 w-3" />
           </Button>
@@ -244,64 +244,60 @@ const DateTimeSelectionStep = ({
         <h2 className="text-xl font-semibold mb-3 bg-gradient-to-r from-blue-400 to-cyan-400 text-transparent bg-clip-text">
           Step 2: Set Date and Time Range
         </h2>
-
-        <p className="text-sm text-slate-300 mb-1">
+        <p className="text-sm text-muted-foreground mb-1">
           Please select the appropriate date and time for this
           <span className="text-green-400 font-medium">{` ${formatDuration(duration)}`}</span> video.
         </p>
-        <p className="text-xs text-slate-400 mb-4">
+        <p className="text-xs text-muted-foreground mb-4">
           <strong>Note:</strong> For validation purposes, the duration is rounded down to{" "}
           <span className="text-blue-400 font-medium">{roundedDuration} seconds</span>.
         </p>
-
         <div className="grid grid-cols-2 gap-6 mb-10 mt-10">
-          <div className="bg-slate-800/30 p-4 rounded-lg border border-slate-800">
+          <div className="bg-muted/40 p-4 rounded-lg border border-border backdrop-blur">
             <div className="flex items-center mb-3">
               <Calendar className="h-6 w-6 mr-3 text-blue-400" />
-              <Label className="block text-slate-300 font-medium text-lg">Date Range:</Label>
+              <Label className="block text-foreground font-medium text-lg">Date Range:</Label>
             </div>
             <div className="space-y-3">
-              <div className="mt-10 mb-10"> 
-                <Label className="text-sm pl-3 mb-1 text-slate-400">Start Date</Label>
+              <div className="mt-10 mb-10">
+                <Label className="text-sm pl-3 mb-1 text-muted-foreground">Start Date</Label>
                 <Input
                   type="date"
                   value={startDate}
                   onChange={(e) => setStartDate(e.target.value)}
-                  className="w-full h-9 py-1 bg-slate-800/50 border-slate-700 text-slate-200 justify-center focus-visible:ring-blue-500"
+                  className="w-full h-9 py-1 bg-muted/60 border-border text-foreground justify-center focus-visible:ring-blue-500"
                 />
               </div>
               <div className="mb-10">
-                <Label className="text-sm pl-3 mb-1 text-slate-400">End Date</Label>
+                <Label className="text-sm pl-3 mb-1 text-muted-foreground">End Date</Label>
                 <Input
                   type="date"
                   value={endDate}
                   onChange={(e) => setEndDate(e.target.value)}
-                  className="w-full h-9 py-1 bg-slate-800/50 border-slate-700 text-slate-200 justify-center focus-visible:ring-blue-500"
+                  className="w-full h-9 py-1 bg-muted/60 border-border text-foreground justify-center focus-visible:ring-blue-500"
                 />
               </div>
             </div>
           </div>
-
-          <div className="bg-slate-800/30 p-4 rounded-lg border border-slate-800">
+          <div className="bg-muted/40 p-4 rounded-lg border border-border backdrop-blur">
             <div className="flex justify-between items-center mb-3">
               <div className="flex items-center">
                 <Clock className="h-6 w-6 mr-3 text-blue-400" />
-                <Label className="text-slate-300 font-medium text-lg">Time Range:</Label>
+                <Label className="text-foreground font-medium text-lg">Time Range:</Label>
               </div>
               <Button
                 type="button"
                 onClick={setToCurrentTime}
                 variant="outline"
                 size="sm"
-                className="flex items-center text-xs h-7 border-slate-700 bg-slate-800 hover:bg-slate-700 text-slate-300"
+                className="flex items-center text-xs h-7 border-border bg-muted hover:bg-muted/60 text-foreground"
               >
                 <Clock className="h-3 w-3 mr-1 text-blue-400" /> Now
               </Button>
             </div>
-
-            <Label className="text-sm pl-3 mt-10 mb-1 text-slate-400">Start Time</Label>
+            <Label className="text-sm pl-3 mt-10 mb-1 text-muted-foreground">Start Time</Label>
             <TimeInput className="justify-center" value={startTime} onChange={handleStartTimeChange} onAdjust={adjustStartTime} />
-            <Label className="text-sm pl-3 mt-3 mb-1 text-slate-400">End Time</Label>
+            <Label className="text-sm pl-3 mt-3 mb-1 text-muted-foreground">End Time</Label>
             <TimeInput
               className="justify-center"
               value={endTime}
@@ -310,9 +306,7 @@ const DateTimeSelectionStep = ({
             />
           </div>
         </div>
-
-        {/* Validation status */}
-        <div className="p-3 bg-slate-800/30 rounded-lg border border-slate-800 mb-6">
+        <div className="p-3 bg-muted/40 rounded-lg border border-border mb-6">
           <div className={`text-sm font-medium ${isValid ? "text-green-400" : "text-red-400"} flex items-center`}>
             {isValid ? (
               <>
@@ -342,23 +336,22 @@ const DateTimeSelectionStep = ({
               </>
             )}
           </div>
-          <p className="text-xs text-slate-400">
+          <p className="text-xs text-muted-foreground">
             The time range must be greater than 0 and not exceed the video duration.
           </p>
         </div>
-
         <div className="flex justify-between">
           <Button
             onClick={onPrevious}
             variant="outline"
-            className="px-6 border-slate-700 bg-slate-800/50 text-slate-300 hover:bg-slate-700 hover:text-white"
+            className="px-6 border-border bg-muted/50 text-foreground hover:bg-muted/70 hover:text-foreground"
           >
             Previous
           </Button>
           <Button
             onClick={onNext}
             disabled={!isValid}
-            className="px-6 bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-700 hover:to-cyan-700 text-white"
+            className="px-6 bg-gradient-to-r from-white to-cyan-200 text-black font-semibold shadow-md border border-border py-2 text-sm hover:opacity-90 dark:from-blue-900 dark:to-cyan-800 dark:text-white"
           >
             Next
           </Button>

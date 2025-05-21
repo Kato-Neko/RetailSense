@@ -22,19 +22,19 @@ const VideoSelectionStep = ({ file, videoPreviewUrl, onFileChange, onNext, isVal
           {!file ? (
             // Show upload area when no file is selected
             <div className="h-full">
-              <p className="text-slate-300 mb-4">
+              <p className="text-muted-foreground mb-4">
                 Please upload a valid video file to begin the heatmap creation process.
               </p>
 
-              <label className="flex flex-col items-center justify-center w-full h-56 border-2 border-dashed border-slate-700 rounded-lg cursor-pointer bg-slate-800/30 hover:bg-slate-800/50 transition-all duration-300">
+              <label className="flex flex-col items-center justify-center w-full h-56 border-2 border-dashed border-border rounded-lg cursor-pointer bg-muted/40 hover:bg-muted/60 transition-all duration-300">
                 <div className="flex flex-col items-center justify-center pt-5 pb-6">
                   <div className="rounded-full bg-gradient-to-br from-blue-900/50 to-cyan-900/50 w-16 h-16 flex items-center justify-center mb-4">
                     <Upload className="w-8 h-8 text-blue-400" />
                   </div>
-                  <p className="mb-2 text-sm text-slate-300">
+                  <p className="mb-2 text-sm text-muted-foreground">
                     <span className="font-semibold">Click to upload</span> or drag and drop
                   </p>
-                  <p className="text-xs text-slate-400">MP4, AVI, MOV (MAX. 100MB)</p>
+                  <p className="text-xs text-muted-foreground">MP4, AVI, MOV (MAX. 100MB)</p>
                 </div>
                 <input type="file" className="hidden" accept="video/*" onChange={handleFileInputChange} />
               </label>
@@ -43,16 +43,16 @@ const VideoSelectionStep = ({ file, videoPreviewUrl, onFileChange, onNext, isVal
             // Show video preview when file is selected
             <div className="h-full flex flex-col">
               <div className="flex items-center justify-between mb-2">
-                <h3 className="text-sm font-medium text-slate-200">Video Preview:</h3>
+                <h3 className="text-sm font-medium text-foreground">Video Preview:</h3>
                 <div className="flex items-center">
-                  <p className="text-xs text-slate-400 mr-2">{file.name}</p>
-                  <p className="text-xs text-slate-400 bg-slate-800 px-2 py-1 rounded">
+                  <p className="text-xs text-muted-foreground mr-2">{file.name}</p>
+                  <p className="text-xs text-muted-foreground bg-muted px-2 py-1 rounded">
                     {(file.size / (1024 * 1024)).toFixed(2)} MB
                   </p>
                   <Button
                     variant="ghost"
                     size="sm"
-                    className="ml-2 h-7 text-xs text-slate-300 hover:text-white hover:bg-slate-800"
+                    className="ml-2 h-7 text-xs text-muted-foreground hover:text-foreground hover:bg-muted"
                     onClick={() => onFileChange(null)}
                   >
                     Change
@@ -60,7 +60,7 @@ const VideoSelectionStep = ({ file, videoPreviewUrl, onFileChange, onNext, isVal
                 </div>
               </div>
 
-              <div className="flex-1 aspect-video bg-black rounded-lg overflow-hidden border border-slate-800">
+              <div className="flex-1 aspect-video bg-black rounded-lg overflow-hidden border border-border">
                 {videoPreviewUrl && (
                   <video
                     key={videoPreviewUrl}
@@ -80,7 +80,7 @@ const VideoSelectionStep = ({ file, videoPreviewUrl, onFileChange, onNext, isVal
           <Button
             onClick={onNext}
             disabled={!isValid}
-            className="px-6 bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-700 hover:to-cyan-700 text-white"
+            className="px-6 bg-gradient-to-r from-white to-cyan-200 text-black font-semibold shadow-md border border-border py-2 text-sm hover:opacity-90 dark:from-blue-900 dark:to-cyan-800 dark:text-white"
           >
             Next
           </Button>

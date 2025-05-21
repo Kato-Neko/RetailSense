@@ -68,17 +68,17 @@ const SideMenu = ({ isAuthenticated, setIsAuthenticated }) => {
   }
 
   return (
-    <Sidebar className="bg-gradient-to-b from-slate-900 via-slate-900 to-slate-950 border-r border-slate-800">
-      <SidebarHeader className="border-b border-slate-800/50">
+    <Sidebar className="bg-background dark:bg-gradient-to-b dark:from-slate-900 dark:via-slate-900 dark:to-slate-950 border-r border-border">
+      <SidebarHeader className="border-b border-border">
         <div className="flex h-16 items-center px-4 my-2">
-          <div className="flex items-center justify-center h-10 w-10 bg-transparent rounded-full p-1 shadow-lg shadow-blue-500/10">
+          <div className="flex items-center justify-center h-10 w-10 bg-transparent rounded-full p-1 shadow-lg shadow-primary/10">
             <img src="/rs_logo.svg" alt="RetailSense Logo" className="h-7 w-7 object-contain" />
           </div>
           <div className="ml-3">
-            <span className="text-lg font-bold bg-gradient-to-r from-blue-400 to-cyan-400 text-transparent bg-clip-text">
+            <span className="text-lg font-bold bg-gradient-to-r from-primary to-cyan-400 text-transparent bg-clip-text">
               RetailSense
             </span>
-            <div className="text-xs text-slate-500">Analytics Platform</div>
+            <div className="text-xs text-muted-foreground">Analytics Platform</div>
           </div>
         </div>
       </SidebarHeader>
@@ -90,23 +90,27 @@ const SideMenu = ({ isAuthenticated, setIsAuthenticated }) => {
             <SidebarMenuItem>
               <CollapsibleTrigger asChild>
                 <SidebarMenuButton
-                  className="px-3 py-3 text-base rounded-lg hover:bg-slate-800/70 group transition-all duration-200"
+                  className="px-3 py-3 text-base rounded-lg hover:bg-muted group transition-all duration-200"
                   data-active={isActiveGroup(["/dashboard"])}
                 >
-                  <div className="rounded-lg bg-gradient-to-br from-blue-600/20 to-cyan-600/20 w-9 h-9 flex items-center justify-center mr-3 group-hover:from-blue-600/30 group-hover:to-cyan-600/30 transition-all duration-300 group-data-[active=true]:from-blue-600/40 group-data-[active=true]:to-cyan-600/40">
-                    <BarChart2 className="h-5 w-5 text-blue-400 group-data-[active=true]:text-blue-300" />
+                  <div className="rounded-lg w-9 h-9 flex items-center justify-center mr-3 transition-all duration-300
+                    bg-gradient-to-br
+                    from-red-500/20 to-orange-400/20
+                    group-hover:from-red-500/30 group-hover:to-orange-400/30
+                    group-data-[active=true]:from-red-500/40 group-data-[active=true]:to-orange-400/40">
+                    <BarChart2 className="h-5 w-5 text-primary group-data-[active=true]:text-primary" />
                   </div>
-                  <span className="ml-1 font-medium group-data-[active=true]:text-white">Analytics</span>
-                  <ChevronDown className="ml-auto h-5 w-5 transition-transform group-data-[state=open]/collapsible:rotate-180 text-slate-400" />
+                  <span className="ml-1 font-medium group-data-[active=true]:text-foreground text-foreground">Analytics</span>
+                  <ChevronDown className="ml-auto h-5 w-5 transition-transform group-data-[state=open]/collapsible:rotate-180 text-muted-foreground" />
                 </SidebarMenuButton>
               </CollapsibleTrigger>
               <CollapsibleContent>
-                <SidebarMenuSub className="ml-12 pl-4 space-y-1 mt-1 border-l border-slate-800/50">
+                <SidebarMenuSub className="ml-12 pl-4 space-y-1 mt-1 border-l border-border">
                   <SidebarMenuSubItem>
                     <SidebarMenuSubButton
                       onClick={() => navigate("/dashboard")}
                       isActive={isActive("/dashboard")}
-                      className="py-2.5 text-sm rounded-md hover:bg-slate-800/70 data-[active=true]:bg-gradient-to-r data-[active=true]:from-blue-600/20 data-[active=true]:to-cyan-600/20 data-[active=true]:text-white transition-all duration-200"
+                      className="py-2.5 text-sm rounded-md hover:bg-muted data-[active=true]:bg-gradient-to-r data-[active=true]:from-red-500/20 data-[active=true]:to-orange-400/20 data-[active=true]:text-foreground transition-all duration-200"
                     >
                       <span>Dashboard</span>
                     </SidebarMenuSubButton>
@@ -124,23 +128,23 @@ const SideMenu = ({ isAuthenticated, setIsAuthenticated }) => {
             <SidebarMenuItem>
               <CollapsibleTrigger asChild>
                 <SidebarMenuButton
-                  className="px-3 py-3 text-base rounded-lg hover:bg-slate-800/70 group transition-all duration-200"
+                  className="px-3 py-3 text-base rounded-lg hover:bg-muted group transition-all duration-200"
                   data-active={isActiveGroup(["/heatmap-generation", "/video-processing"])}
                 >
-                  <div className="rounded-lg bg-gradient-to-br from-cyan-600/20 to-emerald-600/20 w-9 h-9 flex items-center justify-center mr-3 group-hover:from-cyan-600/30 group-hover:to-emerald-600/30 transition-all duration-300 group-data-[active=true]:from-cyan-600/40 group-data-[active=true]:to-emerald-600/40">
-                    <Map className="h-5 w-5 text-cyan-400 group-data-[active=true]:text-cyan-300" />
+                  <div className="rounded-lg bg-gradient-to-br from-cyan-400/20 to-emerald-400/20 w-9 h-9 flex items-center justify-center mr-3 group-hover:from-cyan-400/30 group-hover:to-emerald-400/30 transition-all duration-300 group-data-[active=true]:from-cyan-400/40 group-data-[active=true]:to-emerald-400/40">
+                    <Map className="h-5 w-5 text-primary group-data-[active=true]:text-primary" />
                   </div>
-                  <span className="ml-1 font-medium group-data-[active=true]:text-white">Heatmap</span>
-                  <ChevronDown className="ml-auto h-5 w-5 transition-transform group-data-[state=open]/collapsible:rotate-180 text-slate-400" />
+                  <span className="ml-1 font-medium group-data-[active=true]:text-foreground">Heatmap</span>
+                  <ChevronDown className="ml-auto h-5 w-5 transition-transform group-data-[state=open]/collapsible:rotate-180 text-muted-foreground" />
                 </SidebarMenuButton>
               </CollapsibleTrigger>
               <CollapsibleContent>
-                <SidebarMenuSub className="ml-12 pl-4 space-y-1 mt-1 border-l border-slate-800/50">
+                <SidebarMenuSub className="ml-12 pl-4 space-y-1 mt-1 border-l border-border">
                   <SidebarMenuSubItem>
                     <SidebarMenuSubButton
                       onClick={() => navigate("/heatmap-generation")}
                       isActive={isActive("/heatmap-generation")}
-                      className="py-2.5 text-sm rounded-md hover:bg-slate-800/70 data-[active=true]:bg-gradient-to-r data-[active=true]:from-cyan-600/20 data-[active=true]:to-emerald-600/20 data-[active=true]:text-white transition-all duration-200"
+                      className="py-2.5 text-sm rounded-md hover:bg-muted data-[active=true]:bg-gradient-to-r data-[active=true]:from-cyan-400/20 data-[active=true]:to-emerald-400/20 data-[active=true]:text-foreground transition-all duration-200"
                     >
                       <span>View Heatmaps</span>
                     </SidebarMenuSubButton>
@@ -149,7 +153,7 @@ const SideMenu = ({ isAuthenticated, setIsAuthenticated }) => {
                     <SidebarMenuSubButton
                       onClick={() => navigate("/video-processing")}
                       isActive={isActive("/video-processing")}
-                      className="py-2.5 text-sm rounded-md hover:bg-slate-800/70 data-[active=true]:bg-gradient-to-r data-[active=true]:from-cyan-600/20 data-[active=true]:to-emerald-600/20 data-[active=true]:text-white transition-all duration-200"
+                      className="py-2.5 text-sm rounded-md hover:bg-muted data-[active=true]:bg-gradient-to-r data-[active=true]:from-cyan-400/20 data-[active=true]:to-emerald-400/20 data-[active=true]:text-foreground transition-all duration-200"
                     >
                       <span>Create Heatmaps</span>
                     </SidebarMenuSubButton>
@@ -164,23 +168,23 @@ const SideMenu = ({ isAuthenticated, setIsAuthenticated }) => {
             <SidebarMenuItem>
               <CollapsibleTrigger asChild>
                 <SidebarMenuButton
-                  className="px-3 py-3 text-base rounded-lg hover:bg-slate-800/70 group transition-all duration-200"
+                  className="px-3 py-3 text-base rounded-lg hover:bg-muted group transition-all duration-200"
                   data-active={isActiveGroup(["/user-management"])}
                 >
-                  <div className="rounded-lg bg-gradient-to-br from-purple-600/20 to-pink-600/20 w-9 h-9 flex items-center justify-center mr-3 group-hover:from-purple-600/30 group-hover:to-pink-600/30 transition-all duration-300 group-data-[active=true]:from-purple-600/40 group-data-[active=true]:to-pink-600/40">
-                    <User className="h-5 w-5 text-purple-400 group-data-[active=true]:text-purple-300" />
+                  <div className="rounded-lg bg-gradient-to-br from-purple-400/20 to-pink-400/20 w-9 h-9 flex items-center justify-center mr-3 group-hover:from-purple-400/30 group-hover:to-pink-400/30 transition-all duration-300 group-data-[active=true]:from-purple-400/40 group-data-[active=true]:to-pink-400/40">
+                    <User className="h-5 w-5 text-primary group-data-[active=true]:text-primary" />
                   </div>
-                  <span className="ml-1 font-medium group-data-[active=true]:text-white">User</span>
-                  <ChevronDown className="ml-auto h-5 w-5 transition-transform group-data-[state=open]/collapsible:rotate-180 text-slate-400" />
+                  <span className="ml-1 font-medium group-data-[active=true]:text-foreground">User</span>
+                  <ChevronDown className="ml-auto h-5 w-5 transition-transform group-data-[state=open]/collapsible:rotate-180 text-muted-foreground" />
                 </SidebarMenuButton>
               </CollapsibleTrigger>
               <CollapsibleContent>
-                <SidebarMenuSub className="ml-12 pl-4 space-y-1 mt-1 border-l border-slate-800/50">
+                <SidebarMenuSub className="ml-12 pl-4 space-y-1 mt-1 border-l border-border">
                   <SidebarMenuSubItem>
                     <SidebarMenuSubButton
                       onClick={() => navigate("/user-management")}
                       isActive={isActive("/user-management")}
-                      className="py-2.5 text-sm rounded-md hover:bg-slate-800/70 data-[active=true]:bg-gradient-to-r data-[active=true]:from-purple-600/20 data-[active=true]:to-pink-600/20 data-[active=true]:text-white transition-all duration-200"
+                      className="py-2.5 text-sm rounded-md hover:bg-muted data-[active=true]:bg-gradient-to-r data-[active=true]:from-purple-400/20 data-[active=true]:to-pink-400/20 data-[active=true]:text-foreground transition-all duration-200"
                     >
                       <span>Account Management</span>
                     </SidebarMenuSubButton>
@@ -188,7 +192,7 @@ const SideMenu = ({ isAuthenticated, setIsAuthenticated }) => {
                   <SidebarMenuSubItem>
                     <SidebarMenuSubButton
                       onClick={handleLogout}
-                      className="py-2.5 text-sm rounded-md hover:bg-red-900/20 hover:text-red-400 transition-all duration-200"
+                      className="py-2.5 text-sm rounded-md hover:bg-destructive/10 hover:text-destructive transition-all duration-200"
                     >
                       <span>Logout</span>
                     </SidebarMenuSubButton>
@@ -202,22 +206,22 @@ const SideMenu = ({ isAuthenticated, setIsAuthenticated }) => {
 
       <SidebarFooter>
         {isAuthenticated && (
-          <div className="p-4 mt-auto border-t border-slate-800/50 bg-gradient-to-r from-slate-900 to-slate-900/80 backdrop-blur-sm">
+          <div className="p-4 mt-auto border-t border-border bg-background dark:bg-gradient-to-r dark:from-slate-900 dark:to-slate-900/80 backdrop-blur-sm">
             <div className="flex items-center gap-3">
-              <Avatar className="h-12 w-12 ring-2 ring-slate-700/50 shadow-lg">
+              <Avatar className="h-12 w-12 ring-2 ring-border shadow-lg">
                 <AvatarImage
                   src={userInfo?.profileImage || "https://github.com/shadcn.png"}
                   alt={userInfo?.username || "User"}
                 />
-                <AvatarFallback className="bg-gradient-to-br from-blue-600 to-cyan-600 text-white font-medium">
+                <AvatarFallback className="bg-gradient-to-br from-primary to-cyan-400 text-foreground font-medium">
                   {isLoading ? "..." : getUserInitials()}
                 </AvatarFallback>
               </Avatar>
               <div className="flex flex-col">
-                <span className="text-base font-semibold text-white">
+                <span className="text-base font-semibold text-foreground">
                   {isLoading ? "Loading..." : userInfo?.username || "User"}
                 </span>
-                <span className="text-xs text-slate-400 truncate max-w-[140px]">
+                <span className="text-xs text-muted-foreground truncate max-w-[140px]">
                   {isLoading ? "" : userInfo?.email || ""}
                 </span>
               </div>

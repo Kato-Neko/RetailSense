@@ -317,7 +317,7 @@ const CreateHeatmap = () => {
         const videoDurationSeconds = rounded
 
         // Add duration to start time (in seconds)
-        const endTotalSeconds = startTotalSeconds + videoDurationSeconds
+        const endTotalSeconds = startTotalSeconds + videoDurationSeconds - 1
 
         // Convert back to hours, minutes, and seconds
         const endHours = Math.floor(endTotalSeconds / 3600) % 24
@@ -432,22 +432,21 @@ const CreateHeatmap = () => {
       <div className="mb-6">
         <div className="flex justify-center mb-6">
           <div className="flex space-x-2">
-            {["Select", "Date", "Points", "Confirm"].map((step, index) => (
+            {['Select', 'Date', 'Points', 'Confirm'].map((step, index) => (
               <button
                 key={index}
                 onClick={() => goToStep(index)}
                 disabled={index > 0 && !isStepValid(index - 1) && index > currentStep}
-                className={`relative w-10 h-10 rounded-full flex items-center justify-center transition-all duration-200 ${
-                  currentStep === index
-                    ? "bg-blue-600 text-white"
+                className={`relative w-10 h-10 rounded-full flex items-center justify-center transition-all duration-200 shadow-md backdrop-blur-md border border-border text-lg font-bold
+                  ${currentStep === index
+                    ? 'bg-gradient-to-br from-white to-cyan-200 text-black dark:from-blue-900 dark:to-cyan-800 dark:text-white'
                     : index < currentStep
-                      ? "bg-slate-700 text-slate-300"
-                      : "bg-slate-800 text-slate-500"
-                } ${
-                  index > 0 && !isStepValid(index - 1) && index > currentStep
-                    ? "opacity-50 cursor-not-allowed"
-                    : "cursor-pointer"
-                }`}
+                      ? 'bg-muted text-foreground'
+                      : 'bg-muted/60 text-muted-foreground'}
+                  ${index > 0 && !isStepValid(index - 1) && index > currentStep
+                    ? 'opacity-50 cursor-not-allowed'
+                    : 'cursor-pointer'}
+                `}
               >
                 {index + 1}
               </button>
@@ -455,9 +454,8 @@ const CreateHeatmap = () => {
           </div>
         </div>
       </div>
-
       {/* Carousel for steps */}
-      <div className="bg-slate-900/50 rounded-lg border border-slate-800">
+      <div className="bg-gradient-to-br from-background/80 to-muted/90 dark:from-slate-900/80 dark:to-slate-950/90 rounded-lg border border-border shadow-xl shadow-primary/10 backdrop-blur-xl">
         <Carousel
           setApi={setApi}
           opts={{
@@ -477,7 +475,6 @@ const CreateHeatmap = () => {
                 isValid={isStepValid(0)}
               />
             </CarouselItem>
-
             {/* Step 2: Date/Time Selection */}
             <CarouselItem>
               <DateTimeSelectionStep
@@ -496,7 +493,6 @@ const CreateHeatmap = () => {
                 onNext={forceNextStep}
               />
             </CarouselItem>
-
             {/* Step 3: Coordinate Selection */}
             <CarouselItem>
               <CoordinateSelectionStep
@@ -509,7 +505,6 @@ const CreateHeatmap = () => {
                 onNext={forceNextStep}
               />
             </CarouselItem>
-
             {/* Step 4: Confirmation */}
             <CarouselItem>
               <ConfirmationStep

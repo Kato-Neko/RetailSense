@@ -18,11 +18,11 @@ const NavigationProgress = () => {
   // Get the parent section based on the current route
   const getSection = (path) => {
     if (path === "/" || path === "/dashboard") {
-      return { name: "Analytics", color: "text-blue-400" }
+      return { name: "Analytics", color: "text-orange-500 dark:text-orange-400" }
     } else if (path === "/heatmap-generation" || path === "/video-processing") {
-      return { name: "Heatmap", color: "text-cyan-400" }
+      return { name: "Heatmap", color: "text-cyan-500 dark:text-cyan-400" }
     } else if (path === "/user-management") {
-      return { name: "User", color: "text-purple-400" }
+      return { name: "User", color: "text-purple-500 dark:text-purple-400" }
     }
     return { name: "", color: "" }
   }
@@ -31,27 +31,25 @@ const NavigationProgress = () => {
   const currentSection = getSection(location.pathname)
 
   return (
-    <div className="flex items-center">
-      <div className="flex items-center">
-        <Home className="h-4 w-4 text-slate-500" />
-        <ChevronRight className="mx-1 h-4 w-4 text-slate-600" />
-      </div>
-
-      {currentSection.name && (
-        <>
-          <span className={`text-sm font-medium ${currentSection.color}`}>{currentSection.name}</span>
-          <ChevronRight className="mx-1 h-4 w-4 text-slate-600" />
-        </>
-      )}
-
-      {currentTitle && (
-        <div className="flex items-center">
-          <span className="text-sm font-medium text-white">{currentTitle}</span>
-          <div className="ml-2 px-1.5 py-0.5 rounded-full bg-slate-800 border border-slate-700">
-            <span className="text-xs text-slate-400">v1.0</span>
+    <div className="flex items-center w-full">
+      <div className="flex items-center flex-1 min-w-0">
+        <Home className="h-4 w-4 text-muted-foreground" />
+        <ChevronRight className="mx-1 h-4 w-4 text-muted-foreground" />
+        {currentSection.name && (
+          <>
+            <span className={`text-sm font-medium ${currentSection.color}`}>{currentSection.name}</span>
+            <ChevronRight className="mx-1 h-4 w-4 text-muted-foreground" />
+          </>
+        )}
+        {currentTitle && (
+          <div className="flex items-center">
+            <span className="text-sm font-medium text-foreground">{currentTitle}</span>
+            <div className="ml-2 px-1.5 py-0.5 rounded-full bg-muted border border-border">
+              <span className="text-xs text-muted-foreground">v1.0</span>
+            </div>
           </div>
-        </div>
-      )}
+        )}
+      </div>
     </div>
   )
 }

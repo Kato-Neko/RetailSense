@@ -80,13 +80,23 @@ custom_heatmap_progress = {}
 def allowed_file(filename, allowed_extensions):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in allowed_extensions
 
+def update_job_status_in_db(job_id, job):
+    conn = get_db_connection()
+    conn.execute('''
+        UPDATE jobs 
+        SET status = ?, message = ?, updated_at = CURRENT_TIMESTAMP
+        WHERE job_id = ?
+    ''', (job['status'], job['message'], job_id))
+    conn.commit()
+    conn.close()
+
 def process_video_job(job_id):
     """Process a video job in the background (restore backend detection)."""
     try:
         job = jobs[job_id]
         job['status'] = 'processing'
         job['message'] = 'Starting video processing...'
-        job['cancelled'] = False
+        job['cancelled'] = job.get('cancelled', False)
 
         # Validate video file
         video_path = job['input_files']['video']
@@ -98,6 +108,13 @@ def process_video_job(job_id):
         total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
         cap.release()
 
+        # Check for cancellation before starting detection
+        if job.get('cancelled'):
+            job['status'] = 'cancelled'
+            job['message'] = 'Job was cancelled by user.'
+            update_job_status_in_db(job_id, job)
+            return
+
         # Update status for YOLO detection
         job['message'] = 'Running YOLO detection (0%)'
         output_video_path, detections, fps = detect_and_track(
@@ -107,6 +124,13 @@ def process_video_job(job_id):
             preview_folder=job['output_files_expected']['image'] and os.path.dirname(job['output_files_expected']['image'])
         )
 
+        # Check for cancellation after detection
+        if job.get('cancelled'):
+            job['status'] = 'cancelled'
+            job['message'] = 'Job was cancelled by user.'
+            update_job_status_in_db(job_id, job)
+            return
+
         # Save detections and fps to JSON
         detections_path = os.path.join(RESULTS_FOLDER, job_id, 'detections.json')
         with open(detections_path, 'w') as f:
@@ -114,6 +138,13 @@ def process_video_job(job_id):
 
         # For testing: use static points from Points/floorplan_points.txt
         points = [[768, 204], [690, 200], [655, 305], [793, 309]]
+
+        # Check for cancellation before heatmap generation
+        if job.get('cancelled'):
+            job['status'] = 'cancelled'
+            job['message'] = 'Job was cancelled by user.'
+            update_job_status_in_db(job_id, job)
+            return
 
         # Now, generate the blended heatmap using blend_heatmap with real detections and points
         output_heatmap_image_path = job['output_files_expected']['image']
@@ -124,6 +155,13 @@ def process_video_job(job_id):
             output_video_path,
             video_path
         )
+
+        # Check for cancellation after heatmap generation
+        if job.get('cancelled'):
+            job['status'] = 'cancelled'
+            job['message'] = 'Job was cancelled by user.'
+            update_job_status_in_db(job_id, job)
+            return
 
         # Update status for heatmap generation
         job['message'] = 'Processing completed successfully'
@@ -143,6 +181,7 @@ def process_video_job(job_id):
         if hasattr(job, 'cancelled') and job['cancelled']:
             job['status'] = 'cancelled'
             job['message'] = 'Job was cancelled by user.'
+            update_job_status_in_db(job_id, job)
         else:
             job['status'] = 'error'
             job['message'] = f'Error during processing: {str(e)}'
@@ -257,6 +296,12 @@ def create_heatmap_job():
 
         # Validate that the time range does not exceed the video duration
         video_duration = get_video_duration(input_video_path)
+        print("start_date:", start_date, "start_time:", start_time)
+        print("end_date:", end_date, "end_time:", end_time)
+        print("start_datetime:", start_datetime)
+        print("end_datetime:", end_datetime)
+        print("video_duration (seconds):", video_duration)
+        print("time range (seconds):", (end_datetime - start_datetime).total_seconds())
         if (end_datetime - start_datetime).total_seconds() > video_duration:
             return jsonify({"error": "Time range exceeds video duration"}), 400
         if (end_datetime - start_datetime).total_seconds() <= 0:

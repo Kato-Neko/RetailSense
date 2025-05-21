@@ -8,6 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 
 const UserManagement = () => {
   const [userInfo, setUserInfo] = useState({
@@ -171,11 +172,22 @@ const UserManagement = () => {
   return (
     <div className="container mx-auto max-w-3xl px-4 py-8">
       {/* Profile Card */}
-      <Card className="mb-8 bg-slate-900/80 border-slate-800">
+      <Card className="mb-8 bg-gradient-to-br from-background/80 to-muted/90 dark:from-slate-900/80 dark:to-slate-950/90 border border-border shadow-xl shadow-primary/10 backdrop-blur-xl">
         <CardHeader className="flex flex-row items-center gap-4">
-          <div className="rounded-full bg-gradient-to-br from-blue-900/50 to-cyan-900/50 w-16 h-16 flex items-center justify-center">
-            <User className="text-blue-400 h-8 w-8" />
-          </div>
+          <Avatar className="w-16 h-16">
+            <AvatarImage src="https://github.com/shadcn.png" alt={userInfo.username || "User"} />
+            <AvatarFallback>
+              {userInfo.username
+                ? userInfo.username
+                    .split(" ")
+                    .map((n) => n[0])
+                    .join("")
+                    .toUpperCase()
+                : userInfo.email
+                ? userInfo.email[0].toUpperCase()
+                : "U"}
+            </AvatarFallback>
+          </Avatar>
           <div className="flex-1">
             {isEditingUsername ? (
               <form onSubmit={handleUsernameUpdate} className="flex items-center gap-2">
@@ -192,15 +204,15 @@ const UserManagement = () => {
               </form>
             ) : (
               <div className="flex items-center gap-2">
-                <h2 className="text-xl font-semibold text-white">{userInfo.username}</h2>
+                <h2 className="text-xl font-semibold text-foreground">{userInfo.username}</h2>
                 <Button onClick={handleUsernameEdit} size="icon" variant="ghost"><Edit2 size={16} /></Button>
               </div>
             )}
             <div className="flex gap-4 mt-2">
-              <div className="flex items-center gap-2 text-slate-400 text-sm">
+              <div className="flex items-center gap-2 text-muted-foreground text-sm">
                 <Mail className="h-4 w-4" /> {userInfo.email}
               </div>
-              <div className="flex items-center gap-2 text-slate-400 text-sm">
+              <div className="flex items-center gap-2 text-muted-foreground text-sm">
                 <Calendar className="h-4 w-4" /> Member since {new Date(userInfo.created_at).toLocaleDateString()}
               </div>
             </div>
@@ -208,42 +220,42 @@ const UserManagement = () => {
         </CardHeader>
       </Card>
       {/* Activity Summary Card */}
-      <Card className="mb-8 bg-slate-900/80 border-slate-800">
+      <Card className="mb-8 bg-gradient-to-br from-background/80 to-muted/90 dark:from-slate-900/80 dark:to-slate-950/90 border border-border shadow-xl shadow-primary/10 backdrop-blur-xl">
         <CardHeader>
-          <CardTitle className="text-lg text-white">Activity Summary</CardTitle>
+          <CardTitle className="text-lg text-foreground">Activity Summary</CardTitle>
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-3 gap-0 mb-6 text-center">
             <div className="flex flex-col items-center justify-center">
               <Video className="text-cyan-400 h-6 w-6 mb-1" />
-              <span className="text-2xl font-bold text-white">{activityStats.totalVideos}</span>
-              <span className="text-xs text-slate-400 mt-1">Videos Processed</span>
+              <span className="text-2xl font-bold text-foreground">{activityStats.totalVideos}</span>
+              <span className="text-xs text-muted-foreground mt-1">Videos Processed</span>
             </div>
             <div className="flex flex-col items-center justify-center">
               <Map className="text-green-400 h-6 w-6 mb-1" />
-              <span className="text-2xl font-bold text-white">{activityStats.totalHeatmaps}</span>
-              <span className="text-xs text-slate-400 mt-1">Heatmaps Generated</span>
+              <span className="text-2xl font-bold text-foreground">{activityStats.totalHeatmaps}</span>
+              <span className="text-xs text-muted-foreground mt-1">Heatmaps Generated</span>
             </div>
             <div className="flex flex-col items-center justify-center">
               <Clock className="text-yellow-400 h-6 w-6 mb-1" />
-              <span className="text-2xl font-bold text-white">{activityStats.lastActivity ? new Date(activityStats.lastActivity).toLocaleDateString() : 'No activity'}</span>
-              <span className="text-xs text-slate-400 mt-1">Last Activity</span>
+              <span className="text-2xl font-bold text-foreground">{activityStats.lastActivity ? new Date(activityStats.lastActivity).toLocaleDateString() : 'No activity'}</span>
+              <span className="text-xs text-muted-foreground mt-1">Last Activity</span>
             </div>
           </div>
           <div>
-            <h3 className="text-base font-semibold text-white mb-3">Recent Activities</h3>
+            <h3 className="text-base font-semibold text-foreground mb-3">Recent Activities</h3>
             <div className="space-y-4">
               {activityStats.recentActivities.map((activity, index) => (
-                <div key={index} className="flex items-center gap-4 bg-slate-800/60 rounded-lg px-4 py-3">
-                  <div className="rounded-full bg-slate-900 p-2 flex-shrink-0">
+                <div key={index} className="flex items-center gap-4 bg-muted/60 dark:bg-slate-800/60 rounded-lg px-4 py-3">
+                  <div className="rounded-full bg-muted dark:bg-slate-900 p-2 flex-shrink-0">
                     {activity.type === 'video' ? <Video className="h-5 w-5 text-cyan-400" /> : <Map className="h-5 w-5 text-green-400" />}
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
-                      <span className="font-medium text-white">{activity.type === 'video' ? 'Video Processing' : 'Heatmap Generation'}</span>
-                      <span className="text-xs text-slate-400">{activity.date.toLocaleDateString()} {activity.date.toLocaleTimeString()}</span>
+                      <span className="font-medium text-foreground">{activity.type === 'video' ? 'Video Processing' : 'Heatmap Generation'}</span>
+                      <span className="text-xs text-muted-foreground">{activity.date.toLocaleDateString()} {activity.date.toLocaleTimeString()}</span>
                     </div>
-                    <div className="text-slate-300 text-sm truncate max-w-[180px]">{activity.name}</div>
+                    <div className="text-muted-foreground text-sm truncate max-w-[180px]">{activity.name}</div>
                     {activity.peopleCount && (
                       <div className="flex items-center gap-1 text-xs text-blue-300 mt-1">
                         <BarChart2 className="h-4 w-4" /> {activity.peopleCount} people detected
@@ -261,14 +273,14 @@ const UserManagement = () => {
         </CardContent>
       </Card>
       {/* Password Card */}
-      <Card className="bg-slate-900/80 border-slate-800">
+      <Card className="bg-gradient-to-br from-background/80 to-muted/90 dark:from-slate-900/80 dark:to-slate-950/90 border border-border shadow-xl shadow-primary/10 backdrop-blur-xl">
         <CardHeader>
-          <CardTitle className="text-lg text-white">Change Password</CardTitle>
+          <CardTitle className="text-lg text-foreground">Change Password</CardTitle>
         </CardHeader>
         <CardContent>
           <form onSubmit={handlePasswordUpdate} className="space-y-4">
             <div className="relative">
-              <Label htmlFor="currentPassword" className="text-slate-300 mb-1 block">Current Password</Label>
+              <Label htmlFor="currentPassword" className="text-muted-foreground mb-1 block">Current Password</Label>
               <Input
                 id="currentPassword"
                 name="currentPassword"
@@ -284,7 +296,7 @@ const UserManagement = () => {
               </Button>
             </div>
             <div className="relative">
-              <Label htmlFor="newPassword" className="text-slate-300 mb-1 block">New Password</Label>
+              <Label htmlFor="newPassword" className="text-muted-foreground mb-1 block">New Password</Label>
               <Input
                 id="newPassword"
                 name="newPassword"
@@ -300,7 +312,7 @@ const UserManagement = () => {
               </Button>
             </div>
             <div className="relative">
-              <Label htmlFor="confirmPassword" className="text-slate-300 mb-1 block">Confirm New Password</Label>
+              <Label htmlFor="confirmPassword" className="text-muted-foreground mb-1 block">Confirm New Password</Label>
               <Input
                 id="confirmPassword"
                 name="confirmPassword"
@@ -315,7 +327,7 @@ const UserManagement = () => {
                 {showConfirmPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
               </Button>
             </div>
-            <Button type="submit" className="w-full bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-700 hover:to-cyan-700 text-white font-semibold">
+            <Button type="submit" className="w-full bg-gradient-to-r from-white to-cyan-200 text-black font-semibold shadow-md border border-border py-2 text-sm hover:opacity-90 dark:from-blue-900 dark:to-cyan-800 dark:text-white">
               <Key className="mr-2 h-5 w-5" /> Update Password
             </Button>
           </form>

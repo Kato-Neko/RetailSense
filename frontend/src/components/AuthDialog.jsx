@@ -9,12 +9,13 @@ import { zodResolver } from "@hookform/resolvers/zod"
 import { z } from "zod"
 import { authService } from "../services/api"
 
-import { Dialog, DialogContent } from "@/components/ui/dialog"
+import { Dialog, DialogContent, DialogClose } from "@/components/ui/dialog"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
+import { X as XIcon } from "lucide-react"
 
 // Update the component to accept and use the defaultTab prop
 const AuthDialog = ({ isOpen, onOpenChange, setIsAuthenticated, defaultTab = "login" }) => {
@@ -97,12 +98,21 @@ const AuthDialog = ({ isOpen, onOpenChange, setIsAuthenticated, defaultTab = "lo
     // Fix the X button by ensuring the onOpenChange prop is properly handled
     // Update the Dialog component to properly handle the close action
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md border-slate-800 bg-gradient-to-b from-slate-900 to-slate-950 p-0 overflow-hidden">
+      <DialogContent className="sm:max-w-md border-border bg-gradient-to-b from-background to-muted p-0 overflow-hidden dark:from-slate-900 dark:to-slate-950">
+        <DialogClose asChild>
+          <button
+            aria-label="Close"
+            className="absolute top-3 right-3 z-20 rounded-full p-2 bg-muted/70 hover:bg-muted/90 text-muted-foreground hover:text-foreground transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+            onClick={() => onOpenChange(false)}
+          >
+            <XIcon className="h-5 w-5" />
+          </button>
+        </DialogClose>
         <div className="relative overflow-hidden">
           {/* Background effects */}
           <div className="absolute inset-0 z-0">
-            <div className="absolute -top-40 -right-40 w-80 h-80 bg-blue-600 rounded-full opacity-10 blur-3xl"></div>
-            <div className="absolute -bottom-20 -left-20 w-60 h-60 bg-cyan-600 rounded-full opacity-10 blur-3xl"></div>
+            <div className="absolute -top-40 -right-40 w-80 h-80 bg-blue-400 dark:bg-blue-600 rounded-full opacity-10 blur-3xl"></div>
+            <div className="absolute -bottom-20 -left-20 w-60 h-60 bg-cyan-400 dark:bg-cyan-600 rounded-full opacity-10 blur-3xl"></div>
           </div>
 
           {/* Content */}
@@ -111,28 +121,47 @@ const AuthDialog = ({ isOpen, onOpenChange, setIsAuthenticated, defaultTab = "lo
               <div className="flex items-center justify-center h-8 w-8 bg-transparent rounded-full p-1">
                 <img src="/rs_logo.svg" alt="RetailSense Logo" className="h-5 w-5 object-contain" />
               </div>
-              <span className="text-lg font-bold bg-gradient-to-r from-blue-400 to-cyan-400 text-transparent bg-clip-text">
+              <span className="text-lg font-bold bg-gradient-to-r from-primary to-cyan-400 text-transparent bg-clip-text">
                 RetailSense
               </span>
             </div>
 
             <Tabs defaultValue="login" className="w-full" value={activeTab} onValueChange={setActiveTab}>
-              <TabsList className="grid w-full grid-cols-2 mb-6 bg-slate-800/50 backdrop-blur-sm">
-                <TabsTrigger value="login" className="data-[state=active]:bg-blue-600 data-[state=active]:text-white">
-                  Login
-                </TabsTrigger>
-                <TabsTrigger
-                  value="register"
-                  className="data-[state=active]:bg-blue-600 data-[state=active]:text-white"
+              <TabsList className="grid w-full grid-cols-2 bg-transparent mb-6 gap-2">
+                <div className="h-12 flex items-center justify-center rounded-xl transition-all p-[2px]"
+                  style={{
+                    background: activeTab === 'login' ? 'linear-gradient(to right, #3b82f6, #06b6d4)' : 'transparent',
+                  }}
                 >
-                  Register
-                </TabsTrigger>
+                  <div className="flex-1 h-11 flex items-center justify-center rounded-[10px] bg-white dark:bg-slate-950">
+                    <TabsTrigger
+                      value="login"
+                      className="w-full h-full flex items-center justify-center rounded-[10px] font-semibold transition-all text-muted-foreground data-[state=active]:text-black dark:data-[state=active]:text-white data-[state=active]:font-bold bg-transparent border-none shadow-none"
+                    >
+                      Login
+                    </TabsTrigger>
+                  </div>
+                </div>
+                <div className="h-12 flex items-center justify-center rounded-xl transition-all p-[2px]"
+                  style={{
+                    background: activeTab === 'register' ? 'linear-gradient(to right, #3b82f6, #06b6d4)' : 'transparent',
+                  }}
+                >
+                  <div className="flex-1 h-11 flex items-center justify-center rounded-[10px] bg-white dark:bg-slate-950">
+                    <TabsTrigger
+                      value="register"
+                      className="w-full h-full flex items-center justify-center rounded-[10px] font-semibold transition-all text-muted-foreground data-[state=active]:text-black dark:data-[state=active]:text-white data-[state=active]:font-bold bg-transparent border-none shadow-none"
+                    >
+                      Register
+                    </TabsTrigger>
+                  </div>
+                </div>
               </TabsList>
 
               <TabsContent value="login">
                 <div className="text-center mb-6">
-                  <h3 className="text-xl font-semibold text-white">Welcome back</h3>
-                  <p className="text-slate-400 text-sm mt-1">Sign in to your account to continue</p>
+                  <h3 className="text-xl font-semibold text-foreground">Welcome back</h3>
+                  <p className="text-muted-foreground text-sm mt-1">Sign in to your account to continue</p>
                 </div>
 
                 <Form {...loginForm}>
@@ -142,11 +171,11 @@ const AuthDialog = ({ isOpen, onOpenChange, setIsAuthenticated, defaultTab = "lo
                       name="email"
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel className="text-slate-200">Email</FormLabel>
+                          <FormLabel className="text-foreground">Email</FormLabel>
                           <FormControl>
                             <Input
                               placeholder="name@company.com"
-                              className="bg-slate-800/50 backdrop-blur-sm border-slate-700 text-slate-200 focus-visible:ring-blue-500"
+                              className="bg-muted/60 border-border text-foreground focus-visible:ring-primary"
                               {...field}
                             />
                           </FormControl>
@@ -161,10 +190,10 @@ const AuthDialog = ({ isOpen, onOpenChange, setIsAuthenticated, defaultTab = "lo
                       render={({ field }) => (
                         <FormItem>
                           <div className="flex items-center justify-between">
-                            <FormLabel className="text-slate-200">Password</FormLabel>
+                            <FormLabel className="text-foreground">Password</FormLabel>
                             <Button
                               variant="link"
-                              className="h-auto p-0 text-xs text-slate-400 hover:text-blue-400"
+                              className="h-auto p-0 text-xs text-muted-foreground hover:text-primary"
                               type="button"
                             >
                               Forgot password?
@@ -175,14 +204,14 @@ const AuthDialog = ({ isOpen, onOpenChange, setIsAuthenticated, defaultTab = "lo
                               <Input
                                 type={showPassword ? "text" : "password"}
                                 placeholder="••••••••"
-                                className="bg-slate-800/50 backdrop-blur-sm border-slate-700 text-slate-200 focus-visible:ring-blue-500"
+                                className="bg-muted/60 border-border text-foreground focus-visible:ring-primary"
                                 {...field}
                               />
                               <Button
                                 type="button"
                                 variant="ghost"
                                 size="sm"
-                                className="absolute right-0 top-0 h-full px-3 py-2 hover:bg-transparent text-slate-400 hover:text-slate-300"
+                                className="absolute right-0 top-0 h-full px-3 py-2 hover:bg-transparent text-muted-foreground hover:text-foreground"
                                 onClick={() => setShowPassword(!showPassword)}
                               >
                                 {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
@@ -203,17 +232,17 @@ const AuthDialog = ({ isOpen, onOpenChange, setIsAuthenticated, defaultTab = "lo
                             <Checkbox
                               checked={field.value}
                               onCheckedChange={field.onChange}
-                              className="border-slate-700 data-[state=checked]:bg-blue-600 data-[state=checked]:border-blue-600"
+                              className="border-border data-[state=checked]:bg-primary data-[state=checked]:border-primary"
                             />
                           </FormControl>
-                          <FormLabel className="text-sm font-normal text-slate-300">Remember me for 30 days</FormLabel>
+                          <FormLabel className="text-sm font-normal text-muted-foreground">Remember me for 30 days</FormLabel>
                         </FormItem>
                       )}
                     />
 
                     <Button
                       type="submit"
-                      className="w-full bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-700 hover:to-cyan-700 mt-2"
+                      className="w-full bg-gradient-to-r from-blue-500 to-cyan-400 text-black dark:from-blue-900 dark:to-cyan-600 dark:text-white hover:from-blue-600 hover:to-cyan-500 dark:hover:from-blue-800 dark:hover:to-cyan-700 mt-2"
                     >
                       Sign in
                     </Button>
@@ -221,11 +250,11 @@ const AuthDialog = ({ isOpen, onOpenChange, setIsAuthenticated, defaultTab = "lo
                 </Form>
 
                 <div className="mt-6 text-center">
-                  <p className="text-sm text-slate-400">
+                  <p className="text-sm text-muted-foreground">
                     Don't have an account?{" "}
                     <Button
                       variant="link"
-                      className="p-0 h-auto text-blue-400 hover:text-blue-300"
+                      className="p-0 h-auto text-primary hover:text-primary/80"
                       onClick={() => setActiveTab("register")}
                     >
                       Create one
@@ -236,8 +265,8 @@ const AuthDialog = ({ isOpen, onOpenChange, setIsAuthenticated, defaultTab = "lo
 
               <TabsContent value="register">
                 <div className="text-center mb-6">
-                  <h3 className="text-xl font-semibold text-white">Create an account</h3>
-                  <p className="text-slate-400 text-sm mt-1">Join RetailSense to get started</p>
+                  <h3 className="text-xl font-semibold text-foreground">Create an account</h3>
+                  <p className="text-muted-foreground text-sm mt-1">Join RetailSense to get started</p>
                 </div>
 
                 <Form {...registerForm}>
@@ -247,11 +276,11 @@ const AuthDialog = ({ isOpen, onOpenChange, setIsAuthenticated, defaultTab = "lo
                       name="username"
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel className="text-slate-200">Username</FormLabel>
+                          <FormLabel className="text-foreground">Username</FormLabel>
                           <FormControl>
                             <Input
                               placeholder="johndoe"
-                              className="bg-slate-800/50 backdrop-blur-sm border-slate-700 text-slate-200 focus-visible:ring-blue-500"
+                              className="bg-muted/60 border-border text-foreground focus-visible:ring-primary"
                               {...field}
                             />
                           </FormControl>
@@ -265,12 +294,12 @@ const AuthDialog = ({ isOpen, onOpenChange, setIsAuthenticated, defaultTab = "lo
                       name="email"
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel className="text-slate-200">Email</FormLabel>
+                          <FormLabel className="text-foreground">Email</FormLabel>
                           <FormControl>
                             <Input
                               placeholder="name@company.com"
                               type="email"
-                              className="bg-slate-800/50 backdrop-blur-sm border-slate-700 text-slate-200 focus-visible:ring-blue-500"
+                              className="bg-muted/60 border-border text-foreground focus-visible:ring-primary"
                               {...field}
                             />
                           </FormControl>
@@ -284,20 +313,20 @@ const AuthDialog = ({ isOpen, onOpenChange, setIsAuthenticated, defaultTab = "lo
                       name="password"
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel className="text-slate-200">Password</FormLabel>
+                          <FormLabel className="text-foreground">Password</FormLabel>
                           <FormControl>
                             <div className="relative">
                               <Input
                                 type={showRegisterPassword ? "text" : "password"}
                                 placeholder="••••••••"
-                                className="bg-slate-800/50 backdrop-blur-sm border-slate-700 text-slate-200 focus-visible:ring-blue-500"
+                                className="bg-muted/60 border-border text-foreground focus-visible:ring-primary"
                                 {...field}
                               />
                               <Button
                                 type="button"
                                 variant="ghost"
                                 size="sm"
-                                className="absolute right-0 top-0 h-full px-3 py-2 hover:bg-transparent text-slate-400 hover:text-slate-300"
+                                className="absolute right-0 top-0 h-full px-3 py-2 hover:bg-transparent text-muted-foreground hover:text-foreground"
                                 onClick={() => setShowRegisterPassword(!showRegisterPassword)}
                               >
                                 {showRegisterPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
@@ -314,20 +343,20 @@ const AuthDialog = ({ isOpen, onOpenChange, setIsAuthenticated, defaultTab = "lo
                       name="confirmPassword"
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel className="text-slate-200">Confirm Password</FormLabel>
+                          <FormLabel className="text-foreground">Confirm Password</FormLabel>
                           <FormControl>
                             <div className="relative">
                               <Input
                                 type={showConfirmPassword ? "text" : "password"}
                                 placeholder="••••••••"
-                                className="bg-slate-800/50 backdrop-blur-sm border-slate-700 text-slate-200 focus-visible:ring-blue-500"
+                                className="bg-muted/60 border-border text-foreground focus-visible:ring-primary"
                                 {...field}
                               />
                               <Button
                                 type="button"
                                 variant="ghost"
                                 size="sm"
-                                className="absolute right-0 top-0 h-full px-3 py-2 hover:bg-transparent text-slate-400 hover:text-slate-300"
+                                className="absolute right-0 top-0 h-full px-3 py-2 hover:bg-transparent text-muted-foreground hover:text-foreground"
                                 onClick={() => setShowConfirmPassword(!showConfirmPassword)}
                               >
                                 {showConfirmPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
@@ -348,17 +377,17 @@ const AuthDialog = ({ isOpen, onOpenChange, setIsAuthenticated, defaultTab = "lo
                             <Checkbox
                               checked={field.value}
                               onCheckedChange={field.onChange}
-                              className="border-slate-700 data-[state=checked]:bg-blue-600 data-[state=checked]:border-blue-600 mt-1"
+                              className="border-border data-[state=checked]:bg-primary data-[state=checked]:border-primary mt-1"
                             />
                           </FormControl>
                           <div className="space-y-1 leading-none">
-                            <FormLabel className="text-sm font-normal text-slate-300">
+                            <FormLabel className="text-sm font-normal text-muted-foreground">
                               I agree to the{" "}
-                              <a href="#" className="text-blue-400 hover:text-blue-300 underline">
+                              <a href="#" className="text-primary hover:text-primary/80 underline">
                                 terms of service
                               </a>{" "}
                               and{" "}
-                              <a href="#" className="text-blue-400 hover:text-blue-300 underline">
+                              <a href="#" className="text-primary hover:text-primary/80 underline">
                                 privacy policy
                               </a>
                             </FormLabel>
@@ -369,7 +398,7 @@ const AuthDialog = ({ isOpen, onOpenChange, setIsAuthenticated, defaultTab = "lo
 
                     <Button
                       type="submit"
-                      className="w-full bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-700 hover:to-cyan-700 mt-2"
+                      className="w-full bg-gradient-to-r from-blue-500 to-cyan-400 text-black dark:from-blue-900 dark:to-cyan-600 dark:text-white hover:from-blue-600 hover:to-cyan-500 dark:hover:from-blue-800 dark:hover:to-cyan-700 mt-2"
                     >
                       Create account
                     </Button>
@@ -377,11 +406,11 @@ const AuthDialog = ({ isOpen, onOpenChange, setIsAuthenticated, defaultTab = "lo
                 </Form>
 
                 <div className="mt-6 text-center">
-                  <p className="text-sm text-slate-400">
+                  <p className="text-sm text-muted-foreground">
                     Already have an account?{" "}
                     <Button
                       variant="link"
-                      className="p-0 h-auto text-blue-400 hover:text-blue-300"
+                      className="p-0 h-auto text-primary hover:text-primary/80"
                       onClick={() => setActiveTab("login")}
                     >
                       Sign in

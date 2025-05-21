@@ -37,10 +37,10 @@ const CoordinateSelectionStep = ({
           Step 3: Select Coordinate Points
         </h2>
 
-        <Alert className="mb-3 py-2 border-slate-700 bg-slate-800/50">
+        <Alert className="mb-3 py-2 border-border bg-muted/50">
           <Info className="h-4 w-4 text-blue-400" />
-          <AlertTitle className="text-slate-200 text-sm">Instructions</AlertTitle>
-          <AlertDescription className="text-slate-300 text-xs">
+          <AlertTitle className="text-foreground text-sm">Instructions</AlertTitle>
+          <AlertDescription className="text-muted-foreground text-xs">
             Click on the image to select 4 coordinate points. These points will be used to define the area for heatmap
             generation. Click on a point to remove it if you need to adjust.
           </AlertDescription>
@@ -56,7 +56,7 @@ const CoordinateSelectionStep = ({
         <div className="mb-4">
           {firstFrame ? (
             <div
-              className="w-full h-[350px] border border-slate-700 rounded-lg overflow-hidden cursor-crosshair relative bg-black"
+              className="w-full h-[350px] border border-border rounded-lg overflow-hidden cursor-crosshair relative bg-black"
               onClick={onFrameClick}
             >
               <img
@@ -90,14 +90,14 @@ const CoordinateSelectionStep = ({
               ))}
             </div>
           ) : (
-            <div className="w-full h-[350px] border border-slate-700 rounded-lg flex items-center justify-center bg-slate-800/30">
-              <p className="text-slate-400">Please upload a video in Step 1 to see the first frame.</p>
+            <div className="w-full h-[350px] border border-border rounded-lg flex items-center justify-center bg-muted/40">
+              <p className="text-muted-foreground">Please upload a video in Step 1 to see the first frame.</p>
             </div>
           )}
         </div>
 
         {/* Points status */}
-        <div className="p-3 bg-slate-800/30 rounded-lg border border-slate-800 mb-6">
+        <div className="p-3 bg-muted/40 rounded-lg border border-border mb-6">
           <div
             className={`text-sm font-medium ${pointsData.length === 4 ? "text-green-400" : "text-amber-400"} flex items-center`}
           >
@@ -134,21 +134,21 @@ const CoordinateSelectionStep = ({
               </>
             )}
           </div>
-          <p className="text-xs text-slate-400">You must select exactly 4 points to define the area.</p>
+          <p className="text-xs text-muted-foreground">You must select exactly 4 points to define the area.</p>
         </div>
 
         <div className="flex justify-between">
           <Button
             onClick={onPrevious}
             variant="outline"
-            className="px-6 border-slate-700 bg-slate-800/50 text-slate-300 hover:bg-slate-700 hover:text-white"
+            className="px-6 border-border bg-muted/50 text-foreground hover:bg-muted/70 hover:text-foreground"
           >
             Previous
           </Button>
           <Button
             onClick={onNext}
             disabled={!isValid}
-            className="px-6 bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-700 hover:to-cyan-700 text-white"
+            className="px-6 bg-gradient-to-r from-white to-cyan-200 text-black font-semibold shadow-md border border-border py-2 text-sm hover:opacity-90 dark:from-blue-900 dark:to-cyan-800 dark:text-white"
           >
             Next
           </Button>
