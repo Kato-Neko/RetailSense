@@ -149,12 +149,19 @@ export const heatmapService = {
     }
   },
 
-  exportHeatmapCsv: async (jobId) => {
+  exportHeatmapCsv: async (jobId, params) => {
     try {
       const response = await apiClient.get(`/heatmap_jobs/${jobId}/export/csv`, {
         responseType: 'blob',
         headers: {
           'Accept': 'text/csv'
+        },
+        params: {
+          start_datetime: params.start_datetime,
+          end_datetime: params.end_datetime,
+          area: params.area,
+          start_time: params.start_time,
+          end_time: params.end_time
         }
       });
       return response.data;
@@ -177,12 +184,19 @@ export const heatmapService = {
     }
   },
 
-  exportHeatmapPdf: async (jobId) => {
+  exportHeatmapPdf: async (jobId, params) => {
     try {
       const response = await apiClient.get(`/heatmap_jobs/${jobId}/export/pdf`, {
         responseType: 'blob',
         headers: {
           'Accept': 'application/pdf'
+        },
+        params: {
+          start_datetime: params.start_datetime,
+          end_datetime: params.end_datetime,
+          area: params.area,
+          start_time: params.start_time,
+          end_time: params.end_time
         }
       });
       return response.data;
@@ -194,6 +208,21 @@ export const heatmapService = {
   getHeatmapAnalysis: async (jobId) => {
     try {
       const response = await apiClient.get(`/heatmap_jobs/${jobId}/analysis`);
+      return response.data;
+    } catch (error) {
+      throw error.response ? error.response.data : error;
+    }
+  },
+
+  getCustomHeatmapAnalysis: async (jobId, params) => {
+    try {
+      const response = await apiClient.get(`/heatmap_jobs/${jobId}/custom_analysis`, {
+        params: {
+          start_time: params.start_time,
+          end_time: params.end_time,
+          area: params.area
+        }
+      });
       return response.data;
     } catch (error) {
       throw error.response ? error.response.data : error;
