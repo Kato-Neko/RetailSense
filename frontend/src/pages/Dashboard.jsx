@@ -1,21 +1,13 @@
-"use client";
+"use client"
 
-import { useState, useEffect } from "react";
-import { Link } from "react-router-dom";
-import {
-  BarChart as ReBarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  ResponsiveContainer,
-} from "recharts";
-import { Video, Map, Users, Clock } from "lucide-react";
-import { heatmapService } from "../services/api";
-import toast from "react-hot-toast";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
+import { useState, useEffect } from "react"
+import { Link } from "react-router-dom"
+import { BarChart as ReBarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts"
+import { Video, Map, Users, Clock } from "lucide-react"
+import { heatmapService } from "../services/api"
+import toast from "react-hot-toast"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Button } from "@/components/ui/button"
 
 const Dashboard = () => {
   const [stats, setStats] = useState({
@@ -23,18 +15,18 @@ const Dashboard = () => {
     peakHour: "N/A",
     processedVideos: 0,
     generatedHeatmaps: 0,
-  });
+  })
 
-  const [trafficData, setTrafficData] = useState([]);
-  const [recentJobs, setRecentJobs] = useState([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const [trafficData, setTrafficData] = useState([])
+  const [recentJobs, setRecentJobs] = useState([])
+  const [isLoading, setIsLoading] = useState(true)
 
   useEffect(() => {
     const fetchDashboardData = async () => {
-      setIsLoading(true);
+      setIsLoading(true)
       try {
         // Fetch job history
-        const jobHistory = await heatmapService.getJobHistory();
+        const jobHistory = await heatmapService.getJobHistory()
 
         // Set recent jobs (most recent 3)
         const recent = jobHistory.slice(0, 3).map((job) => ({
@@ -43,74 +35,103 @@ const Dashboard = () => {
           name: job.input_video_name || job.input_floorplan_name || "Job",
           status: job.status,
           time: new Date(job.created_at).toLocaleString(),
-        }));
-        setRecentJobs(recent);
+          startDatetime: new Date(job.start_datetime),
+          endDatetime: new Date(job.end_datetime),
+        }))
+        setRecentJobs(recent)
 
         // Calculate stats from job history
-        const completedJobs = jobHistory.filter(
-          (job) => job.status === "completed"
-        );
-        const videoCount = new Set(
-          jobHistory.map((job) => job.input_video_name)
-        ).size;
-        const heatmapCount = completedJobs.length;
+        const completedJobs = jobHistory.filter((job) => job.status === "completed")
+        const videoCount = new Set(jobHistory.map((job) => job.input_video_name)).size
+        const heatmapCount = completedJobs.length
 
         // For this demo, we'll estimate visitor count based on completed jobs
-        // In a real app, this would come from actual detection counts
-        const estimatedVisitors =
-          heatmapCount * 150 + Math.floor(Math.random() * 200);
+        const estimatedVisitors = heatmapCount * 150 + Math.floor(Math.random() * 200)
 
         setStats({
           totalVisitors: estimatedVisitors,
           peakHour: "14:00-15:00", // This would ideally come from real analysis
           processedVideos: videoCount,
           generatedHeatmaps: heatmapCount,
-        });
+        })
 
-        // Generate traffic data based on time of day
-        // In a real app, this would come from actual detection counts by hour
-        const hours = [
-          "9AM",
-          "10AM",
-          "11AM",
-          "12PM",
-          "1PM",
-          "2PM",
-          "3PM",
-          "4PM",
-          "5PM",
-          "6PM",
-          "7PM",
-          "8PM",
-        ];
-        const peakHourIndex = 5; // 2PM
+        // Prepare traffic counts
+        const trafficCounts = {}
 
-        const trafficByHour = hours.map((hour, index) => {
-          // Create a bell curve centered around peak hour
-          const distanceFromPeak = Math.abs(index - peakHourIndex);
-          const baseVisitors = 100;
-          const peakVisitors = 180;
-          const falloff = 25;
+        for (const job of completedJobs) {
+          // Fetch detections from the new API endpoint
+          try {
+            const detectionsResponse = await heatmapService.getDetections(job.job_id)
+            console.log("Detections Response:", detectionsResponse)
 
-          const visitors = Math.max(
-            baseVisitors,
-            peakVisitors - distanceFromPeak * falloff
-          );
+            if (detectionsResponse && detectionsResponse.detections) {
+              const detections = detectionsResponse.detections
+              const fps = detectionsResponse.fps
 
-          return { hour, visitors };
-        });
+              detections.forEach((det) => {
+                console.log("Detection Object:", det)
+                const frame = det.frame
+                const timeInSeconds = frame / fps
 
-        setTrafficData(trafficByHour);
+                console.log("Start Datetime:", job.start_datetime)
+                console.log("End Datetime:", job.end_datetime)
+                const startDate = job.start_datetime ? new Date(job.start_datetime) : null
+                const endDate = job.end_datetime ? new Date(job.end_datetime) : null
+                if (startDate && endDate) {
+                  console.log("Detection Time:", startDate)
+                } else {
+                  console.error("Start or End datetime is undefined for job:", job)
+                }
+
+                const detectionTime = startDate ? new Date(startDate.getTime() + timeInSeconds * 1000) : new Date()
+
+                console.log("Detection Time:", detectionTime)
+
+                const hour = detectionTime.getHours()
+
+                if (!trafficCounts[hour]) {
+                  trafficCounts[hour] = 0
+                }
+                trafficCounts[hour]++
+              })
+            } else {
+              console.warn(`No detections found for job ${job.job_id}`)
+              toast.warn(`No detections found for job ${job.job_id}`)
+            }
+          } catch (error) {
+            console.error(`Error fetching detections for job ${job.job_id}:`, error)
+            let errorMessage = `Failed to load detections for job ${job.job_id}`
+            if (error.response && error.response.status) {
+              errorMessage += ` (Status: ${error.response.status})`
+            }
+            toast.error(errorMessage)
+          }
+        }
+
+        // Prepare data for the chart
+        const trafficData = Object.keys(trafficCounts).map((hour) => ({
+          hour: `${hour}:00`,
+          visitors: trafficCounts[hour] || 0,
+        }))
+
+        // Sort traffic data by hour
+        trafficData.sort((a, b) => {
+          const hourA = Number.parseInt(a.hour, 10)
+          const hourB = Number.parseInt(b.hour, 10)
+          return hourA - hourB
+        })
+
+        setTrafficData(trafficData)
       } catch (error) {
-        console.error("Error fetching dashboard data:", error);
-        toast.error("Failed to load dashboard data");
+        console.error("Error fetching dashboard data:", error)
+        toast.error("Failed to load dashboard data")
       } finally {
-        setIsLoading(false);
+        setIsLoading(false)
       }
-    };
+    }
 
-    fetchDashboardData();
-  }, []);
+    fetchDashboardData()
+  }, [])
 
   return (
     <div className="container mx-auto max-w-7xl px-4 py-8">
@@ -153,7 +174,7 @@ const Dashboard = () => {
                 <ReBarChart data={trafficData}>
                   <CartesianGrid strokeDasharray="3 3" />
                   <XAxis dataKey="hour" />
-                  <YAxis />
+                  <YAxis tickFormatter={(value) => Number(value).toFixed(0)} />
                   <Tooltip />
                   <Bar dataKey="visitors" fill="#3f51b5" />
                 </ReBarChart>
@@ -168,12 +189,18 @@ const Dashboard = () => {
           </CardHeader>
           <CardContent>
             <div className="flex flex-col gap-4 mb-6">
-              <Button asChild className="w-full bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-700 hover:to-cyan-700 text-white font-semibold">
+              <Button
+                asChild
+                className="w-full bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-700 hover:to-cyan-700 text-white font-semibold"
+              >
                 <Link to="/video-processing">
                   <Video className="mr-2 h-5 w-5" /> Process New Video
                 </Link>
               </Button>
-              <Button asChild className="w-full bg-gradient-to-r from-cyan-600 to-green-500 hover:from-cyan-700 hover:to-green-600 text-white font-semibold">
+              <Button
+                asChild
+                className="w-full bg-gradient-to-r from-cyan-600 to-green-500 hover:from-cyan-700 hover:to-green-600 text-white font-semibold"
+              >
                 <Link to="/heatmap-generation">
                   <Map className="mr-2 h-5 w-5" /> Generate Heatmap
                 </Link>
@@ -187,14 +214,16 @@ const Dashboard = () => {
                 <div className="space-y-3">
                   {recentJobs.map((job) => (
                     <div key={job.id} className="flex items-center gap-3 bg-slate-800/60 rounded-lg px-3 py-2">
-                      <div className={`w-2 h-2 rounded-full mt-1 ${job.status === "completed" ? "bg-green-400" : job.status === "error" ? "bg-red-400" : "bg-blue-400"}`}></div>
+                      <div
+                        className={`w-2 h-2 rounded-full mt-1 ${job.status === "completed" ? "bg-green-400" : job.status === "error" ? "bg-red-400" : "bg-blue-400"}`}
+                      ></div>
                       <div className="flex-1 min-w-0">
                         <div className="text-slate-200 text-sm truncate max-w-[180px]">
                           {job.status === "completed"
                             ? `Completed "${job.name}"`
                             : job.status === "error"
-                            ? `Error processing "${job.name}"`
-                            : `Processing "${job.name}"`}
+                              ? `Error processing "${job.name}"`
+                              : `Processing "${job.name}"`}
                         </div>
                         <div className="text-xs text-slate-400">{job.time}</div>
                       </div>
@@ -202,14 +231,16 @@ const Dashboard = () => {
                   ))}
                 </div>
               ) : (
-                <p className="text-slate-400">No recent activity found. Start by processing a video or generating a heatmap.</p>
+                <p className="text-slate-400">
+                  No recent activity found. Start by processing a video or generating a heatmap.
+                </p>
               )}
             </div>
           </CardContent>
         </Card>
       </div>
     </div>
-  );
-};
+  )
+}
 
-export default Dashboard;
+export default Dashboard
