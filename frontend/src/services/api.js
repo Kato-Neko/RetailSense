@@ -14,9 +14,9 @@ apiClient.interceptors.response.use(
   (response) => response,
   (error) => {
     if (error.response && error.response.status === 401) {
-        localStorage.removeItem('access_token'); // Clear the token
-        // Optionally redirect to login
-        window.location.href = '/'; // Adjust based on your routing
+      localStorage.removeItem('access_token'); // Clear the token
+      // Optionally redirect to login
+      window.location.href = '/'; // Adjust based on your routing
     }
     return Promise.reject(error.response.data);
   }
@@ -37,15 +37,15 @@ apiClient.interceptors.request.use(
 
 // Authentication services
 export const authService = {
- login: async (email, password) => {
+  login: async (email, password) => {
     try {
-        const response = await apiClient.post("/login", { email, password });
-        return response.data;  // Ensure this returns the expected structure
+      const response = await apiClient.post("/login", { email, password });
+      return response.data;  // Ensure this returns the expected structure
     } catch (error) {
-        throw error.response ? error.response.data : error;
+      throw error.response ? error.response.data : error;
     }
-},
-  
+  },
+
   register: async (username, email, password) => {
     try {
       const response = await apiClient.post("/register", {
@@ -207,6 +207,15 @@ export const heatmapService = {
 
   getCustomHeatmapImageUrl: (jobId, start, end) => {
     return `${API_BASE_URL}/heatmap_jobs/${jobId}/custom_heatmap_image?start=${start}&end=${end}`;
+  },
+  
+  getDetections: async (jobId) => {
+    try {
+      const response = await apiClient.get(`/heatmap_jobs/${jobId}/detections`);
+      return response.data;
+    } catch (error) {
+      throw error.response ? error.response.data : error;
+    }
   },
 };
 
