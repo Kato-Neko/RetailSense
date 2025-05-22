@@ -13,7 +13,7 @@ from collections import Counter
 
 logger = logging.getLogger(__name__)
 
-def detect_and_track(video_path, output_path, progress_callback=None, preview_folder=None):
+def detect_and_track(video_path, output_path, progress_callback=None, preview_folder=None, cancelled_flag=None):
     """
     Run person detection and tracking on a video.
     
@@ -22,6 +22,7 @@ def detect_and_track(video_path, output_path, progress_callback=None, preview_fo
         output_path: Path to save the processed video
         progress_callback: Optional callback function(progress) to report progress
         preview_folder: Optional folder to save preview images
+        cancelled_flag: Optional callable that returns True if the job should be cancelled
         
     Returns:
         Tuple of (output_video_path, detections, fps)
@@ -53,6 +54,10 @@ def detect_and_track(video_path, output_path, progress_callback=None, preview_fo
     detections_for_heatmap = []
     frame_count = 0
     while cap.isOpened():
+        # Check for cancellation before processing each frame
+        if cancelled_flag is not None and cancelled_flag():
+            logger.info("Job cancelled during object tracking loop.")
+            break
         ret, frame = cap.read()
         if not ret:
             break

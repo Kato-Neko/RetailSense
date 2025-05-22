@@ -92,7 +92,11 @@ def update_job_status_in_db(job_id, job):
     conn.close()
 
 def process_video_job(job_id):
-    """Process a video job in the background (restore backend detection)."""
+    """
+    Process a video job in the background (restore backend detection).
+    Supports cancellation: if the job's 'cancelled' flag is set (by the cancel endpoint),
+    the object tracking loop will stop early and the job will be marked as cancelled.
+    """
     try:
         job = jobs[job_id]
         job['status'] = 'processing'
@@ -122,7 +126,8 @@ def process_video_job(job_id):
             video_path,
             job['output_files_expected']['video'],
             progress_callback=lambda p: update_job_progress(job_id, 'YOLO detection', p),
-            preview_folder=job['output_files_expected']['image'] and os.path.dirname(job['output_files_expected']['image'])
+            preview_folder=job['output_files_expected']['image'] and os.path.dirname(job['output_files_expected']['image']),
+            cancelled_flag=lambda: job.get('cancelled', False)
         )
 
         # Check for cancellation after detection
@@ -226,9 +231,45 @@ def create_heatmap_job():
         logger.debug(f"Files in request: {request.files}")
         logger.debug(f"Form data: {request.form}")
 
-        if 'videoFile' not in request.files:
-            logger.error("Missing required video file")
-            return jsonify({"error": "Missing videoFile"}), 400
+        # Check if we are reusing a file
+        reuse_file = request.form.get('reuseFile', 'false').lower() == 'true'
+        video_filename = None
+        input_video_path = None
+        if reuse_file:
+            # Get the filename to reuse
+            video_filename = request.form.get('videoFilename')
+            current_user = get_jwt_identity()
+            # Find the most recent job for this user with this video file
+            conn = get_db_connection()
+            job_row = conn.execute('''SELECT job_id FROM jobs WHERE user = ? AND input_video_name = ? ORDER BY created_at DESC LIMIT 1''', (current_user, video_filename)).fetchone()
+            conn.close()
+            if not job_row:
+                logger.error("No previous upload found to reuse.")
+                return jsonify({"error": "No previous upload found to reuse."}), 400
+            # Use the previous upload path
+            prev_job_id = job_row['job_id']
+            prev_upload_folder = os.path.join(UPLOAD_FOLDER, prev_job_id)
+            prev_video_path = os.path.join(prev_upload_folder, video_filename)
+            if not os.path.exists(prev_video_path):
+                logger.error("Previous video file not found on server.")
+                return jsonify({"error": "Previous video file not found on server."}), 400
+            # Copy the file to the new job's upload folder
+            job_id = str(uuid.uuid4())
+            job_upload_folder = os.path.join(UPLOAD_FOLDER, job_id)
+            os.makedirs(job_upload_folder, exist_ok=True)
+            input_video_path = os.path.join(job_upload_folder, video_filename)
+            shutil.copy(prev_video_path, input_video_path)
+        else:
+            if 'videoFile' not in request.files:
+                logger.error("Missing required video file")
+                return jsonify({"error": "Missing videoFile"}), 400
+            video_file = request.files['videoFile']
+            video_filename = secure_filename(video_file.filename)
+            job_id = str(uuid.uuid4())
+            job_upload_folder = os.path.join(UPLOAD_FOLDER, job_id)
+            os.makedirs(job_upload_folder, exist_ok=True)
+            input_video_path = os.path.join(job_upload_folder, video_filename)
+            video_file.save(input_video_path)
         
         points_data_str = request.form.get('pointsData')
         if not points_data_str:
@@ -242,32 +283,13 @@ def create_heatmap_job():
             logger.error(f"Invalid pointsData: {e}")
             return jsonify({"error": f"Invalid pointsData: {e}"}), 400
 
-        video_file = request.files['videoFile']
-        logger.debug(f"Video file: {video_file.filename}")
-        if not (video_file.filename and allowed_file(video_file.filename, ALLOWED_EXTENSIONS_VIDEO)):
+        logger.debug(f"Video file: {video_filename}")
+        if not (video_filename and allowed_file(video_filename, ALLOWED_EXTENSIONS_VIDEO)):
             logger.error("Invalid video file type")
             return jsonify({"error": "Invalid video file type"}), 400
 
-        job_id = str(uuid.uuid4())
-        logger.debug(f"Generated job ID: {job_id}")
-
-        job_upload_folder = os.path.join(UPLOAD_FOLDER, job_id)
         job_results_folder = os.path.join(RESULTS_FOLDER, job_id)
-        os.makedirs(job_upload_folder, exist_ok=True)
         os.makedirs(job_results_folder, exist_ok=True)
-
-        video_filename = secure_filename(video_file.filename)
-        points_filename = f"points_{job_id}.json"
-        floorplan_filename = f"floorplan_{job_id}.jpg"
-
-        input_video_path = os.path.join(job_upload_folder, video_filename)
-        input_points_path = os.path.join(job_upload_folder, points_filename)
-        input_floorplan_path = os.path.join(job_upload_folder, floorplan_filename)
-
-        logger.debug(f"Saving files to: {job_upload_folder}")
-        video_file.save(input_video_path)
-        with open(input_points_path, 'w') as f:
-            json.dump(points_data, f)
 
         # Extract first frame as floorplan
         cap = cv2.VideoCapture(input_video_path)
@@ -276,6 +298,8 @@ def create_heatmap_job():
         if not ret:
             logger.error("Failed to extract first frame from video")
             return jsonify({"error": "Failed to extract first frame from video"}), 500
+        floorplan_filename = f"floorplan_{job_id}.jpg"
+        input_floorplan_path = os.path.join(job_upload_folder, floorplan_filename)
         cv2.imwrite(input_floorplan_path, frame)
 
         output_heatmap_image_path = os.path.join(job_results_folder, f"video_{job_id}_heatmap.jpg")
@@ -307,6 +331,12 @@ def create_heatmap_job():
             return jsonify({"error": "Time range exceeds video duration"}), 400
         if (end_datetime - start_datetime).total_seconds() <= 0:
             return jsonify({"error": "Time range must be greater than zero."}), 400
+
+        # Save points data (works for both new upload and reuse)
+        points_filename = f"points_{job_id}.json"
+        input_points_path = os.path.join(job_upload_folder, points_filename)
+        with open(input_points_path, 'w') as f:
+            json.dump(points_data, f)
 
         # Store the date and time in the job entry
         jobs[job_id] = {
@@ -417,7 +447,7 @@ def get_job_history():
                end_datetime,
                created_at,
                updated_at
-          FROM jobs WHERE user = ? ORDER BY created_at DESC
+        FROM jobs WHERE user = ? ORDER BY created_at DESC
     ''', (current_user,))
     history_jobs = [dict(row) for row in history_jobs_cursor.fetchall()]
     conn.close()
@@ -450,11 +480,37 @@ def delete_heatmap_job(job_id):
 @app.route('/api/heatmap_jobs/<job_id>/cancel', methods=['POST'])
 @jwt_required()
 def cancel_heatmap_job(job_id):
+    current_user = get_jwt_identity()
+    logger.info(f"User {current_user} requested cancellation for job {job_id}")
+    # Set the cancelled flag in memory if the job is running
     job = jobs.get(job_id)
-    if not job:
+    if job:
+        job['cancelled'] = True  # This flag is now checked in the object tracking loop
+        logger.info(f"Job {job_id} found in memory, marked as cancelled.")
+        # Also update status in DB immediately
+        conn = get_db_connection()
+        conn.execute("UPDATE jobs SET status = ?, message = ?, updated_at = CURRENT_TIMESTAMP WHERE job_id = ?", ('cancelled', 'Job was cancelled by user.', job_id))
+        conn.commit()
+        conn.close()
+        logger.info(f"Job {job_id} status updated to 'cancelled' in DB (in-memory case).")
+        return jsonify({"success": True, "message": "Job cancelled."})
+    # If not in memory, try to cancel in the database
+    conn = get_db_connection()
+    job_row = conn.execute("SELECT * FROM jobs WHERE job_id = ?", (job_id,)).fetchone()
+    if not job_row:
+        conn.close()
+        logger.error(f"Cancel failed: Job {job_id} not found in DB.")
         return jsonify({"error": "Job not found"}), 404
-    job['cancelled'] = True
-    return jsonify({"success": True, "message": "Job cancelled."})
+    if job_row['status'] in ('completed', 'cancelled', 'error'):
+        conn.close()
+        logger.info(f"Job {job_id} already finished with status {job_row['status']}.")
+        return jsonify({"success": True, "message": f"Job already {job_row['status']}."})
+    # Update status in DB
+    conn.execute("UPDATE jobs SET status = ?, message = ?, updated_at = CURRENT_TIMESTAMP WHERE job_id = ?", ('cancelled', 'Job was cancelled by user.', job_id))
+    conn.commit()
+    conn.close()
+    logger.info(f"Job {job_id} status updated to 'cancelled' in DB (DB-only case).")
+    return jsonify({"success": True, "message": "Job cancelled in DB."})
 
 @app.route('/api/heatmap_jobs/<job_id>/preview/detections', methods=['GET'])
 def get_detection_preview(job_id):
@@ -585,7 +641,7 @@ def export_heatmap_csv(job_id):
         if heatmap is None:
             logger.error(f"Could not load heatmap from {heatmap_path}")
             return jsonify({"error": "Could not load heatmap"}), 500
-
+            
         analysis = analyze_heatmap(heatmap, (1080, 1920), detections=detections, fps=fps)
 
         output = io.StringIO()
@@ -991,6 +1047,84 @@ def get_custom_heatmap_analysis(job_id):
         logger.error(f"Error getting custom heatmap analysis: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
+@app.route('/api/heatmap_jobs/<job_id>/points', methods=['GET'])
+@jwt_required()
+def get_job_points(job_id):
+    """
+    API endpoint to return the 4 points (pointsData) for a given job.
+    Reads the points JSON file saved during job creation and returns it as JSON.
+    """
+    # Find the job's upload folder and points file
+    job_upload_folder = os.path.join(UPLOAD_FOLDER, job_id)
+    # The points file is named points_<job_id>.json
+    points_filename = f"points_{job_id}.json"
+    points_path = os.path.join(job_upload_folder, points_filename)
+    if not os.path.exists(points_path):
+        return jsonify({"error": "Points file not found for this job."}), 404
+    try:
+        with open(points_path, 'r') as f:
+            points_data = json.load(f)
+        # Return the points data as JSON
+        return jsonify({"pointsData": points_data})
+    except Exception as e:
+        return jsonify({"error": f"Failed to read points file: {str(e)}"}), 500
+
+@app.route('/api/heatmap_jobs/<job_id>/time_range', methods=['GET'])
+@jwt_required()
+def get_job_time_range(job_id):
+    """
+    API endpoint to return the start and end date/time for a given job.
+    Returns start_date, end_date, start_time, end_time as separate fields for easy frontend restoration.
+    """
+    conn = get_db_connection()
+    job_row = conn.execute("SELECT start_datetime, end_datetime FROM jobs WHERE job_id = ?", (job_id,)).fetchone()
+    conn.close()
+    if not job_row:
+        return jsonify({"error": "Job not found"}), 404
+    # Parse the datetime strings
+    start_dt = str(job_row['start_datetime']) if job_row['start_datetime'] else ''
+    end_dt = str(job_row['end_datetime']) if job_row['end_datetime'] else ''
+    # Split into date and time
+    start_date, start_time = ('', '')
+    end_date, end_time = ('', '')
+    if ' ' in start_dt:
+        start_date, start_time = start_dt.split(' ')
+    elif 'T' in start_dt:
+        start_date, start_time = start_dt.split('T')
+    if ' ' in end_dt:
+        end_date, end_time = end_dt.split(' ')
+    elif 'T' in end_dt:
+        end_date, end_time = end_dt.split('T')
+    # Truncate time to HH:MM:SS
+    start_time = start_time[:8]
+    end_time = end_time[:8]
+    return jsonify({
+        "start_date": start_date,
+        "end_date": end_date,
+        "start_time": start_time,
+        "end_time": end_time
+    })
+
+# On backend startup, clean up orphaned jobs left as 'pending' or 'processing' if not running in memory
+
+def cleanup_orphaned_jobs():
+    conn = get_db_connection()
+    # Find jobs that are not completed/cancelled/errored
+    orphaned = conn.execute(
+        "SELECT job_id FROM jobs WHERE status IN ('pending', 'processing')"
+    ).fetchall()
+    for row in orphaned:
+        job_id = row['job_id']
+        # If job is not in memory (not running), mark as error
+        if job_id not in jobs:
+            conn.execute(
+                "UPDATE jobs SET status = ?, message = ?, updated_at = CURRENT_TIMESTAMP WHERE job_id = ?",
+                ('error', 'Job was interrupted by server shutdown.', job_id)
+            )
+    conn.commit()
+    conn.close()
+
 if __name__ == '__main__':
     init_db()
-    app.run(host='0.0.0.0', port=5000, debug=True) 
+    cleanup_orphaned_jobs()  # Clean up jobs on startup
+    app.run(host='0.0.0.0', port=5000, debug=True)
