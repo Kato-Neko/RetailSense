@@ -36,7 +36,9 @@ const ConfirmationStep = ({
               <FileVideo className="h-4 w-4 mr-2 text-blue-400" />
               Video File:
             </div>
-            <div className="text-sm text-muted-foreground">{file?.name || "No file selected"}</div>
+            <div className="text-sm text-muted-foreground max-w-[220px] truncate break-all" title={file?.name || "No file selected"}>
+              {file?.name || "No file selected"}
+            </div>
 
             <div className="text-sm font-semibold text-muted-foreground flex items-center mt-2 mb-2 ml-4">
               <Calendar className="h-4 w-4 mr-2 text-blue-400" />

@@ -32,6 +32,41 @@ function App() {
       setLoading(false)
     }
     checkToken()
+
+    // Listen for job completion/cancellation in any tab (storage event)
+    const handleStorage = (e) => {
+      if (e.key === 'jobCompleted' && e.newValue) {
+        const { jobName } = JSON.parse(e.newValue)
+        window?.toast?.success?.(`Processing complete for "${jobName}"`) || window.dispatchEvent(new CustomEvent('show-toast', { detail: { type: 'success', message: `Processing complete for "${jobName}"` } }))
+        window.dispatchEvent(new Event('dashboard-refresh'))
+      }
+      if (e.key === 'jobCancelled' && e.newValue) {
+        const { jobName } = JSON.parse(e.newValue)
+        window?.toast?.info?.(`Processing cancelled for "${jobName}"`) || window.dispatchEvent(new CustomEvent('show-toast', { detail: { type: 'info', message: `Processing cancelled for "${jobName}"` } }))
+        window.dispatchEvent(new Event('dashboard-refresh'))
+      }
+    }
+    window.addEventListener('storage', handleStorage)
+
+    // Listen for custom events in the same tab
+    const handleJobCompleted = (e) => {
+      const { jobName } = e.detail || {}
+      window?.toast?.success?.(`Processing complete for "${jobName}"`) || window.dispatchEvent(new CustomEvent('show-toast', { detail: { type: 'success', message: `Processing complete for "${jobName}"` } }))
+      window.dispatchEvent(new Event('dashboard-refresh'))
+    }
+    const handleJobCancelled = (e) => {
+      const { jobName } = e.detail || {}
+      window?.toast?.info?.(`Processing cancelled for "${jobName}"`) || window.dispatchEvent(new CustomEvent('show-toast', { detail: { type: 'info', message: `Processing cancelled for "${jobName}"` } }))
+      window.dispatchEvent(new Event('dashboard-refresh'))
+    }
+    window.addEventListener('job-completed', handleJobCompleted)
+    window.addEventListener('job-cancelled', handleJobCancelled)
+
+    return () => {
+      window.removeEventListener('storage', handleStorage)
+      window.removeEventListener('job-completed', handleJobCompleted)
+      window.removeEventListener('job-cancelled', handleJobCancelled)
+    }
   }, [])
 
   if (loading) return <div>Loading...</div>

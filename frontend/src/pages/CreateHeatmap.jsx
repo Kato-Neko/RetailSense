@@ -161,13 +161,13 @@ const CreateHeatmap = () => {
   // Poll for job status if we have a jobId and are processing
   useEffect(() => {
     let intervalId
-
+    let failedAttempts = 0; // Track failed backend polls
     if (jobId && isProcessing) {
       intervalId = setInterval(async () => {
         try {
           const response = await heatmapService.getJobStatus(jobId)
           setStatusMessage(response.message || "Processing video...")
-
+          failedAttempts = 0; // Reset on success
           // Update processing step based on message content
           if (response.message && response.message.includes("YOLO")) {
             setProcessingStep(1)
@@ -179,30 +179,44 @@ const CreateHeatmap = () => {
           ) {
             setProcessingStep(3)
           }
-
           // Check if processing is complete
           if (response.status === "completed") {
             setIsProcessing(false)
             setProcessingComplete(true)
             clearInterval(intervalId)
             toast.success("Video processing complete")
+            // Dispatch dashboard refresh event
+            window.dispatchEvent(new Event('dashboard-refresh'));
+            // Write to localStorage for global notification
+            localStorage.setItem('jobCompleted', JSON.stringify({
+              jobName: file?.name || 'Video',
+              jobId,
+              ts: Date.now()
+            }));
+            // Dispatch custom event and show toast in same tab
+            window.dispatchEvent(new CustomEvent('job-completed', { detail: { jobName: file?.name || 'Video', jobId } }));
           } else if (response.status === "error") {
             setIsProcessing(false)
             clearInterval(intervalId)
             toast.error(`Processing failed: ${response.message}`)
           }
         } catch (error) {
-          console.error("Error checking job status:", error)
-          // Don't stop polling on network errors, they might be temporary
-          setStatusMessage("Waiting for server response...")
+          failedAttempts++;
+          if (failedAttempts >= 5) {
+            setIsProcessing(false);
+            setStatusMessage("Server unreachable. Please check your connection or try again later.");
+            clearInterval(intervalId);
+            toast.error("Unable to contact server. Please check your connection or try again later.");
+          } else {
+            setStatusMessage("Waiting for server response...");
+          }
         }
       }, 2000) // Poll every 2 seconds
     }
-
     return () => {
       if (intervalId) clearInterval(intervalId)
     }
-  }, [jobId, isProcessing])
+  }, [jobId, isProcessing, file])
 
   // Update progress percent when statusMessage changes
   useEffect(() => {
@@ -233,6 +247,67 @@ const CreateHeatmap = () => {
       }
     }
   }, [videoPreviewUrl])
+
+  // On mount, restore in-progress job from backend if currentJobId is in localStorage
+  useEffect(() => {
+    const restoreInProgressJob = async () => {
+      const savedJobId = localStorage.getItem('currentJobId');
+      if (savedJobId && !jobId) {
+        try {
+          // Fetch job status
+          const statusResp = await heatmapService.getJobStatus(savedJobId);
+          if (statusResp.status === 'pending' || statusResp.status === 'processing') {
+            // Fetch job details from backend
+            const jobDetails = await heatmapService.getJobDetails(savedJobId);
+            // Fetch pointsData from new endpoint for robust restoration
+            let restoredPoints = [];
+            try {
+              restoredPoints = await heatmapService.getJobPoints(savedJobId);
+            } catch (e) {
+              restoredPoints = [];
+            }
+            // Fetch time range from new endpoint for robust restoration
+            let restoredTimeRange = { start_date: '', end_date: '', start_time: '', end_time: '' };
+            try {
+              restoredTimeRange = await heatmapService.getJobTimeRange(savedJobId);
+            } catch (e) {
+              restoredTimeRange = { start_date: '', end_date: '', start_time: '', end_time: '' };
+            }
+            setJobId(savedJobId);
+            setIsProcessing(true);
+            setCurrentStep(3); // Step 4 (0-based index)
+            // Restore summary fields from backend
+            setStartDate(restoredTimeRange.start_date);
+            setEndDate(restoredTimeRange.end_date);
+            setStartTime(restoredTimeRange.start_time);
+            setEndTime(restoredTimeRange.end_time);
+            setPointsData(restoredPoints); // Use robustly restored points
+            setFile({ name: jobDetails.input_video_name }); // Only name, can't restore file object
+          } else {
+            // Job is done or cancelled, clear localStorage and reset UI
+            localStorage.removeItem('currentJobId');
+            setJobId(null);
+            setIsProcessing(false);
+            setCurrentStep(0);
+          }
+        } catch (err) {
+          // If job not found, clear state
+          localStorage.removeItem('currentJobId');
+          setJobId(null);
+          setIsProcessing(false);
+          setCurrentStep(0);
+        }
+      }
+    };
+    restoreInProgressJob();
+  }, []);
+
+  // When job is completed, errored, or cancelled, remove currentJobId from localStorage
+  useEffect(() => {
+    if (jobId && (statusMessage.includes('completed') || statusMessage.includes('cancelled') || statusMessage.includes('error'))) {
+      localStorage.removeItem('currentJobId');
+    }
+  }, [jobId, statusMessage]);
 
   // Handle file selection and extract first frame
   const handleFileChange = (selectedFile) => {
@@ -353,7 +428,6 @@ const CreateHeatmap = () => {
       toast.error("Please ensure all criteria are met before processing.")
       return
     }
-
     setIsProcessing(true)
     setBackendError(null)
     try {
@@ -364,10 +438,11 @@ const CreateHeatmap = () => {
       formData.append("end_date", endDate)
       formData.append("start_time", startTime)
       formData.append("end_time", endTime)
-
       const response = await heatmapService.createJob(formData)
       setJobId(response.job_id)
       setStatusMessage("Video uploaded and processing started")
+      // Always set currentJobId in localStorage after job creation
+      localStorage.setItem('currentJobId', response.job_id)
       toast.success("Video uploaded and processing started")
     } catch (error) {
       console.error("Error processing video:", error)
@@ -402,18 +477,43 @@ const CreateHeatmap = () => {
     }
   }
 
-  // Handle cancel job
+  // Handle cancel job with navigation-aware logic
   const handleCancelJob = async () => {
-    if (!jobId) return
+    if (!jobId) return;
     try {
-      await heatmapService.cancelJob(jobId)
-      setIsProcessing(false)
-      setStatusMessage("Processing cancelled.")
-      toast.info("Processing cancelled")
+      await heatmapService.cancelJob(jobId);
+      setIsProcessing(false);
+      setStatusMessage("Processing cancelled.");
+      toast.info("Processing cancelled");
+      // Dispatch dashboard refresh event
+      window.dispatchEvent(new Event('dashboard-refresh'));
+      // Write to localStorage for global notification
+      localStorage.setItem('jobCancelled', JSON.stringify({
+        jobName: file?.name || 'Video',
+        jobId,
+        ts: Date.now()
+      }));
+      // Dispatch custom event and show toast in same tab
+      window.dispatchEvent(new CustomEvent('job-cancelled', { detail: { jobName: file?.name || 'Video', jobId } }));
+      // If file is not a real File object (user navigated away), reset to step 1
+      if (!file || !(file instanceof File)) {
+        setJobId(null);
+        setFile(null);
+        setVideoPreviewUrl(null);
+        setPointsData([]);
+        setStartDate("");
+        setEndDate("");
+        setStartTime("00:00:00");
+        setEndTime("00:00:00");
+        setFirstFrame(null);
+        setCurrentStep(0);
+        localStorage.removeItem('currentJobId');
+      }
+      // else: stay on step 4, allow retry
     } catch (err) {
-      toast.error("Failed to cancel job")
+      toast.error("Failed to cancel job");
     }
-  }
+  };
 
   // Force Next button to work properly
   const forceNextStep = () => {
@@ -436,14 +536,14 @@ const CreateHeatmap = () => {
               <button
                 key={index}
                 onClick={() => goToStep(index)}
-                disabled={index > 0 && !isStepValid(index - 1) && index > currentStep}
+                disabled={isProcessing || (index > 0 && !isStepValid(index - 1) && index > currentStep)}
                 className={`relative w-10 h-10 rounded-full flex items-center justify-center transition-all duration-200 shadow-md backdrop-blur-md border border-border text-lg font-bold
                   ${currentStep === index
                     ? 'bg-gradient-to-br from-white to-cyan-200 text-black dark:from-blue-900 dark:to-cyan-800 dark:text-white'
                     : index < currentStep
                       ? 'bg-muted text-foreground'
                       : 'bg-muted/60 text-muted-foreground'}
-                  ${index > 0 && !isStepValid(index - 1) && index > currentStep
+                  ${(isProcessing || (index > 0 && !isStepValid(index - 1) && index > currentStep))
                     ? 'opacity-50 cursor-not-allowed'
                     : 'cursor-pointer'}
                 `}
@@ -518,7 +618,7 @@ const CreateHeatmap = () => {
                 statusMessage={statusMessage}
                 progressPercent={progressPercent}
                 backendError={backendError}
-                onPrevious={() => goToStep(2)}
+                onPrevious={isProcessing ? undefined : () => goToStep(2)}
                 onProcess={handleProcessVideo}
                 onCancel={handleCancelJob}
               />

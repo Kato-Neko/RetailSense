@@ -11,6 +11,8 @@ import { Button } from "@/components/ui/button"
 import { ChartContainer, ChartTooltip, ChartTooltipContent, ChartLegend, ChartLegendContent } from "@/components/ui/chart"
 import { LineChart as ReLineChart, Line } from "recharts"
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
+import jsPDF from 'jspdf';
+import domtoimage from 'dom-to-image';
 
 const Dashboard = () => {
   const [stats, setStats] = useState({
@@ -56,7 +58,10 @@ const Dashboard = () => {
 
         // Calculate stats from job history
         const completedJobs = jobHistory.filter((job) => job.status === "completed")
-        const videoCount = new Set(jobHistory.map((job) => job.input_video_name)).size
+        // Only count completed video jobs for Processed Videos
+        const processedVideos = jobHistory.filter(
+          job => job.input_video_name && job.status === "completed"
+        ).length;
         const heatmapCount = completedJobs.length
 
         // For this demo, we'll estimate visitor count based on completed jobs
@@ -65,7 +70,7 @@ const Dashboard = () => {
         setStats({
           totalVisitors: estimatedVisitors,
           peakHour: "14:00-15:00", // This would ideally come from real analysis
-          processedVideos: videoCount,
+          processedVideos: processedVideos,
           generatedHeatmaps: heatmapCount,
         })
 
@@ -214,6 +219,15 @@ const Dashboard = () => {
     }
 
     fetchDashboardData()
+
+    // Listen for custom dashboard-refresh event to trigger refresh
+    const handleRefresh = () => {
+      fetchDashboardData();
+    };
+    window.addEventListener('dashboard-refresh', handleRefresh);
+    return () => {
+      window.removeEventListener('dashboard-refresh', handleRefresh);
+    };
   }, [])
 
   // Compute turbo color for each point in daily and weekly chart
@@ -294,6 +308,99 @@ const Dashboard = () => {
     )
   }
 
+  // Function to cancel a job and refresh dashboard
+  const handleCancelJob = async (jobId) => {
+    try {
+      await heatmapService.cancelJob(jobId);
+      toast.success('Job cancelled!');
+      // Immediately refresh dashboard data
+      fetchDashboardData();
+    } catch (err) {
+      toast.error('Failed to cancel job.');
+    }
+  };
+
+  // Placeholder values for store/project, user, and date range
+  const storeName = 'N/A'; // Replace with actual value if available
+  const userEmail = 'N/A'; // Replace with actual value if available
+  const dateRange = 'N/A'; // Replace with actual value if available
+
+  // Export chart data as CSV (summary stats + chart data, excluding 'fill' and 'dotColor')
+  const exportCSV = () => {
+    let data = [];
+    if (activeChart === 'daily') data = dailyLineData;
+    else if (activeChart === 'weekly') data = weeklyLineData;
+    else if (activeChart === 'monthly') data = monthlyBarData;
+    if (!data.length) return toast.error('No data to export.');
+    // Exclude 'fill' and 'dotColor' fields
+    const header = Object.keys(data[0]).filter(h => h !== 'fill' && h !== 'dotColor');
+    const csvRows = [];
+    // Add export date/time as first row
+    const exportDate = new Date().toLocaleString();
+    csvRows.push('Exported At,' + exportDate);
+    // Add summary stats as next rows
+    csvRows.push('Total Visitors,' + stats.totalVisitors);
+    csvRows.push('Peak Hour,' + stats.peakHour);
+    csvRows.push('Processed Videos,' + stats.processedVideos);
+    csvRows.push('Generated Heatmaps,' + stats.generatedHeatmaps);
+    csvRows.push(''); // Empty row
+    csvRows.push(header.join(','));
+    data.forEach(row => {
+      csvRows.push(header.map(h => row[h]).join(','));
+    });
+    const csvContent = csvRows.join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `foot_traffic_${activeChart}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  // Export chart as PDF (summary stats + chart image, using dom-to-image to avoid color issues)
+  const exportPDF = async () => {
+    const chartCard = document.getElementById('foot-traffic-chart-card');
+    if (!chartCard) return toast.error('Chart not found.');
+    const chartArea = chartCard.querySelector('.ChartContainer') || chartCard;
+    try {
+      // Use dom-to-image to get a PNG of the chart
+      const imgData = await domtoimage.toPng(chartArea, { bgcolor: '#fff' });
+      const pdf = new jsPDF({ orientation: 'landscape', unit: 'pt', format: 'a4' });
+      const pageWidth = pdf.internal.pageSize.getWidth();
+      let y = 40;
+      pdf.setFontSize(18);
+      pdf.text('Foot Traffic Analytics', 40, y);
+      // Add export date/time below the title
+      pdf.setFontSize(11);
+      const exportDate = new Date().toLocaleString();
+      y += 18;
+      pdf.text(`Exported At: ${exportDate}`, 40, y);
+      pdf.setFontSize(12);
+      y += 22;
+      pdf.text(`Total Visitors: ${stats.totalVisitors}`, 40, y);
+      y += 20;
+      pdf.text(`Peak Hour: ${stats.peakHour}`, 40, y);
+      y += 20;
+      pdf.text(`Processed Videos: ${stats.processedVideos}`, 40, y);
+      y += 20;
+      pdf.text(`Generated Heatmaps: ${stats.generatedHeatmaps}`, 40, y);
+      y += 20;
+      // Add chart image
+      const img = new window.Image();
+      img.src = imgData;
+      img.onload = () => {
+        const imgWidth = pageWidth - 80;
+        const imgHeight = (img.height * imgWidth) / img.width;
+        pdf.addImage(img, 'PNG', 40, y, imgWidth, imgHeight);
+        pdf.save(`foot_traffic_${activeChart}.pdf`);
+      };
+    } catch (err) {
+      toast.error('Failed to export PDF');
+      console.error(err);
+    }
+  };
+
   return (
     <div className="relative h-[800px] w-full bg-background dark:bg-gradient-to-br dark:from-slate-950 dark:via-slate-900 dark:to-slate-950 py-7 px-1 md:px-0 overflow-x-hidden">
       {/* Soft background blur and gradient effects */}
@@ -331,30 +438,37 @@ const Dashboard = () => {
       {/* Main Grid */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-7 h-[400px]">
         {/* Chart Card */}
-          <Card className="col-span-2 bg-gradient-to-br from-background/80 to-muted/90 dark:from-slate-900/80 dark:to-slate-950/90 border border-border shadow-2xl shadow-primary/10 backdrop-blur-xl rounded-xl">
-            <CardHeader className="pb-2">
-              <CardTitle className="text-lg font-bold text-foreground tracking-tight drop-shadow mb-2">Foot Traffic Analytics</CardTitle>
-              <div className="mt-2 flex justify-center">
-                <ToggleGroup
-                  type="single"
-                  value={activeChart}
-                  onValueChange={val => val && setActiveChart(val)}
-                  variant="outline"
-                  size="default"
-                  className="bg-muted/60 border border-border rounded-lg overflow-hidden shadow-md"
-                >
-                  <ToggleGroupItem value="daily" className={"px-4 py-1 text-xs font-semibold transition-all rounded-md " + (activeChart === "daily"
-                    ? "bg-gradient-to-r from-white to-cyan-100 text-black border border-border dark:from-blue-900 dark:to-cyan-800 dark:text-white"
-                    : "text-black bg-transparent hover:bg-muted/60 border border-transparent dark:text-white dark:bg-white/10 dark:hover:bg-white/20")}>Daily</ToggleGroupItem>
-                  <ToggleGroupItem value="weekly" className={"px-4 py-1 text-xs font-semibold transition-all rounded-md " + (activeChart === "weekly"
-                    ? "bg-gradient-to-r from-white to-cyan-100 text-black border border-border dark:from-blue-900 dark:to-cyan-800 dark:text-white"
-                    : "text-black bg-transparent hover:bg-muted/60 border border-transparent dark:text-white dark:bg-white/10 dark:hover:bg-white/20")}>Weekly</ToggleGroupItem>
-                  <ToggleGroupItem value="monthly" className={"px-4 py-1 text-xs font-semibold transition-all rounded-md " + (activeChart === "monthly"
-                    ? "bg-gradient-to-r from-white to-cyan-100 text-black border border-border dark:from-blue-900 dark:to-cyan-800 dark:text-white"
-                    : "text-black bg-transparent hover:bg-muted/60 border border-transparent dark:text-white dark:bg-white/10 dark:hover:bg-white/20")}>Monthly</ToggleGroupItem>
-                </ToggleGroup>
+          <Card id="foot-traffic-chart-card" className="col-span-2 bg-gradient-to-br from-background/80 to-muted/90 dark:from-slate-900/80 dark:to-slate-950/90 border border-border shadow-2xl shadow-primary/10 backdrop-blur-xl rounded-xl">
+            <CardHeader className="pb-2 flex flex-row items-center justify-between">
+              <div>
+                <CardTitle className="text-lg font-bold text-foreground tracking-tight drop-shadow mb-2 inline-block">Foot Traffic Analytics</CardTitle>
+                {/* Always show the filter (ToggleGroup) inline with the title */}
+                <div className="mt-2 flex justify-center">
+                  <ToggleGroup
+                    type="single"
+                    value={activeChart}
+                    onValueChange={val => val && setActiveChart(val)}
+                    variant="outline"
+                    size="default"
+                    className="bg-muted/60 border border-border rounded-lg overflow-hidden shadow-md"
+                  >
+                    <ToggleGroupItem value="daily" className={"px-4 py-1 text-xs font-semibold transition-all rounded-md " + (activeChart === "daily"
+                      ? "bg-gradient-to-r from-white to-cyan-100 text-black border border-border dark:from-blue-900 dark:to-cyan-800 dark:text-white"
+                      : "text-black bg-transparent hover:bg-muted/60 border border-transparent dark:text-white dark:bg-white/10 dark:hover:bg-white/20")}>Daily</ToggleGroupItem>
+                    <ToggleGroupItem value="weekly" className={"px-4 py-1 text-xs font-semibold transition-all rounded-md " + (activeChart === "weekly"
+                      ? "bg-gradient-to-r from-white to-cyan-100 text-black border border-border dark:from-blue-900 dark:to-cyan-800 dark:text-white"
+                      : "text-black bg-transparent hover:bg-muted/60 border border-transparent dark:text-white dark:bg-white/10 dark:hover:bg-white/20")}>Weekly</ToggleGroupItem>
+                    <ToggleGroupItem value="monthly" className={"px-4 py-1 text-xs font-semibold transition-all rounded-md " + (activeChart === "monthly"
+                      ? "bg-gradient-to-r from-white to-cyan-100 text-black border border-border dark:from-blue-900 dark:to-cyan-800 dark:text-white"
+                      : "text-black bg-transparent hover:bg-muted/60 border border-transparent dark:text-white dark:bg-white/10 dark:hover:bg-white/20")}>Monthly</ToggleGroupItem>
+                  </ToggleGroup>
+                </div>
               </div>
-          </CardHeader>
+              <div className="flex gap-2 items-center ml-auto">
+                <Button size="sm" variant="outline" className="text-xs" onClick={exportCSV}>Export CSV</Button>
+                <Button size="sm" variant="outline" className="text-xs" onClick={exportPDF}>Export PDF</Button>
+              </div>
+            </CardHeader>
             <CardContent className="h-85 flex items-center justify-center">
             {isLoading ? (
               <div className="text-muted-foreground">Loading chart data...</div>
@@ -385,12 +499,12 @@ const Dashboard = () => {
                       <XAxis dataKey="hour" stroke="#ffb300" tick={{ fontSize: 12, fill: '#ffb300' }} />
                       <YAxis stroke="#ffb300" tick={{ fontSize: 12, fill: '#ffb300' }} label={{ value: 'Visitors', angle: -90, position: 'insideLeft', fill: '#ffb300', fontSize: 14, dy: -10 }} />
                       <ChartTooltip content={<ChartTooltipContent />} />
-                      <Line
-                        type="monotone"
-                        dataKey="visitors"
+                <Line 
+                  type="monotone" 
+                  dataKey="visitors" 
                         stroke="url(#turbo-gradient-daily)"
                         strokeWidth={2.5}
-                        dot={false}
+                  dot={false}
                         activeDot={({ cx, cy, payload, index }) => (
                           <circle key={"dot-active-" + index} cx={cx} cy={cy} r={7} fill={payload.dotColor} stroke="#fff" strokeWidth={2} />
                         )}
@@ -418,8 +532,8 @@ const Dashboard = () => {
                       <YAxis stroke="#3b82f6" tick={{ fontSize: 12, fill: '#3b82f6' }} label={{ value: 'Visitors', angle: -90, position: 'insideLeft', fill: '#3b82f6', fontSize: 14, dy: -10 }} />
                       <ChartTooltip content={<ChartTooltipContent />} />
                       <Line
-                        type="monotone"
-                        dataKey="visitors"
+                        type="monotone" 
+                        dataKey="visitors" 
                         stroke="url(#turbo-gradient-weekly)"
                         strokeWidth={2.5}
                         dot={false}
@@ -447,66 +561,79 @@ const Dashboard = () => {
                 </ReBarChart>
                   )}
                 </ChartContainer>
-            )}
-          </CardContent>
-        </Card>
+                )}
+              </CardContent>
+            </Card>
         {/* Actions & Recent Activity Card */}
           <Card className="bg-gradient-to-br from-background/80 to-muted/90 dark:from-slate-900/80 dark:to-slate-950/90 border border-border shadow-xl shadow-primary/10 backdrop-blur-xl rounded-xl flex flex-col">
-          <CardHeader>
+        <CardHeader>
               <CardTitle className="text-base font-bold text-foreground tracking-tight drop-shadow mb-2">Quick Actions</CardTitle>
-          </CardHeader>
-          <CardContent>
+        </CardHeader>
+        <CardContent>
               <div className="flex flex-col gap-3 mb-6">
                 <Button
                   asChild
                   className="w-full bg-gradient-to-r from-white to-cyan-200 text-black font-semibold shadow-md border border-border py-2 text-sm hover:opacity-90 dark:from-white/10 dark:to-cyan-400/30 dark:text-white"
                 >
-                <Link to="/video-processing">
-                  <Video className="mr-2 h-5 w-5" /> Process New Video
-            </Link>
-              </Button>
+              <Link to="/video-processing">
+                <Video className="mr-2 h-5 w-5" /> Process New Video
+              </Link>
+            </Button>
                 <Button
                   asChild
                   className="w-full bg-gradient-to-r from-cyan-100 to-green-200 text-black font-semibold shadow-md border border-border py-2 text-sm hover:opacity-90 dark:from-cyan-400/30 dark:to-green-400/30 dark:text-white"
                 >
-                <Link to="/heatmap-generation">
-                  <Map className="mr-2 h-5 w-5" /> Generate Heatmap
-            </Link>
-              </Button>
+              <Link to="/heatmap-generation">
+                <Map className="mr-2 h-5 w-5" /> Generate Heatmap
+              </Link>
+            </Button>
           </div>
-            <div>
+          <div>
                 <h3 className="text-sm font-semibold text-foreground mb-3">Recent Activity</h3>
-              {isLoading ? (
+            {isLoading ? (
                 <div className="text-muted-foreground">Loading recent activity...</div>
-              ) : recentJobs.length > 0 ? (
+            ) : recentJobs.length > 0 ? (
                   <div className="space-y-2">
-                  {recentJobs.map((job) => (
+                {recentJobs.map((job) => (
                       <div key={job.id} className="flex items-center gap-3 bg-muted/70 rounded-lg px-3 py-2 shadow-sm hover:shadow-lg transition-shadow">
                         <div
-                          className={`w-2 h-2 rounded-full mt-1 ${job.status === "completed" ? "bg-green-400" : job.status === "error" ? "bg-red-400" : "bg-blue-400"}`}
+                          className={`w-2 h-2 rounded-full mt-1 ${job.status === "completed" ? "bg-green-400" : job.status === "error" ? "bg-red-400" : job.status === "cancelled" ? "bg-yellow-400" : "bg-blue-400"}`}
                         ></div>
-                      <div className="flex-1 min-w-0">
+                    <div className="flex-1 min-w-0">
                           <div className="text-xs text-foreground truncate max-w-[140px]">
-                          {job.status === "completed"
-                            ? `Completed "${job.name}"`
-                            : job.status === "error"
-                            ? `Error processing "${job.name}"`
-                            : `Processing "${job.name}"`}
-                        </div>
-                        <div className="text-xs text-muted-foreground">{job.time}</div>
+                        {job.status === "completed"
+                          ? `Completed "${job.name}"`
+                          : job.status === "error"
+                          ? `Error processing "${job.name}"`
+                          : job.status === "cancelled"
+                          ? `Cancelled "${job.name}"`
+                          : `Processing "${job.name}"`}
                       </div>
+                        <div className="text-xs text-muted-foreground">{job.time}</div>
                     </div>
-                  ))}
-                </div>
-              ) : (
+                    {/* Show Cancel button only for processing jobs */}
+                    {job.status === "processing" && (
+                      <Button
+                        size="sm"
+                        variant="destructive"
+                        className="ml-2 px-2 py-1 text-xs"
+                        onClick={() => handleCancelJob(job.id)}
+                      >
+                        Cancel
+                      </Button>
+                    )}
+                  </div>
+                ))}
+              </div>
+            ) : (
                   <p className="text-muted-foreground text-xs">
                     No recent activity found. Start by processing a video or generating a heatmap.
                   </p>
-              )}
-            </div>
-          </CardContent>
-        </Card>
-      </div>
+            )}
+          </div>
+        </CardContent>
+      </Card>
+    </div>
     </div>
     </div>
   )

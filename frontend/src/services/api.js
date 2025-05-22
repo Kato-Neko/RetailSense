@@ -123,6 +123,18 @@ export const heatmapService = {
     }
   },
 
+  getJobDetails: async (jobId) => {
+    try {
+      const response = await apiClient.get(`/heatmap_jobs/history`);
+      // Find the job in the returned history
+      const job = response.data.find(j => j.job_id === jobId);
+      if (!job) throw new Error('Job not found');
+      return job;
+    } catch (error) {
+      throw error.response ? error.response.data : error;
+    }
+  },
+
   getHeatmapImageUrl: (jobId) => {
     return `${API_BASE_URL}/heatmap_jobs/${jobId}/result/image`;
   },
@@ -241,6 +253,26 @@ export const heatmapService = {
   getDetections: async (jobId) => {
     try {
       const response = await apiClient.get(`/heatmap_jobs/${jobId}/detections`);
+      return response.data;
+    } catch (error) {
+      throw error.response ? error.response.data : error;
+    }
+  },
+
+  getJobPoints: async (jobId) => {
+    // Fetch the 4 points (pointsData) for a given job from the backend
+    try {
+      const response = await apiClient.get(`/heatmap_jobs/${jobId}/points`);
+      return response.data.pointsData;
+    } catch (error) {
+      throw error.response ? error.response.data : error;
+    }
+  },
+
+  getJobTimeRange: async (jobId) => {
+    // Fetch the time range (start/end date and time) for a given job from the backend
+    try {
+      const response = await apiClient.get(`/heatmap_jobs/${jobId}/time_range`);
       return response.data;
     } catch (error) {
       throw error.response ? error.response.data : error;
