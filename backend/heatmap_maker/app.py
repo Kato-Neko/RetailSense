@@ -578,6 +578,31 @@ def update_username():
     finally:
         conn.close()
 
+# Helper function to load detections and fps from detections.json
+
+def load_detections(job_id):
+    detections_path = os.path.join(RESULTS_FOLDER, job_id, 'detections.json')
+    if not os.path.exists(detections_path):
+        logger.error(f"Detections file not found for job ID: {job_id}")
+        return None, None
+    try:
+        with open(detections_path, 'r') as f:
+            det_data = json.load(f)
+            detections = det_data.get("detections", [])
+            fps = det_data.get("fps")
+        return detections, fps
+    except Exception as e:
+        logger.error(f"Error reading detections file for job ID {job_id}: {str(e)}")
+        return None, None
+
+@app.route('/api/heatmap_jobs/<job_id>/detections', methods=['GET'])
+@jwt_required()
+def get_detections_from_json(job_id):
+    detections, fps = load_detections(job_id)
+    if detections is None:
+        return jsonify({"error": "Detections file not found"}), 404
+    return jsonify({"detections": detections, "fps": fps}), 200
+
 @app.route('/api/heatmap_jobs/<job_id>/export/csv', methods=['GET'])
 @jwt_required()
 def export_heatmap_csv(job_id):
@@ -601,20 +626,13 @@ def export_heatmap_csv(job_id):
         start_time = request.args.get('start_time', type=float)
         end_time = request.args.get('end_time', type=float)
 
-        detections_path = os.path.join(RESULTS_FOLDER, job_id, 'detections.json')
-        logger.debug(f"Looking for detections at: {detections_path}")
-        
-        if not os.path.exists(detections_path):
-            logger.error(f"Detections file not found at {detections_path}")
+        detections, fps = load_detections(job_id)
+        if detections is None:
+            logger.error(f"Detections file not found for job {job_id}")
             return jsonify({"error": "Detections file not found"}), 404
-
-        with open(detections_path, 'r') as f:
-            det_data = json.load(f)
-            detections = det_data.get("detections", [])
-            fps = det_data.get("fps")
-            
+        
         if not detections:
-            logger.warning(f"No detections found in {detections_path}")
+            logger.warning(f"No detections found in detections.json for job {job_id}")
             return jsonify({"error": "No detections data available"}), 404
 
         # Filter detections by time range if specified
@@ -727,14 +745,9 @@ def export_heatmap_pdf(job_id):
             return jsonify({'error': 'Job not completed'}), 404
 
         # Load detections
-        detections_path = os.path.join(RESULTS_FOLDER, job_id, 'detections.json')
-        if not os.path.exists(detections_path):
+        detections, fps = load_detections(job_id)
+        if detections is None:
             return jsonify({'error': 'Detections file not found'}), 404
-
-        with open(detections_path, 'r') as f:
-            det_data = json.load(f)
-            detections = det_data.get("detections", [])
-            fps = det_data.get("fps")
 
         # Filter detections by time range if specified
         if start_time is not None and end_time is not None:
@@ -953,39 +966,6 @@ def get_custom_heatmap_image(job_id):
 def get_custom_heatmap_progress(job_id):
     progress = custom_heatmap_progress.get(job_id, 0.0)
     return jsonify({"progress": progress})
-
-@app.route('/api/heatmap_jobs/<job_id>/detections', methods=['GET'])
-@jwt_required()
-def get_detections_from_json(job_id):
-    """
-    Fetch detections from the detections.json file for a given job ID.
-    
-    Args:
-        job_id (str): The ID of the job to fetch detections for.
-    
-    Returns:
-        JSON response containing the list of detections and the fps.
-    """
-    # Construct the path to the detections.json file
-    detections_path = os.path.join(RESULTS_FOLDER, job_id, 'detections.json')
-    
-    # Check if the detections.json file exists
-    if not os.path.exists(detections_path):
-        logger.error(f"Detections file not found for job ID: {job_id}")
-        return jsonify({"error": "Detections file not found"}), 404
-    
-    # Read the detections.json file
-    try:
-        with open(detections_path, 'r') as f:
-            det_data = json.load(f)
-            detections = det_data.get("detections", [])
-            fps = det_data.get("fps")
-        
-        # Return the detections and fps in a structured JSON response
-        return jsonify({"detections": detections, "fps": fps}), 200
-    except Exception as e:
-        logger.error(f"Error reading detections file for job ID {job_id}: {str(e)}")
-        return jsonify({"error": "Failed to read detections data"}), 500
 
 @app.route('/api/heatmap_jobs/<job_id>/custom_analysis', methods=['GET'])
 @jwt_required()

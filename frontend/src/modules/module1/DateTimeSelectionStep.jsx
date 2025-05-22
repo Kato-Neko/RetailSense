@@ -4,6 +4,14 @@ import { Card, CardContent } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { ChevronUp, ChevronDown, Clock, Calendar } from "lucide-react"
+import { Calendar as CalendarComponent } from "@/components/ui/calendar"
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover"
+import { format } from "date-fns"
+import { cn } from "@/lib/utils"
 
 const DateTimeSelectionStep = ({
   startDate,
@@ -56,31 +64,43 @@ const DateTimeSelectionStep = ({
     return { hours, minutes, seconds }
   }
 
-  // Function to update end time based on start time and video duration
-  const updateEndTime = (newStartTime) => {
-    if (!roundedDuration || roundedDuration <= 0) {
+  // Function to update end time and end date based on start date, start time, and video duration
+  const updateEndDateTime = (newStartDate, newStartTime) => {
+    if (!roundedDuration || roundedDuration <= 0 || !newStartDate || !newStartTime) {
       return
     }
-
-    // Parse start time with seconds
+    // Parse start date and time
+    const [startYear, startMonth, startDay] = newStartDate.split('-').map(Number)
     const { hours: startHours, minutes: startMinutes, seconds: startSeconds } = parseTimeWithSeconds(newStartTime)
+    const startDateObj = new Date(startYear, startMonth - 1, startDay, startHours, startMinutes, startSeconds)
+    // Add duration (in seconds)
+    const endDateObj = new Date(startDateObj.getTime() + (roundedDuration - 1) * 1000)
+    // Set end date and end time
+    setEndDate(format(endDateObj, 'yyyy-MM-dd'))
+    setEndTime(formatTimeWithSeconds(endDateObj.getHours(), endDateObj.getMinutes(), endDateObj.getSeconds()))
+  }
 
-    // Calculate total seconds
-    const startTotalSeconds = startHours * 3600 + startMinutes * 60 + startSeconds
-    const videoDurationSeconds = roundedDuration // Use rounded duration
+  // Update end date/time when start date or start time changes
+  const handleStartDateChange = (date) => {
+    setStartDate(date)
+    updateEndDateTime(date, startTime)
+  }
+  const handleStartTimeChange = (e) => {
+    const newStartTime = e.target.value
+    setStartTime(newStartTime)
+    if (/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]$/.test(newStartTime)) {
+      updateEndDateTime(startDate, newStartTime)
+    }
+  }
 
-    // Add duration to start time (in seconds)
-    const endTotalSeconds = startTotalSeconds + videoDurationSeconds - 1
-
-    // Convert back to hours, minutes, and seconds
-    const endHours = Math.floor(endTotalSeconds / 3600) % 24 // Use modulo 24 to handle day wraparound
-    const endMinutes = Math.floor((endTotalSeconds % 3600) / 60)
-    const endSeconds = endTotalSeconds % 60
-
-    // Format with leading zeros
-    const formattedEndTime = formatTimeWithSeconds(endHours, endMinutes, endSeconds)
-
-    setEndTime(formattedEndTime)
+  // Also update end date/time when clicking Now
+  const setToCurrentTime = () => {
+    const now = new Date()
+    const currentTime = formatTimeWithSeconds(now.getHours(), now.getMinutes(), now.getSeconds())
+    const currentDate = format(now, 'yyyy-MM-dd')
+    setStartDate(currentDate)
+    setStartTime(currentTime)
+    updateEndDateTime(currentDate, currentTime)
   }
 
   // Time input helpers
@@ -124,21 +144,11 @@ const DateTimeSelectionStep = ({
     return formatTimeWithSeconds(newHours, newMinutes, newSeconds)
   }
 
-  // Handle changes to the start time input
-  const handleStartTimeChange = (e) => {
-    const newStartTime = e.target.value
-    setStartTime(newStartTime)
-
-    if (/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]$/.test(newStartTime)) {
-      updateEndTime(newStartTime)
-    }
-  }
-
   // Adjust start time
   const adjustStartTime = (field, amount) => {
     const newTime = adjustTime(startTime, field, amount)
     setStartTime(newTime)
-    updateEndTime(newTime)
+    updateEndDateTime(startDate, newTime)
   }
 
   // Adjust end time
@@ -147,12 +157,11 @@ const DateTimeSelectionStep = ({
     setEndTime(newTime)
   }
 
-  // Set to current time
-  const setToCurrentTime = () => {
-    const now = new Date()
-    const currentTime = formatTimeWithSeconds(now.getHours(), now.getMinutes(), now.getSeconds())
-    setStartTime(currentTime)
-    updateEndTime(currentTime)
+  // Format date for display
+  const formatDate = (dateString) => {
+    if (!dateString) return ""
+    const date = new Date(dateString)
+    return format(date, "PPP")
   }
 
   // Time input component with helpers
@@ -261,21 +270,53 @@ const DateTimeSelectionStep = ({
             <div className="space-y-3">
               <div className="mt-10 mb-10">
                 <Label className="text-sm pl-3 mb-1 text-muted-foreground">Start Date</Label>
-                <Input
-                  type="date"
-                  value={startDate}
-                  onChange={(e) => setStartDate(e.target.value)}
-                  className="w-full h-9 py-1 bg-muted/60 border-border text-foreground justify-center focus-visible:ring-blue-500"
-                />
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button
+                      variant="outline"
+                      className={cn(
+                        "w-full h-9 py-1 bg-muted/60 border-border text-foreground font-normal flex items-center justify-center text-center",
+                        !startDate && "text-muted-foreground"
+                      )}
+                    >
+                      <span className="flex-1 text-center">{startDate ? formatDate(startDate) : <span>Pick a date</span>}</span>
+                      <Calendar className="ml-2 h-4 w-4" />
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto p-0" align="start">
+                    <CalendarComponent
+                      mode="single"
+                      selected={startDate ? new Date(startDate) : undefined}
+                      onSelect={(date) => handleStartDateChange(date ? format(date, 'yyyy-MM-dd') : '')}
+                      initialFocus
+                    />
+                  </PopoverContent>
+                </Popover>
               </div>
               <div className="mb-10">
                 <Label className="text-sm pl-3 mb-1 text-muted-foreground">End Date</Label>
-                <Input
-                  type="date"
-                  value={endDate}
-                  onChange={(e) => setEndDate(e.target.value)}
-                  className="w-full h-9 py-1 bg-muted/60 border-border text-foreground justify-center focus-visible:ring-blue-500"
-                />
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button
+                      variant="outline"
+                      className={cn(
+                        "w-full h-9 py-1 bg-muted/60 border-border text-foreground font-normal flex items-center justify-center text-center",
+                        !endDate && "text-muted-foreground"
+                      )}
+                    >
+                      <span className="flex-1 text-center">{endDate ? formatDate(endDate) : <span>Pick a date</span>}</span>
+                      <Calendar className="ml-2 h-4 w-4" />
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto p-0" align="start">
+                    <CalendarComponent
+                      mode="single"
+                      selected={endDate ? new Date(endDate) : undefined}
+                      onSelect={(date) => setEndDate(date ? format(date, 'yyyy-MM-dd') : '')}
+                      initialFocus
+                    />
+                  </PopoverContent>
+                </Popover>
               </div>
             </div>
           </div>

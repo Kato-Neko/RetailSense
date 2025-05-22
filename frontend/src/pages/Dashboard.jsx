@@ -3,7 +3,7 @@
 import { useState, useEffect, useMemo, Fragment } from "react"
 import { Link } from "react-router-dom"
 import { BarChart as ReBarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, ReferenceArea } from "recharts"
-import { Video, Map, Users, Clock } from "lucide-react"
+import { Video, Map, Users, Clock, Download, Check } from "lucide-react"
 import { heatmapService } from "../services/api"
 import toast from "react-hot-toast"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -13,6 +13,20 @@ import { LineChart as ReLineChart, Line } from "recharts"
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
 import jsPDF from 'jspdf';
 import domtoimage from 'dom-to-image';
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "@/components/ui/command"
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover"
+import { cn } from "@/lib/utils"
 
 const Dashboard = () => {
   const [stats, setStats] = useState({
@@ -28,6 +42,8 @@ const Dashboard = () => {
   const [activeChart, setActiveChart] = useState("daily")
   const [weeklyData, setWeeklyData] = useState([])
   const [monthlyData, setMonthlyData] = useState([])
+  const [exportOpen, setExportOpen] = useState(false)
+  const [exportValue, setExportValue] = useState("")
 
   // Turbo colormap-inspired gradient (24 colors, blue to red)
   const turboColors = [
@@ -36,6 +52,26 @@ const Dashboard = () => {
     "#8e0b25", "#5a0822", "#30123b", "#4146a1", "#2777b6", "#1ea2b8",
     "#2ccf8e", "#7be04a", "#d6e13b", "#ffe14b", "#ffb340", "#ff7a36"
   ];
+
+  const exportOptions = [
+    {
+      value: "csv",
+      label: "Export as CSV",
+    },
+    {
+      value: "pdf",
+      label: "Export as PDF",
+    },
+  ]
+
+  const handleExport = (value) => {
+    if (value === "csv") {
+      exportCSV();
+    } else if (value === "pdf") {
+      exportPDF();
+    }
+    setExportOpen(false);
+  };
 
   useEffect(() => {
     const fetchDashboardData = async () => {
@@ -439,34 +475,68 @@ const Dashboard = () => {
         <div className="grid grid-cols-1 md:grid-cols-3 gap-7 h-[400px]">
         {/* Chart Card */}
           <Card id="foot-traffic-chart-card" className="col-span-2 bg-gradient-to-br from-background/80 to-muted/90 dark:from-slate-900/80 dark:to-slate-950/90 border border-border shadow-2xl shadow-primary/10 backdrop-blur-xl rounded-xl">
-            <CardHeader className="pb-2 flex flex-row items-center justify-between">
-              <div>
-                <CardTitle className="text-lg font-bold text-foreground tracking-tight drop-shadow mb-2 inline-block">Foot Traffic Analytics</CardTitle>
-                {/* Always show the filter (ToggleGroup) inline with the title */}
-                <div className="mt-2 flex justify-center">
-                  <ToggleGroup
-                    type="single"
-                    value={activeChart}
-                    onValueChange={val => val && setActiveChart(val)}
-                    variant="outline"
-                    size="default"
-                    className="bg-muted/60 border border-border rounded-lg overflow-hidden shadow-md"
-                  >
-                    <ToggleGroupItem value="daily" className={"px-4 py-1 text-xs font-semibold transition-all rounded-md " + (activeChart === "daily"
-                      ? "bg-gradient-to-r from-white to-cyan-100 text-black border border-border dark:from-blue-900 dark:to-cyan-800 dark:text-white"
-                      : "text-black bg-transparent hover:bg-muted/60 border border-transparent dark:text-white dark:bg-white/10 dark:hover:bg-white/20")}>Daily</ToggleGroupItem>
-                    <ToggleGroupItem value="weekly" className={"px-4 py-1 text-xs font-semibold transition-all rounded-md " + (activeChart === "weekly"
-                      ? "bg-gradient-to-r from-white to-cyan-100 text-black border border-border dark:from-blue-900 dark:to-cyan-800 dark:text-white"
-                      : "text-black bg-transparent hover:bg-muted/60 border border-transparent dark:text-white dark:bg-white/10 dark:hover:bg-white/20")}>Weekly</ToggleGroupItem>
-                    <ToggleGroupItem value="monthly" className={"px-4 py-1 text-xs font-semibold transition-all rounded-md " + (activeChart === "monthly"
-                      ? "bg-gradient-to-r from-white to-cyan-100 text-black border border-border dark:from-blue-900 dark:to-cyan-800 dark:text-white"
-                      : "text-black bg-transparent hover:bg-muted/60 border border-transparent dark:text-white dark:bg-white/10 dark:hover:bg-white/20")}>Monthly</ToggleGroupItem>
-                  </ToggleGroup>
-                </div>
+            <CardHeader className="pb-2">
+              <div className="flex items-center justify-between mb-2">
+                <CardTitle className="text-lg font-bold text-foreground tracking-tight drop-shadow">Foot Traffic Analytics</CardTitle>
+                <Popover open={exportOpen} onOpenChange={setExportOpen}>
+                  <PopoverTrigger asChild>
+                    <Button
+                      size="icon"
+                      variant="outline"
+                      role="combobox"
+                      aria-expanded={exportOpen}
+                      className="w-9 h-9"
+                    >
+                      <Download className="h-4 w-4" />
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-[140px] p-0" align="end" sideOffset={5}>
+                    <Command>
+                      <CommandList>
+                        <CommandGroup>
+                          {exportOptions.map((option) => (
+                            <CommandItem
+                              key={option.value}
+                              value={option.value}
+                              onSelect={(currentValue) => {
+                                handleExport(currentValue);
+                                setExportOpen(false);
+                              }}
+                            >
+                              {option.label}
+                              <Check
+                                className={cn(
+                                  "ml-auto h-4 w-4",
+                                  exportValue === option.value ? "opacity-100" : "opacity-0"
+                                )}
+                              />
+                            </CommandItem>
+                          ))}
+                        </CommandGroup>
+                      </CommandList>
+                    </Command>
+                  </PopoverContent>
+                </Popover>
               </div>
-              <div className="flex gap-2 items-center ml-auto">
-                <Button size="sm" variant="outline" className="text-xs" onClick={exportCSV}>Export CSV</Button>
-                <Button size="sm" variant="outline" className="text-xs" onClick={exportPDF}>Export PDF</Button>
+              <div className="flex justify-center">
+                <ToggleGroup
+                  type="single"
+                  value={activeChart}
+                  onValueChange={val => val && setActiveChart(val)}
+                  variant="outline"
+                  size="default"
+                  className="bg-muted/60 border border-border rounded-lg overflow-hidden shadow-md"
+                >
+                  <ToggleGroupItem value="daily" className={"px-4 py-1 text-xs font-semibold transition-all rounded-md " + (activeChart === "daily"
+                    ? "bg-gradient-to-r from-white to-cyan-100 text-black border border-border dark:from-blue-900 dark:to-cyan-800 dark:text-white"
+                    : "text-black bg-transparent hover:bg-muted/60 border border-transparent dark:text-white dark:bg-white/10 dark:hover:bg-white/20")}>Daily</ToggleGroupItem>
+                  <ToggleGroupItem value="weekly" className={"px-4 py-1 text-xs font-semibold transition-all rounded-md " + (activeChart === "weekly"
+                    ? "bg-gradient-to-r from-white to-cyan-100 text-black border border-border dark:from-blue-900 dark:to-cyan-800 dark:text-white"
+                    : "text-black bg-transparent hover:bg-muted/60 border border-transparent dark:text-white dark:bg-white/10 dark:hover:bg-white/20")}>Weekly</ToggleGroupItem>
+                  <ToggleGroupItem value="monthly" className={"px-4 py-1 text-xs font-semibold transition-all rounded-md " + (activeChart === "monthly"
+                    ? "bg-gradient-to-r from-white to-cyan-100 text-black border border-border dark:from-blue-900 dark:to-cyan-800 dark:text-white"
+                    : "text-black bg-transparent hover:bg-muted/60 border border-transparent dark:text-white dark:bg-white/10 dark:hover:bg-white/20")}>Monthly</ToggleGroupItem>
+                </ToggleGroup>
               </div>
             </CardHeader>
             <CardContent className="h-85 flex items-center justify-center">

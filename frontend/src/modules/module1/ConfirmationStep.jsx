@@ -80,6 +80,7 @@ const ConfirmationStep = ({
               <Progress
                 value={progressPercent || 0}
                 className="h-2"
+                turbo={true}
               />
             </div>
           )}

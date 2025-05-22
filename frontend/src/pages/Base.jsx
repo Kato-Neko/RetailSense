@@ -50,7 +50,7 @@ const BaseContent = () => {
         {/* Main content area that expands to fill available space */}
         <main className="flex flex-col flex-1 h-screen w-full min-h-screen bg-background">
           <header className="flex h-16 shrink-0 items-center justify-between border-b border-border px-4 bg-background/80 dark:bg-slate-900/80 backdrop-blur-sm z-10">
-            <div className="flex items-center gap-4">
+            <div className="flex items-center gap-8">
               <SidebarTrigger className="text-muted-foreground hover:text-foreground" />
               <NavigationProgress />
             </div>

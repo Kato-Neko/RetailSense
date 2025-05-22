@@ -43,18 +43,6 @@ const HeatmapGeneration = () => {
   const [videoDateRange, setVideoDateRange] = useState({ start: null, end: null });
   const [isMultiDay, setIsMultiDay] = useState(false);
 
-  // Initialize date range to today and yesterday
-  useEffect(() => {
-    const today = new Date();
-    const yesterday = new Date(today);
-    yesterday.setDate(yesterday.getDate() - 1);
-
-    setDateRange({
-      start: yesterday.toISOString().split("T")[0],
-      end: today.toISOString().split("T")[0],
-    });
-  }, []);
-
   // Fetch job history on component mount
   useEffect(() => {
     const fetchJobHistory = async () => {
@@ -151,8 +139,12 @@ const HeatmapGeneration = () => {
 
         // Set default date range
         setDateRange({
-          start: startDate.toISOString().split('T')[0],
-          end: endDate.toISOString().split('T')[0]
+          start: startDate.getFullYear() + '-' +
+                 String(startDate.getMonth() + 1).padStart(2, '0') + '-' +
+                 String(startDate.getDate()).padStart(2, '0'),
+          end: endDate.getFullYear() + '-' +
+               String(endDate.getMonth() + 1).padStart(2, '0') + '-' +
+               String(endDate.getDate()).padStart(2, '0')
         });
       }
     }
@@ -245,9 +237,57 @@ const HeatmapGeneration = () => {
     }
   };
 
+  // Helper to check if export range is valid
+  const isExportRangeValid = (() => {
+    if (!selectedJob) {
+      console.log('Export disabled: No selected job');
+      return false;
+    }
+    if (!dateRange.start || !dateRange.end || !timeRange.start || !timeRange.end) {
+      console.log('Export disabled: Missing date or time range');
+      return false;
+    }
+    const videoStart = new Date(selectedJob.start_datetime);
+    const videoEnd = new Date(selectedJob.end_datetime);
+    const startDate = new Date(`${dateRange.start}T${timeRange.start}`);
+    const endDate = new Date(`${dateRange.end}T${timeRange.end}`);
+    if (startDate < videoStart) {
+      console.log('Export disabled: Start date is before video start', startDate, videoStart);
+      return false;
+    }
+    if (endDate > videoEnd) {
+      console.log('Export disabled: End date is after video end', endDate, videoEnd);
+      return false;
+    }
+    if (startDate >= endDate) {
+      console.log('Export disabled: Start date is not before end date', startDate, endDate);
+      return false;
+    }
+    return true;
+  })();
+
   const handleExport = async (format) => {
     if (!heatmapGenerated || !selectedJob) {
       toast.error("Please generate or select a heatmap first", {
+        position: "top-right",
+        style: {
+          background: '#1a1a1a',
+          color: '#fff',
+          border: '1px solid #333',
+          borderRadius: '8px',
+          padding: '16px'
+        }
+      });
+      return;
+    }
+
+    // Range check before export
+    const videoStart = new Date(selectedJob.start_datetime);
+    const videoEnd = new Date(selectedJob.end_datetime);
+    const startDate = new Date(`${dateRange.start}T${timeRange.start}`);
+    const endDate = new Date(`${dateRange.end}T${timeRange.end}`);
+    if (startDate < videoStart || endDate > videoEnd || startDate >= endDate) {
+      toast.error("Export range is outside the video recording period.", {
         position: "top-right",
         style: {
           background: '#1a1a1a',
@@ -285,9 +325,6 @@ const HeatmapGeneration = () => {
       const displayEndDateTime = formatDisplayDateTime(dateRange.end, timeRange.end);
 
       // Calculate time in seconds for custom heatmap
-      const videoStart = new Date(selectedJob.start_datetime);
-      const startDate = new Date(`${dateRange.start}T${timeRange.start}`);
-      const endDate = new Date(`${dateRange.end}T${timeRange.end}`);
       const startTimeInSeconds = (startDate - videoStart) / 1000;
       const endTimeInSeconds = (endDate - videoStart) / 1000;
 
@@ -369,7 +406,27 @@ const HeatmapGeneration = () => {
         }
       });
     } catch (error) {
-      console.error(`Error exporting heatmap as ${format}:`, error);
+      // If error is a Blob (likely JSON), try to read and parse it
+      if (error instanceof Blob && error.type === 'application/json') {
+        const text = await error.text();
+        try {
+          const data = JSON.parse(text);
+          toast.error(data.error || text, {
+            position: "top-right",
+            style: {
+              background: '#1a1a1a',
+              color: '#fff',
+              border: '1px solid #333',
+              borderRadius: '8px',
+              padding: '16px'
+            }
+          });
+        } catch {
+          toast.error(text);
+        }
+        return;
+      }
+      // fallback
       toast.error(`Failed to export heatmap as ${format.toUpperCase()}`, {
         position: "top-right",
         style: {
@@ -504,7 +561,25 @@ const HeatmapGeneration = () => {
                       value={dateRange.start}
                       min={videoDateRange.start?.toISOString().split('T')[0]}
                       max={videoDateRange.end?.toISOString().split('T')[0]}
-                      onChange={e => setDateRange(prev => ({ ...prev, start: e.target.value }))}
+                      onChange={e => {
+                        const newDate = e.target.value;
+                        const minDate = videoDateRange.start?.toISOString().split('T')[0];
+                        if (minDate && newDate < minDate) {
+                          toast.error('Start date cannot be before video start.', {
+                            position: 'top-right',
+                            style: {
+                              background: '#1a1a1a',
+                              color: '#fff',
+                              border: '1px solid #333',
+                              borderRadius: '8px',
+                              padding: '16px'
+                            }
+                          });
+                          setDateRange(prev => ({ ...prev, start: minDate }));
+                        } else {
+                          setDateRange(prev => ({ ...prev, start: newDate }));
+                        }
+                      }}
                       className="w-full pr-8 [&::-webkit-calendar-picker-indicator]:opacity-100 [&::-webkit-calendar-picker-indicator]:absolute [&::-webkit-calendar-picker-indicator]:right-2 [&::-webkit-calendar-picker-indicator]:top-1/2 [&::-webkit-calendar-picker-indicator]:-translate-y-1/2 bg-muted text-foreground border border-border"
                       disabled={!isMultiDay}
                     />
@@ -517,7 +592,25 @@ const HeatmapGeneration = () => {
                       value={dateRange.end}
                       min={videoDateRange.start?.toISOString().split('T')[0]}
                       max={videoDateRange.end?.toISOString().split('T')[0]}
-                      onChange={e => setDateRange(prev => ({ ...prev, end: e.target.value }))}
+                      onChange={e => {
+                        const newDate = e.target.value;
+                        const maxDate = videoDateRange.end?.toISOString().split('T')[0];
+                        if (maxDate && newDate > maxDate) {
+                          toast.error('End date cannot be after video end.', {
+                            position: 'top-right',
+                            style: {
+                              background: '#1a1a1a',
+                              color: '#fff',
+                              border: '1px solid #333',
+                              borderRadius: '8px',
+                              padding: '16px'
+                            }
+                          });
+                          setDateRange(prev => ({ ...prev, end: maxDate }));
+                        } else {
+                          setDateRange(prev => ({ ...prev, end: newDate }));
+                        }
+                      }}
                       className="w-full pr-8 [&::-webkit-calendar-picker-indicator]:opacity-100 [&::-webkit-calendar-picker-indicator]:absolute [&::-webkit-calendar-picker-indicator]:right-2 [&::-webkit-calendar-picker-indicator]:top-1/2 [&::-webkit-calendar-picker-indicator]:-translate-y-1/2 bg-muted text-foreground border border-border"
                       disabled={!isMultiDay}
                     />
@@ -534,7 +627,25 @@ const HeatmapGeneration = () => {
                       value={timeRange.start}
                       min={videoDateRange.start?.toTimeString().slice(0, 8)}
                       max={videoDateRange.end?.toTimeString().slice(0, 8)}
-                      onChange={e => setTimeRange(prev => ({ ...prev, start: e.target.value }))}
+                      onChange={e => {
+                        const newTime = e.target.value;
+                        const minTime = videoDateRange.start?.toTimeString().slice(0, 8);
+                        if (minTime && newTime < minTime && dateRange.start === videoDateRange.start?.toISOString().split('T')[0]) {
+                          toast.error('Start time cannot be before video start.', {
+                            position: 'top-right',
+                            style: {
+                              background: '#1a1a1a',
+                              color: '#fff',
+                              border: '1px solid #333',
+                              borderRadius: '8px',
+                              padding: '16px'
+                            }
+                          });
+                          setTimeRange(prev => ({ ...prev, start: minTime }));
+                        } else {
+                          setTimeRange(prev => ({ ...prev, start: newTime }));
+                        }
+                      }}
                       className="w-full pr-12 [&::-webkit-calendar-picker-indicator]:opacity-100 [&::-webkit-calendar-picker-indicator]:absolute [&::-webkit-calendar-picker-indicator]:right-2 [&::-webkit-calendar-picker-indicator]:top-1/2 [&::-webkit-calendar-picker-indicator]:-translate-y-1/2 bg-muted text-foreground border border-border"
                       step="1"
                     />
@@ -546,7 +657,25 @@ const HeatmapGeneration = () => {
                       value={timeRange.end}
                       min={videoDateRange.start?.toTimeString().slice(0, 8)}
                       max={videoDateRange.end?.toTimeString().slice(0, 8)}
-                      onChange={e => setTimeRange(prev => ({ ...prev, end: e.target.value }))}
+                      onChange={e => {
+                        const newTime = e.target.value;
+                        const maxTime = videoDateRange.end?.toTimeString().slice(0, 8);
+                        if (maxTime && newTime > maxTime && dateRange.end === videoDateRange.end?.toISOString().split('T')[0]) {
+                          toast.error('End time cannot be after video end.', {
+                            position: 'top-right',
+                            style: {
+                              background: '#1a1a1a',
+                              color: '#fff',
+                              border: '1px solid #333',
+                              borderRadius: '8px',
+                              padding: '16px'
+                            }
+                          });
+                          setTimeRange(prev => ({ ...prev, end: maxTime }));
+                        } else {
+                          setTimeRange(prev => ({ ...prev, end: newTime }));
+                        }
+                      }}
                       className="w-full pr-12 [&::-webkit-calendar-picker-indicator]:opacity-100 [&::-webkit-calendar-picker-indicator]:absolute [&::-webkit-calendar-picker-indicator]:right-2 [&::-webkit-calendar-picker-indicator]:top-1/2 [&::-webkit-calendar-picker-indicator]:-translate-y-1/2 bg-muted text-foreground border border-border"
                       step="1"
                     />
@@ -633,13 +762,13 @@ const HeatmapGeneration = () => {
               )}
               {heatmapGenerated && selectedJob && (
                 <div className="flex gap-2 mt-4">
-                  <Button onClick={() => handleExport("csv")} variant="outline" className="flex-1 border-border bg-muted text-foreground hover:bg-primary/10 dark:bg-slate-900/60 dark:text-white dark:hover:bg-blue-900/40">
+                  <Button onClick={() => handleExport("csv")} variant="outline" className="flex-1 border-border bg-muted text-foreground hover:bg-primary/10 dark:bg-slate-900/60 dark:text-white dark:hover:bg-blue-900/40" disabled={!isExportRangeValid}>
                     <Download className="mr-2 h-4 w-4" /> CSV
                   </Button>
-                  <Button onClick={() => handleExport("pdf")} variant="outline" className="flex-1 border-border bg-muted text-foreground hover:bg-primary/10 dark:bg-slate-900/60 dark:text-white dark:hover:bg-blue-900/40">
+                  <Button onClick={() => handleExport("pdf")} variant="outline" className="flex-1 border-border bg-muted text-foreground hover:bg-primary/10 dark:bg-slate-900/60 dark:text-white dark:hover:bg-blue-900/40" disabled={!isExportRangeValid}>
                     <Download className="mr-2 h-4 w-4" /> PDF
                   </Button>
-                  <Button onClick={() => handleExport("png")} variant="outline" className="flex-1 border-border bg-muted text-foreground hover:bg-primary/10 dark:bg-slate-900/60 dark:text-white dark:hover:bg-blue-900/40">
+                  <Button onClick={() => handleExport("png")} variant="outline" className="flex-1 border-border bg-muted text-foreground hover:bg-primary/10 dark:bg-slate-900/60 dark:text-white dark:hover:bg-blue-900/40" disabled={!isExportRangeValid}>
                     <Download className="mr-2 h-4 w-4" /> PNG
                   </Button>
                 </div>
