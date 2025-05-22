@@ -12,6 +12,9 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 //import { Select } from "@/components/ui/select";
 import { Progress } from "@/components/ui/progress";
+import jsPDF from 'jspdf';
+import domtoimage from 'dom-to-image';
+import { Dialog, DialogTrigger, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogClose } from "@/components/ui/dialog";
 
 const HeatmapGeneration = () => {
   const location = useLocation();
@@ -42,6 +45,8 @@ const HeatmapGeneration = () => {
   const [customJobId, setCustomJobId] = useState(null);
   const [videoDateRange, setVideoDateRange] = useState({ start: null, end: null });
   const [isMultiDay, setIsMultiDay] = useState(false);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [pendingDeleteJobId, setPendingDeleteJobId] = useState(null);
 
   // Initialize date range to today and yesterday
   useEffect(() => {
@@ -440,15 +445,21 @@ const HeatmapGeneration = () => {
   }, [customJobId]);
 
   const handleDeleteJob = async (jobId) => {
-    if (!window.confirm("Are you sure you want to delete this heatmap?")) return;
+    setPendingDeleteJobId(jobId);
+    setDeleteDialogOpen(true);
+  };
+
+  const confirmDeleteJob = async () => {
+    if (!pendingDeleteJobId) return;
     try {
-      await heatmapService.deleteJob(jobId);
-      setJobHistory((prev) => prev.filter((job) => job.job_id !== jobId));
-      if (selectedJob && selectedJob.job_id === jobId) {
+      await heatmapService.deleteJob(pendingDeleteJobId);
+      setJobHistory((prev) => prev.filter((job) => job.job_id !== pendingDeleteJobId));
+      if (selectedJob && selectedJob.job_id === pendingDeleteJobId) {
         setSelectedJob(null);
         setHeatmapGenerated(false);
         setCustomHeatmapUrl(null);
       }
+      window.dispatchEvent(new CustomEvent('jobDeleted', { detail: pendingDeleteJobId }));
       toast.success("Heatmap deleted!", {
         position: "top-right",
         style: {
@@ -470,6 +481,9 @@ const HeatmapGeneration = () => {
           padding: '16px'
         }
       });
+    } finally {
+      setDeleteDialogOpen(false);
+      setPendingDeleteJobId(null);
     }
   };
 
@@ -478,6 +492,122 @@ const HeatmapGeneration = () => {
     x: `${ph.start_minute}-${ph.end_minute}`,
     y: ph.count,
   })) || [];
+
+  // Add exportCSV and exportPDF functions for frontend export
+  const exportCSV = () => {
+    if (!analysis) return toast.error('No analysis data to export.');
+    const csvRows = [];
+    const exportDate = new Date().toLocaleString();
+    csvRows.push('Exported At,' + exportDate);
+    csvRows.push('Total Visitors,' + (analysis.total_visitors ?? 0));
+    csvRows.push('');
+    csvRows.push('Traffic Distribution');
+    csvRows.push('High,Medium,Low');
+    csvRows.push([
+      analysis.areas?.high?.percentage ?? 0,
+      analysis.areas?.medium?.percentage ?? 0,
+      analysis.areas?.low?.percentage ?? 0
+    ].join(','));
+    csvRows.push('');
+    csvRows.push('Recommendations');
+    if (analysis.recommendations?.length) {
+      analysis.recommendations.forEach(rec => csvRows.push(rec));
+    } else {
+      csvRows.push('No recommendations available.');
+    }
+    csvRows.push('');
+    csvRows.push('Peak Hours');
+    if (analysis.peak_hours?.length) {
+      csvRows.push('Start Minute,End Minute,Detections');
+      analysis.peak_hours.forEach(ph => {
+        csvRows.push([ph.start_minute, ph.end_minute, ph.count].join(','));
+      });
+    } else {
+      csvRows.push('No peak hours detected.');
+    }
+    const csvContent = csvRows.join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `heatmap_analysis_${selectedJob?.job_id || 'unknown'}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+    toast.success('CSV exported successfully!');
+  };
+
+  const exportPDF = async () => {
+    console.log('[PDF Export] Export started');
+    const vizCard = document.querySelector('.HeatmapVisualizationCard');
+    if (!vizCard) {
+      toast.error('Visualization not found.');
+      console.error('[PDF Export] Visualization card not found');
+      return;
+    }
+    try {
+      console.log('[PDF Export] Calling domtoimage.toPng...');
+      const imgData = await domtoimage.toPng(vizCard, { bgcolor: '#fff' });
+      console.log('[PDF Export] domtoimage.toPng success');
+      const pdf = new jsPDF({ orientation: 'landscape', unit: 'pt', format: 'a4' });
+      const pageWidth = pdf.internal.pageSize.getWidth();
+      const pageHeight = pdf.internal.pageSize.getHeight();
+      let y = 40;
+      pdf.setFontSize(18);
+      pdf.text('Heatmap Analysis', 40, y);
+      pdf.setFontSize(11);
+      const exportDate = new Date().toLocaleString();
+      y += 18;
+      pdf.text(`Exported At: ${exportDate}`, 40, y);
+      pdf.setFontSize(12);
+      y += 22;
+      pdf.text(`Total Visitors: ${analysis.total_visitors ?? 0}`, 40, y);
+      y += 20;
+      pdf.text(`Traffic Distribution: High ${analysis.areas?.high?.percentage ?? 0}%, Medium ${analysis.areas?.medium?.percentage ?? 0}%, Low ${analysis.areas?.low?.percentage ?? 0}%`, 40, y);
+      y += 20;
+      pdf.text('Recommendations:', 40, y);
+      (analysis.recommendations || []).forEach((rec, i) => {
+        y += 16;
+        pdf.text(`• ${rec}`, 60, y);
+      });
+      y += 20;
+      pdf.text('Peak Hours:', 40, y);
+      (analysis.peak_hours || []).forEach((ph, i) => {
+        y += 16;
+        pdf.text(`• ${ph.start_minute}-${ph.end_minute} min: ${ph.count} detections`, 60, y);
+      });
+      y += 20;
+      // Add chart image, fit to page, or add to new page if too tall
+      const img = new window.Image();
+      img.src = imgData;
+      img.onload = () => {
+        const maxImgWidth = pageWidth - 80;
+        const maxImgHeight = pageHeight - y - 40;
+        let imgWidthScaled = img.width;
+        let imgHeightScaled = img.height;
+        // Scale image to fit width
+        if (imgWidthScaled > maxImgWidth) {
+          const scale = maxImgWidth / imgWidthScaled;
+          imgWidthScaled = maxImgWidth;
+          imgHeightScaled = imgHeightScaled * scale;
+        }
+        // If image is too tall for remaining space, add to new page
+        if (imgHeightScaled > maxImgHeight) {
+          pdf.addPage();
+          y = 40;
+        }
+        pdf.addImage(img, 'PNG', 40, y, imgWidthScaled, imgHeightScaled);
+        pdf.save(`heatmap_analysis_${selectedJob?.job_id || 'unknown'}.pdf`);
+        toast.success('PDF exported successfully!');
+      };
+      img.onerror = (e) => {
+        console.error('[PDF Export] Image failed to load for PDF', e);
+        toast.error('Failed to load image for PDF export.');
+      };
+    } catch (err) {
+      toast.error('Failed to export PDF');
+      console.error('[PDF Export] Error:', err);
+    }
+  };
 
   return (
     <div className="relative min-h-screen w-full bg-background dark:bg-gradient-to-br dark:from-slate-950 dark:via-slate-900 dark:to-slate-950 py-8 px-1 md:px-0 overflow-x-hidden">
@@ -633,10 +763,10 @@ const HeatmapGeneration = () => {
               )}
               {heatmapGenerated && selectedJob && (
                 <div className="flex gap-2 mt-4">
-                  <Button onClick={() => handleExport("csv")} variant="outline" className="flex-1 border-border bg-muted text-foreground hover:bg-primary/10 dark:bg-slate-900/60 dark:text-white dark:hover:bg-blue-900/40">
+                  <Button onClick={exportCSV} variant="outline" className="flex-1 border-border bg-muted text-foreground hover:bg-primary/10 dark:bg-slate-900/60 dark:text-white dark:hover:bg-blue-900/40">
                     <Download className="mr-2 h-4 w-4" /> CSV
                   </Button>
-                  <Button onClick={() => handleExport("pdf")} variant="outline" className="flex-1 border-border bg-muted text-foreground hover:bg-primary/10 dark:bg-slate-900/60 dark:text-white dark:hover:bg-blue-900/40">
+                  <Button onClick={exportPDF} variant="outline" className="flex-1 border-border bg-muted text-foreground hover:bg-primary/10 dark:bg-slate-900/60 dark:text-white dark:hover:bg-blue-900/40">
                     <Download className="mr-2 h-4 w-4" /> PDF
                   </Button>
                   <Button onClick={() => handleExport("png")} variant="outline" className="flex-1 border-border bg-muted text-foreground hover:bg-primary/10 dark:bg-slate-900/60 dark:text-white dark:hover:bg-blue-900/40">
@@ -647,7 +777,7 @@ const HeatmapGeneration = () => {
             </CardContent>
           </Card>
           {/* Visualization Card */}
-          <Card className="col-span-2 bg-gradient-to-br from-background/80 to-muted/90 dark:from-slate-900/80 dark:to-slate-950/90 border border-border shadow-xl shadow-primary/10 backdrop-blur-xl rounded-xl flex flex-col">
+          <Card className="HeatmapVisualizationCard col-span-2 bg-gradient-to-br from-background/80 to-muted/90 dark:from-slate-900/80 dark:to-slate-950/90 border border-border shadow-xl shadow-primary/10 backdrop-blur-xl rounded-xl flex flex-col">
             <CardHeader>
               <CardTitle className="text-lg font-bold text-foreground tracking-tight drop-shadow mb-2">Heatmap Visualization</CardTitle>
             </CardHeader>
@@ -785,6 +915,20 @@ const HeatmapGeneration = () => {
           />
         )}
       </div>
+      <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Confirm Deletion</DialogTitle>
+          </DialogHeader>
+          <div>Are you sure you want to delete this heatmap? This action cannot be undone.</div>
+          <DialogFooter>
+            <Button variant="destructive" onClick={confirmDeleteJob}>Delete</Button>
+            <DialogClose asChild>
+              <Button variant="outline">Cancel</Button>
+            </DialogClose>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

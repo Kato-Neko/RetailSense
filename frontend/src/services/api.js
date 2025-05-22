@@ -85,6 +85,19 @@ export const authService = {
       throw error.response ? error.response.data : error;
     }
   },
+
+  // Add updatePassword method for password change functionality
+  updatePassword: async (currentPassword, newPassword) => {
+    try {
+      const response = await apiClient.put("/user/password", {
+        current_password: currentPassword,
+        new_password: newPassword,
+      });
+      return response.data;
+    } catch (error) {
+      throw error.response ? error.response.data : error;
+    }
+  },
 };
 
 // Heatmap job services

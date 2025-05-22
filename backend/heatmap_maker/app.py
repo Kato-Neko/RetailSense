@@ -543,40 +543,75 @@ def receive_live_detections(job_id):
     except Exception as e:
         return jsonify({'error': str(e)}), 400
 
-@app.route('/api/user/username', methods=['PUT'])
+@app.route('/api/user/username', methods=['PUT', 'OPTIONS'])
+@cross_origin(origins=["http://localhost:5173"], methods=["PUT", "OPTIONS"], allow_headers=["Content-Type", "Authorization"])
 @jwt_required()
 def update_username():
     user_id = get_jwt_identity()
     if not user_id:
         return jsonify({"error": "Not logged in"}), 401
-    
+
     data = request.get_json()
     new_username = data.get('username')
-    
+
     if not new_username:
         return jsonify({"error": "New username is required"}), 400
-    
-    conn = get_db_connection()
+
     try:
-        cursor = conn.cursor()
-        # Check if new username already exists
-        cursor.execute("SELECT username FROM users WHERE username = ?", (new_username,))
-        if cursor.fetchone():
+        # Check if new username already exists in Supabase
+        existing_user = supabase.table('users').select('username').eq('username', new_username).execute()
+        if existing_user.data:
             return jsonify({"error": "Username already exists"}), 400
-        
-        # Update username
-        cursor.execute("UPDATE users SET username = ? WHERE id = ?", 
-                      (new_username, user_id))
-        conn.commit()
-        
-        return jsonify({
-            "message": "Username updated successfully",
-            "username": new_username
-        })
+
+        # Update username in Supabase for the current user
+        result = supabase.table('users').update({'username': new_username}).eq('id', user_id).execute()
+        if result.data:
+            return jsonify({
+                "message": "Username updated successfully",
+                "username": new_username
+            })
+        else:
+            return jsonify({"error": "Failed to update username"}), 500
     except Exception as e:
         return jsonify({"error": f"Database error: {str(e)}"}), 500
-    finally:
-        conn.close()
+
+@app.route('/api/user/password', methods=['PUT', 'OPTIONS'])
+@cross_origin(origins=["http://localhost:5173"], methods=["PUT", "OPTIONS"], allow_headers=["Content-Type", "Authorization"])
+@jwt_required()
+def change_password():
+    user_id = get_jwt_identity()
+    if not user_id:
+        return jsonify({"error": "Not logged in"}), 401
+
+    data = request.get_json()
+    current_password = data.get('current_password')
+    new_password = data.get('new_password')
+
+    if not current_password or not new_password:
+        return jsonify({"error": "Current and new password are required"}), 400
+    if len(new_password) < 6:
+        return jsonify({"error": "New password must be at least 6 characters long"}), 400
+
+    try:
+        # Fetch the user's email from Supabase
+        user_data = supabase.table('users').select('email').eq('id', user_id).execute()
+        if not user_data.data:
+            return jsonify({"error": "User not found"}), 404
+        email = user_data.data[0]['email']
+
+        # Authenticate with current password to verify
+        auth_resp = supabase.auth.sign_in_with_password({"email": email, "password": current_password})
+        if not getattr(auth_resp, 'user', None):
+            return jsonify({"error": "Current password is incorrect"}), 400
+
+        # Update password using Supabase auth API
+        update_resp = supabase.auth.update_user({"password": new_password})
+        if getattr(update_resp, 'user', None):
+            return jsonify({"message": "Password updated successfully"})
+        else:
+            return jsonify({"error": "Failed to update password"}), 500
+    except Exception as e:
+        return jsonify({"error": f"Error updating password: {str(e)}"}), 500
 
 @app.route('/api/heatmap_jobs/<job_id>/export/csv', methods=['GET'])
 @jwt_required()

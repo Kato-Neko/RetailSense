@@ -20,29 +20,12 @@ import {
   SidebarMenuSubButton,
   SidebarMenuSubItem,
 } from "@/components/ui/sidebar"
+import { useUser } from "../contexts/UserContext"
 
 const SideMenu = ({ isAuthenticated, setIsAuthenticated }) => {
   const navigate = useNavigate()
   const location = useLocation()
-  const [userInfo, setUserInfo] = useState(null)
-  const [isLoading, setIsLoading] = useState(true)
-
-  useEffect(() => {
-    if (isAuthenticated) {
-      fetchUserInfo()
-    }
-  }, [isAuthenticated])
-
-  const fetchUserInfo = async () => {
-    try {
-      const response = await authService.getUserInfo()
-      setUserInfo(response)
-      setIsLoading(false)
-    } catch (error) {
-      console.error("Failed to fetch user info:", error)
-      setIsLoading(false)
-    }
-  }
+  const { userInfo, isLoading } = useUser()
 
   const handleLogout = () => {
     localStorage.removeItem("access_token")

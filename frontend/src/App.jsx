@@ -12,6 +12,7 @@ import { authService } from "./services/api"
 import "./App.css"
 import { ThemeProvider } from "./components/ThemeContext"
 import Base from "./pages/Base"
+import { UserProvider } from "./contexts/UserContext"
 
 function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(false)
@@ -73,30 +74,32 @@ function App() {
 
   return (
     <ThemeProvider>
-      <Router>
-        <div className="app">
-          <Toaster position="top-right" />
-          <Routes>
-            <Route
-              path="/"
-              element={
-                isAuthenticated ? <Navigate to="/dashboard" /> : <LandingPage setIsAuthenticated={setIsAuthenticated} />
-              }
-            />
-            <Route path="/login" element={<Navigate to="/?showAuth=true" replace />} />
-            <Route path="/register" element={<Navigate to="/?showAuth=true&tab=register" replace />} />
-            <Route path="/" element={<Base />}>
-              <Route path="/dashboard" element={isAuthenticated ? <Dashboard /> : <Navigate to="/" />} />
-              <Route path="/video-processing" element={isAuthenticated ? <CreateHeatmap /> : <Navigate to="/" />} />
+      <UserProvider>
+        <Router>
+          <div className="app">
+            <Toaster position="top-right" />
+            <Routes>
               <Route
-                path="/heatmap-generation"
-                element={isAuthenticated ? <HeatmapGeneration /> : <Navigate to="/" />}
+                path="/"
+                element={
+                  isAuthenticated ? <Navigate to="/dashboard" /> : <LandingPage setIsAuthenticated={setIsAuthenticated} />
+                }
               />
-              <Route path="/user-management" element={isAuthenticated ? <UserManagement /> : <Navigate to="/" />} />
-            </Route>
-          </Routes>
-        </div>
-      </Router>
+              <Route path="/login" element={<Navigate to="/?showAuth=true" replace />} />
+              <Route path="/register" element={<Navigate to="/?showAuth=true&tab=register" replace />} />
+              <Route path="/" element={<Base />}>
+                <Route path="/dashboard" element={isAuthenticated ? <Dashboard /> : <Navigate to="/" />} />
+                <Route path="/video-processing" element={isAuthenticated ? <CreateHeatmap /> : <Navigate to="/" />} />
+                <Route
+                  path="/heatmap-generation"
+                  element={isAuthenticated ? <HeatmapGeneration /> : <Navigate to="/" />}
+                />
+                <Route path="/user-management" element={isAuthenticated ? <UserManagement /> : <Navigate to="/" />} />
+              </Route>
+            </Routes>
+          </div>
+        </Router>
+      </UserProvider>
     </ThemeProvider>
   )
 }

@@ -225,8 +225,16 @@ const Dashboard = () => {
       fetchDashboardData();
     };
     window.addEventListener('dashboard-refresh', handleRefresh);
+
+    // Listen for jobDeleted event to refresh dashboard data
+    const handleJobDeleted = () => {
+      fetchDashboardData();
+    };
+    window.addEventListener('jobDeleted', handleJobDeleted);
+
     return () => {
       window.removeEventListener('dashboard-refresh', handleRefresh);
+      window.removeEventListener('jobDeleted', handleJobDeleted);
     };
   }, [])
 

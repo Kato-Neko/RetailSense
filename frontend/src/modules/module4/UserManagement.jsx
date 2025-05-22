@@ -3,19 +3,16 @@
 import { useState, useEffect } from "react";
 import { User, Mail, Calendar, Key, Eye, EyeOff, Video, Map, Clock, BarChart2, Edit2, Check, X, Trash2 } from "lucide-react";
 import { authService, heatmapService } from "../../services/api";
-import toast from "react-hot-toast";
+import { toast } from "sonner";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { useUser } from "../../contexts/UserContext";
 
 const UserManagement = () => {
-  const [userInfo, setUserInfo] = useState({
-    username: "",
-    email: "",
-    created_at: "",
-  });
+  const { userInfo, setUserInfo } = useUser();
   const [isLoading, setIsLoading] = useState(true);
   const [showCurrentPassword, setShowCurrentPassword] = useState(false);
   const [showNewPassword, setShowNewPassword] = useState(false);
@@ -35,20 +32,17 @@ const UserManagement = () => {
   const [newUsername, setNewUsername] = useState("");
 
   useEffect(() => {
-    fetchUserInfo();
+    if (userInfo) setIsLoading(false);
     fetchUserActivity();
-  }, []);
-
-  const fetchUserInfo = async () => {
-    try {
-      const response = await authService.getUserInfo();
-      setUserInfo(response);
-      setIsLoading(false);
-    } catch (error) {
-      toast.error("Failed to fetch user information");
-      setIsLoading(false);
-    }
-  };
+    // Listen for jobDeleted event to refresh user activity
+    const handleJobDeleted = () => {
+      fetchUserActivity();
+    };
+    window.addEventListener('jobDeleted', handleJobDeleted);
+    return () => {
+      window.removeEventListener('jobDeleted', handleJobDeleted);
+    };
+  }, [userInfo]);
 
   const fetchUserActivity = async () => {
     try {
@@ -61,6 +55,7 @@ const UserManagement = () => {
       
       // Get recent activities (last 5)
       const recentActivities = jobHistory.slice(0, 5).map(job => ({
+        id: job.job_id,
         type: job.input_video_name ? 'video' : 'heatmap',
         name: job.input_video_name || job.input_floorplan_name || 'Unknown',
         status: job.status,
@@ -106,15 +101,17 @@ const UserManagement = () => {
     }
 
     try {
-      // TODO: Implement password update API call
-      toast.success("Password updated successfully");
+      // Call backend to update password
+      const response = await authService.updatePassword(passwordForm.currentPassword, passwordForm.newPassword);
+      // Show a toast notification for successful password change
+      toast.success(response.message || "Password changed successfully!");
       setPasswordForm({
         currentPassword: "",
         newPassword: "",
         confirmPassword: "",
       });
     } catch (error) {
-      toast.error(error.message || "Failed to update password");
+      toast.error(error.error || error.message || "Failed to update password");
     }
   };
 
@@ -146,7 +143,8 @@ const UserManagement = () => {
       if (response.message) {
         setUserInfo(prev => ({ ...prev, username: newUsername }));
         setIsEditingUsername(false);
-        toast.success("Username updated successfully");
+        // Show a toast notification for successful username change
+        toast.success(response.message || "Username changed successfully!");
       } else {
         throw new Error("Failed to update username");
       }
@@ -155,12 +153,20 @@ const UserManagement = () => {
     }
   };
 
-  // Delete activity from UI only
-  const handleDeleteActivity = (index) => {
-    setActivityStats((prev) => ({
-      ...prev,
-      recentActivities: prev.recentActivities.filter((_, i) => i !== index)
-    }));
+  const handleDeleteActivity = async (index) => {
+    const deletedJob = activityStats.recentActivities[index];
+    if (!deletedJob || !deletedJob.id) return;
+    try {
+      // Call backend to delete the job
+      await heatmapService.deleteJob(deletedJob.id);
+      // Refresh user activity
+      await fetchUserActivity();
+      // Dispatch a custom event to notify Dashboard to refresh
+      window.dispatchEvent(new CustomEvent('jobDeleted', { detail: deletedJob.id }));
+      toast.success('Activity deleted successfully!');
+    } catch (error) {
+      toast.error('Failed to delete activity.');
+    }
   };
 
   if (isLoading) {
