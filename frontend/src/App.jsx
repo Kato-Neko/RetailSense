@@ -6,7 +6,7 @@ import { Toaster } from "sonner"
 import LandingPage from "./pages/LandingPage"
 import Dashboard from "./pages/Dashboard"
 import CreateHeatmap from "./pages/CreateHeatmap"
-import HeatmapGeneration from "./modules/module2/HeatmapGeneration"
+import ViewHeatmap from "./pages/ViewHeatmap"
 import UserManagement from "./modules/module4/UserManagement"
 import { authService } from "./services/api"
 import "./App.css"
@@ -89,8 +89,10 @@ function App() {
               <Route path="/dashboard" element={isAuthenticated ? <Dashboard /> : <Navigate to="/" />} />
               <Route path="/video-processing" element={isAuthenticated ? <CreateHeatmap /> : <Navigate to="/" />} />
               <Route
-                path="/heatmap-generation"
-                element={isAuthenticated ? <HeatmapGeneration /> : <Navigate to="/" />}
+                path="/view-heatmap"
+                element={isAuthenticated ? (
+                  <ViewHeatmap />
+                ) : <Navigate to="/" />}
               />
               <Route path="/user-management" element={isAuthenticated ? <UserManagement /> : <Navigate to="/" />} />
             </Route>

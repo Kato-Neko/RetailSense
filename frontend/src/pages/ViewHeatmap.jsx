@@ -79,6 +79,58 @@ export default function ViewHeatmap() {
       .finally(() => setAnalysisLoading(false))
   }, [selectedJob])
 
+  // Robust polling for custom heatmap progress
+  useEffect(() => {
+    let poll = null;
+    if (isCustomGenerating && selectedJob && customProgress < 100) {
+      poll = setInterval(async () => {
+        try {
+          const data = await heatmapService.getCustomHeatmapProgress(selectedJob.job_id);
+          setCustomProgress(Math.round((data.progress || 0) * 100));
+          if (data.progress >= 1) {
+            clearInterval(poll);
+            setIsCustomGenerating(false);
+            setCustomGenerationComplete(true);
+            // Fetch custom heatmap image and analytics
+            const videoStart = new Date(selectedJob.start_datetime);
+            const startDate = new Date(customDateRange.start);
+            startDate.setHours(...customTimeRange.start.split(":").map(Number));
+            const endDate = new Date(customDateRange.end);
+            endDate.setHours(...customTimeRange.end.split(":").map(Number));
+            const startTimeInSeconds = (startDate - videoStart) / 1000;
+            const endTimeInSeconds = (endDate - videoStart) / 1000;
+            const customUrl = heatmapService.getCustomHeatmapImageUrl(selectedJob.job_id, startTimeInSeconds, endTimeInSeconds);
+            setCustomHeatmapUrl(customUrl);
+            // Fetch custom analytics
+            setAnalysisLoading(true);
+            try {
+              const customAnalysis = await heatmapService.getCustomHeatmapAnalysis(selectedJob.job_id, {
+                start_time: startTimeInSeconds,
+                end_time: endTimeInSeconds,
+                area: 'all',
+              });
+              setAnalysis(customAnalysis);
+              toast.success('Custom heatmap generated successfully!');
+            } catch (err) {
+              toast.error('Failed to fetch custom analytics.');
+            } finally {
+              setAnalysisLoading(false);
+            }
+            setCustomStep(2);
+          }
+        } catch (e) {
+          clearInterval(poll);
+          setIsCustomGenerating(false);
+          setCustomProgress(0);
+          toast.error('Custom heatmap progress polling failed.');
+        }
+      }, 500);
+    }
+    return () => {
+      if (poll) clearInterval(poll);
+    };
+  }, [isCustomGenerating, selectedJob, customProgress, customDateRange, customTimeRange]);
+
   // Handlers
   const handleSelectJob = (job) => {
     setSelectedJob(job)
@@ -196,43 +248,7 @@ export default function ViewHeatmap() {
 
     try {
       await heatmapService.generateCustomHeatmap(selectedJob.job_id, requestBody);
-      // Only start polling if POST succeeded
-      const poll = setInterval(async () => {
-        try {
-          const data = await heatmapService.getCustomHeatmapProgress(selectedJob.job_id);
-          setCustomProgress(Math.round((data.progress || 0) * 100));
-          if (data.progress >= 1) {
-            clearInterval(poll);
-            setIsCustomGenerating(false);
-            setCustomGenerationComplete(true);
-            // Fetch custom heatmap image and analytics
-            const customUrl = heatmapService.getCustomHeatmapImageUrl(selectedJob.job_id, startTimeInSeconds, endTimeInSeconds);
-            setCustomHeatmapUrl(customUrl);
-            // Fetch custom analytics
-            setAnalysisLoading(true);
-            try {
-              const customAnalysis = await heatmapService.getCustomHeatmapAnalysis(selectedJob.job_id, {
-                start_time: startTimeInSeconds,
-                end_time: endTimeInSeconds,
-                area: 'all',
-              });
-              setAnalysis(customAnalysis);
-              toast.success('Custom heatmap generated successfully!');
-            } catch (err) {
-              toast.error('Failed to fetch custom analytics.');
-            } finally {
-              setAnalysisLoading(false);
-            }
-            // Auto-advance to export step
-            setCustomStep(2);
-          }
-        } catch (e) {
-          clearInterval(poll);
-          setIsCustomGenerating(false);
-          setCustomProgress(0);
-          toast.error('Custom heatmap progress polling failed.');
-        }
-      }, 500);
+      // Polling will now be handled by the useEffect above
     } catch (err) {
       setIsCustomGenerating(false);
       setCustomProgress(0);

@@ -278,6 +278,15 @@ export const heatmapService = {
       throw error.response ? error.response.data : error;
     }
   },
+
+  getCustomHeatmapProgress: async (jobId) => {
+    try {
+      const response = await apiClient.get(`/heatmap_jobs/${jobId}/custom_heatmap_progress`);
+      return response.data;
+    } catch (error) {
+      throw error.response ? error.response.data : error;
+    }
+  },
 };
 
 // Export the API client for other custom requests

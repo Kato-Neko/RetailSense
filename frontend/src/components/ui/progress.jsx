@@ -13,12 +13,16 @@ function Progress({
   const turboGradient =
     "linear-gradient(90deg, \
     #ff0022 0%, \
-    #ff7a00 16%, \
-    #ffef00 33%, \
-    #21ff00 50%, \
-    #00cfff 66%, \
-    #002bff 83%, \
-    #7a00ff 100%)";
+    #ff7a00 10%, \
+    #ffef00 20%, \
+    #21ff00 30%, \
+    #00cfff 40%, \
+    #002bff 50%, \
+    #7a00ff 60%, \
+    #d400ff 70%, \
+    #ff00aa 80%, \
+    #ff0077 90%, \
+    #ff0000 100%)";
 
   return (
     <ProgressPrimitive.Root
