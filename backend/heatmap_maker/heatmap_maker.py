@@ -69,7 +69,7 @@ def blend_heatmap(detections, floorplan_path, output_heatmap_path, output_video_
     # Create heatmap canvas
     heatmap = np.zeros(floorplan.shape[:2], dtype=np.float32)
     
-    # Process detections
+    # Process detections (Phase 1: 0%–50%)
     total_detections = len(detections)
     for i, detection in enumerate(detections):
         # Get bounding box center
@@ -80,9 +80,9 @@ def blend_heatmap(detections, floorplan_path, output_heatmap_path, output_video_
         # Add Gaussian kernel at detection point
         cv2.circle(heatmap, (center_x, center_y), 20, 1.0, -1)
         
-        # Update progress
-        if progress_callback:
-            progress = (i + 1) / total_detections
+        # Update progress (0%–50%)
+        if progress_callback and total_detections > 0:
+            progress = 0.5 * (i + 1) / total_detections
             progress_callback(progress)
     
     # Apply gamma correction to brighten low values
@@ -105,7 +105,7 @@ def blend_heatmap(detections, floorplan_path, output_heatmap_path, output_video_
     # Save heatmap image
     cv2.imwrite(output_heatmap_path, blended)
     
-    # Create video with detections
+    # Create video with detections (Phase 2: 50%–100%)
     cap = cv2.VideoCapture(video_path)
     if not cap.isOpened():
         raise ValueError("Could not open video for processing")
@@ -114,6 +114,7 @@ def blend_heatmap(detections, floorplan_path, output_heatmap_path, output_video_
     width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
     height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
     fps = cap.get(cv2.CAP_PROP_FPS)
+    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
     
     # Create video writer
     fourcc = cv2.VideoWriter_fourcc(*'mp4v')
@@ -157,6 +158,10 @@ def blend_heatmap(detections, floorplan_path, output_heatmap_path, output_video_
         # Write frame
         out.write(frame)
         frame_count += 1
+        # Update progress (50%–100%)
+        if progress_callback and total_frames > 0:
+            progress = 0.5 + 0.5 * (frame_count / total_frames)
+            progress_callback(progress)
     
     # Release resources
     cap.release()
