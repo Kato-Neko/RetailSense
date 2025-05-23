@@ -895,8 +895,7 @@ def generate_custom_heatmap(job_id):
         data = request.get_json()
         start_time = float(data.get('start_time'))
         end_time = float(data.get('end_time'))
-        area = data.get('area', 'all')
-
+        logger.info(f"Custom heatmap request: job_id={job_id}, start_time={start_time}, end_time={end_time}")
         # Fetch job info from DB
         conn = get_db_connection()
         job_row = conn.execute("SELECT * FROM jobs WHERE job_id = ?", (job_id,)).fetchone()
@@ -1103,6 +1102,19 @@ def cleanup_orphaned_jobs():
             )
     conn.commit()
     conn.close()
+
+@app.route('/api/heatmap_jobs/<job_id>/debug_status', methods=['GET'])
+def debug_job_status(job_id):
+    conn = get_db_connection()
+    job_row = conn.execute("SELECT job_id, status, message FROM jobs WHERE job_id = ?", (job_id,)).fetchone()
+    conn.close()
+    if not job_row:
+        return jsonify({"error": "Job not found"}), 404
+    return jsonify({
+        "job_id": job_row["job_id"],
+        "status": job_row["status"],
+        "message": job_row["message"]
+    })
 
 if __name__ == '__main__':
     init_db()

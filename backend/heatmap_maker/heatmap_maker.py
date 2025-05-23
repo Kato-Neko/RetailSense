@@ -80,9 +80,9 @@ def blend_heatmap(detections, floorplan_path, output_heatmap_path, output_video_
         # Add Gaussian kernel at detection point
         cv2.circle(heatmap, (center_x, center_y), 20, 1.0, -1)
         
-        # Update progress
+        # Update progress (0 to 0.5)
         if progress_callback:
-            progress = (i + 1) / total_detections
+            progress = 0.5 * ((i + 1) / total_detections) if total_detections > 0 else 0
             progress_callback(progress)
     
     # Apply gamma correction to brighten low values
@@ -114,6 +114,7 @@ def blend_heatmap(detections, floorplan_path, output_heatmap_path, output_video_
     width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
     height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
     fps = cap.get(cv2.CAP_PROP_FPS)
+    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
     
     # Create video writer
     fourcc = cv2.VideoWriter_fourcc(*'mp4v')
@@ -157,6 +158,10 @@ def blend_heatmap(detections, floorplan_path, output_heatmap_path, output_video_
         # Write frame
         out.write(frame)
         frame_count += 1
+        # Update progress (0.5 to 1.0)
+        if progress_callback and total_frames > 0:
+            progress = 0.5 + 0.5 * (frame_count / total_frames)
+            progress_callback(progress)
     
     # Release resources
     cap.release()

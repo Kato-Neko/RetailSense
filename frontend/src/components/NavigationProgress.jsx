@@ -10,7 +10,7 @@ const NavigationProgress = () => {
   const routeTitles = {
     "/": "Dashboard",
     "/dashboard": "Dashboard",
-    "/heatmap-generation": "View Heatmaps",
+    "/view-heatmap": "View Heatmaps",
     "/video-processing": "Create Heatmaps",
     "/user-management": "Account Management",
   }
@@ -19,7 +19,7 @@ const NavigationProgress = () => {
   const getSection = (path) => {
     if (path === "/" || path === "/dashboard") {
       return { name: "Analytics", color: "text-orange-500 dark:text-orange-400" }
-    } else if (path === "/heatmap-generation" || path === "/video-processing") {
+    } else if (path === "/view-heatmap" || path === "/video-processing") {
       return { name: "Heatmap", color: "text-cyan-500 dark:text-cyan-400" }
     } else if (path === "/user-management") {
       return { name: "User", color: "text-purple-500 dark:text-purple-400" }

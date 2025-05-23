@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useContext } from "react";
 import { Map, Loader, Trash2, Users, BarChart2, Lightbulb, Timer, Filter, Download, Calendar } from "lucide-react";
 import toast from "react-hot-toast";
 import { useLocation } from "react-router-dom";
@@ -12,6 +12,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 //import { Select } from "@/components/ui/select";
 import { Progress } from "@/components/ui/progress";
+import { HeatmapContext } from "./HeatmapContext";
+import HeatmapHistoryPanel from "./HeatmapHistoryPanel";
 
 const HeatmapGeneration = () => {
   const location = useLocation();
@@ -19,14 +21,9 @@ const HeatmapGeneration = () => {
   const initialJobId = queryParams.get("jobId");
 
   const [isGenerating, setIsGenerating] = useState(false);
-  const [heatmapGenerated, setHeatmapGenerated] = useState(false);
   const [dateRange, setDateRange] = useState({ start: "", end: "" });
   const [timeRange, setTimeRange] = useState({ start: "09:00", end: "21:00" });
-  const [selectedArea, setSelectedArea] = useState("all");
   const [jobId, setJobId] = useState(initialJobId);
-  const [jobHistory, setJobHistory] = useState([]);
-  const [selectedJob, setSelectedJob] = useState(null);
-  const [isLoading, setIsLoading] = useState(false);
   const [statusMessage, setStatusMessage] = useState("");
   const imageRef = useRef(null);
   const [analysis, setAnalysis] = useState(null);
@@ -37,11 +34,40 @@ const HeatmapGeneration = () => {
   const [videoDuration, setVideoDuration] = useState(null);
   const [warning, setWarning] = useState('');
   const videoRef = useRef(null);
-  const [customHeatmapUrl, setCustomHeatmapUrl] = useState(null);
   const [customProgress, setCustomProgress] = useState(0);
   const [customJobId, setCustomJobId] = useState(null);
   const [videoDateRange, setVideoDateRange] = useState({ start: null, end: null });
   const [isMultiDay, setIsMultiDay] = useState(false);
+
+  const {
+    jobHistory,
+    selectedJob,
+    heatmapGenerated,
+    heatmapUrl,
+    isExportRangeValid,
+    isLoading,
+    setIsLoading,
+    handleExport,
+    customDateRange,
+    setCustomDateRange,
+    customTimeRange,
+    setCustomTimeRange,
+    selectedArea,
+    setSelectedArea,
+    isCustomDateTimeValid,
+    isCustomGenerating,
+    customStatusMessage,
+    customProgressPercent,
+    customBackendError,
+    customGenerationComplete,
+    customHeatmapUrl,
+    handleCustomExport,
+    handleGenerateCustomHeatmap,
+    handleCancelCustomJob,
+    handleSelectJob,
+    handleDeleteJob,
+    isHistoryLoading
+  } = useContext(HeatmapContext);
 
   // Fetch job history on component mount
   useEffect(() => {
@@ -150,11 +176,6 @@ const HeatmapGeneration = () => {
     }
   }, [selectedJob]);
 
-  const handleSelectJob = (job) => {
-    setSelectedJob(job);
-    setHeatmapGenerated(true);
-  };
-
   const handleGenerateHeatmap = async () => {
     if (!selectedJob) {
       toast.error("Please select a job first.", {
@@ -237,209 +258,6 @@ const HeatmapGeneration = () => {
     }
   };
 
-  // Helper to check if export range is valid
-  const isExportRangeValid = (() => {
-    if (!selectedJob) {
-      console.log('Export disabled: No selected job');
-      return false;
-    }
-    if (!dateRange.start || !dateRange.end || !timeRange.start || !timeRange.end) {
-      console.log('Export disabled: Missing date or time range');
-      return false;
-    }
-    const videoStart = new Date(selectedJob.start_datetime);
-    const videoEnd = new Date(selectedJob.end_datetime);
-    const startDate = new Date(`${dateRange.start}T${timeRange.start}`);
-    const endDate = new Date(`${dateRange.end}T${timeRange.end}`);
-    if (startDate < videoStart) {
-      console.log('Export disabled: Start date is before video start', startDate, videoStart);
-      return false;
-    }
-    if (endDate > videoEnd) {
-      console.log('Export disabled: End date is after video end', endDate, videoEnd);
-      return false;
-    }
-    if (startDate >= endDate) {
-      console.log('Export disabled: Start date is not before end date', startDate, endDate);
-      return false;
-    }
-    return true;
-  })();
-
-  const handleExport = async (format) => {
-    if (!heatmapGenerated || !selectedJob) {
-      toast.error("Please generate or select a heatmap first", {
-        position: "top-right",
-        style: {
-          background: '#1a1a1a',
-          color: '#fff',
-          border: '1px solid #333',
-          borderRadius: '8px',
-          padding: '16px'
-        }
-      });
-      return;
-    }
-
-    // Range check before export
-    const videoStart = new Date(selectedJob.start_datetime);
-    const videoEnd = new Date(selectedJob.end_datetime);
-    const startDate = new Date(`${dateRange.start}T${timeRange.start}`);
-    const endDate = new Date(`${dateRange.end}T${timeRange.end}`);
-    if (startDate < videoStart || endDate > videoEnd || startDate >= endDate) {
-      toast.error("Export range is outside the video recording period.", {
-        position: "top-right",
-        style: {
-          background: '#1a1a1a',
-          color: '#fff',
-          border: '1px solid #333',
-          borderRadius: '8px',
-          padding: '16px'
-        }
-      });
-      return;
-    }
-
-    try {
-      let blob;
-      let filename;
-      let mimeType;
-
-      // Format date and time for filename
-      const formatDateTime = (date, time) => {
-        const dateStr = date.split('T')[0];
-        const timeStr = time.replace(/:/g, '-');
-        return `${dateStr}_${timeStr}`;
-      };
-
-      const startDateTime = formatDateTime(dateRange.start, timeRange.start);
-      const endDateTime = formatDateTime(dateRange.end, timeRange.end);
-      const timeRangeStr = `${startDateTime}_to_${endDateTime}`;
-
-      // Format date and time for display
-      const formatDisplayDateTime = (date, time) => {
-        return `${date} ${time}`;
-      };
-
-      const displayStartDateTime = formatDisplayDateTime(dateRange.start, timeRange.start);
-      const displayEndDateTime = formatDisplayDateTime(dateRange.end, timeRange.end);
-
-      // Calculate time in seconds for custom heatmap
-      const startTimeInSeconds = (startDate - videoStart) / 1000;
-      const endTimeInSeconds = (endDate - videoStart) / 1000;
-
-      switch (format) {
-        case "png":
-          // Fetch the image as a blob
-          const imageUrl = customHeatmapUrl || heatmapService.getHeatmapImageUrl(selectedJob.job_id);
-          const response = await fetch(imageUrl);
-          blob = await response.blob();
-          mimeType = 'image/png';
-          filename = `heatmap_${selectedJob.job_id}_${timeRangeStr}.png`;
-          break;
-
-        case "csv":
-          mimeType = 'text/csv';
-          filename = `heatmap_${selectedJob.job_id}_${timeRangeStr}.csv`;
-          blob = await heatmapService.exportHeatmapCsv(selectedJob.job_id, {
-            start_datetime: displayStartDateTime,
-            end_datetime: displayEndDateTime,
-            area: selectedArea,
-            start_time: startTimeInSeconds,
-            end_time: endTimeInSeconds
-          });
-          break;
-
-        case "pdf":
-          mimeType = 'application/pdf';
-          filename = `heatmap_${selectedJob.job_id}_${timeRangeStr}.pdf`;
-          blob = await heatmapService.exportHeatmapPdf(selectedJob.job_id, {
-            start_datetime: displayStartDateTime,
-            end_datetime: displayEndDateTime,
-            area: selectedArea,
-            start_time: startTimeInSeconds,
-            end_time: endTimeInSeconds
-          });
-          break;
-
-        default:
-          toast.error("Unsupported export format", {
-            position: "top-right",
-            style: {
-              background: '#1a1a1a',
-              color: '#fff',
-              border: '1px solid #333',
-              borderRadius: '8px',
-              padding: '16px'
-            }
-          });
-          return;
-      }
-
-      // Create a blob with the correct MIME type
-      const fileBlob = new Blob([blob], { type: mimeType });
-      
-      // Create a temporary URL for the blob
-      const url = window.URL.createObjectURL(fileBlob);
-      
-      // Create a temporary link element
-      const link = document.createElement("a");
-      link.href = url;
-      link.download = filename;
-      
-      // Append to body, click, and cleanup
-      document.body.appendChild(link);
-      link.click();
-      
-      // Cleanup
-      document.body.removeChild(link);
-      window.URL.revokeObjectURL(url);
-      
-      toast.success(`Heatmap exported as ${format.toUpperCase()}`, {
-        position: "top-right",
-        style: {
-          background: '#1a1a1a',
-          color: '#fff',
-          border: '1px solid #333',
-          borderRadius: '8px',
-          padding: '16px'
-        }
-      });
-    } catch (error) {
-      // If error is a Blob (likely JSON), try to read and parse it
-      if (error instanceof Blob && error.type === 'application/json') {
-        const text = await error.text();
-        try {
-          const data = JSON.parse(text);
-          toast.error(data.error || text, {
-            position: "top-right",
-            style: {
-              background: '#1a1a1a',
-              color: '#fff',
-              border: '1px solid #333',
-              borderRadius: '8px',
-              padding: '16px'
-            }
-          });
-        } catch {
-          toast.error(text);
-        }
-        return;
-      }
-      // fallback
-      toast.error(`Failed to export heatmap as ${format.toUpperCase()}`, {
-        position: "top-right",
-        style: {
-          background: '#1a1a1a',
-          color: '#fff',
-          border: '1px solid #333',
-          borderRadius: '8px',
-          padding: '16px'
-        }
-      });
-    }
-  };
-
   const fetchAnalysis = async (jobId) => {
     setAnalysisLoading(true);
     setAnalysisError(null);
@@ -495,40 +313,6 @@ const HeatmapGeneration = () => {
     }, 500);
     return () => clearInterval(interval);
   }, [customJobId]);
-
-  const handleDeleteJob = async (jobId) => {
-    if (!window.confirm("Are you sure you want to delete this heatmap?")) return;
-    try {
-      await heatmapService.deleteJob(jobId);
-      setJobHistory((prev) => prev.filter((job) => job.job_id !== jobId));
-      if (selectedJob && selectedJob.job_id === jobId) {
-        setSelectedJob(null);
-        setHeatmapGenerated(false);
-        setCustomHeatmapUrl(null);
-      }
-      toast.success("Heatmap deleted!", {
-        position: "top-right",
-        style: {
-          background: '#1a1a1a',
-          color: '#fff',
-          border: '1px solid #333',
-          borderRadius: '8px',
-          padding: '16px'
-        }
-      });
-    } catch (err) {
-      toast.error("Failed to delete heatmap.", {
-        position: "top-right",
-        style: {
-          background: '#1a1a1a',
-          color: '#fff',
-          border: '1px solid #333',
-          borderRadius: '8px',
-          padding: '16px'
-        }
-      });
-    }
-  };
 
   // Prepare data for the Peak Hours line chart
   const peakHoursData = analysis?.peak_hours?.map(ph => ({
@@ -730,49 +514,6 @@ const HeatmapGeneration = () => {
                   <Map className="mr-2 h-5 w-5" /> Generate Heatmap
                 </Button>
               )}
-              {jobHistory.length > 0 && (
-                <Card className="mt-6 bg-gradient-to-br from-muted/80 to-background/90 dark:from-slate-900/70 dark:to-slate-950/80 border border-border shadow-md backdrop-blur rounded-xl">
-                  <CardHeader>
-                    <CardTitle className="text-base font-semibold text-foreground">Previous Heatmaps</CardTitle>
-                  </CardHeader>
-                  <CardContent className="space-y-2 max-h-48 overflow-y-auto">
-                    {jobHistory.map((job) => (
-                      <div
-                        key={job.job_id}
-                        className={`flex items-center justify-between px-2 py-2 rounded-md cursor-pointer transition-colors ${selectedJob && selectedJob.job_id === job.job_id ? "bg-primary/20 dark:bg-blue-900/40" : "hover:bg-muted/60 dark:hover:bg-slate-800/60"}`}
-                        onClick={() => handleSelectJob(job)}
-                      >
-                        <div className="min-w-0">
-                          <div className="font-medium text-foreground truncate max-w-[160px]">{job.input_video_name || "Heatmap"}</div>
-                          <div className="text-xs text-muted-foreground">{new Date(job.created_at).toLocaleDateString()}</div>
-                        </div>
-                        <Button
-                          variant="destructive"
-                          size="icon"
-                          onClick={e => { e.stopPropagation(); handleDeleteJob(job.job_id); }}
-                          className="ml-2 dark:bg-red-700 dark:hover:bg-red-800"
-                          title="Delete heatmap"
-                        >
-                          <Trash2 className="h-5 w-5" />
-                        </Button>
-                      </div>
-                    ))}
-                  </CardContent>
-                </Card>
-              )}
-              {heatmapGenerated && selectedJob && (
-                <div className="flex gap-2 mt-4">
-                  <Button onClick={() => handleExport("csv")} variant="outline" className="flex-1 border-border bg-muted text-foreground hover:bg-primary/10 dark:bg-slate-900/60 dark:text-white dark:hover:bg-blue-900/40" disabled={!isExportRangeValid}>
-                    <Download className="mr-2 h-4 w-4" /> CSV
-                  </Button>
-                  <Button onClick={() => handleExport("pdf")} variant="outline" className="flex-1 border-border bg-muted text-foreground hover:bg-primary/10 dark:bg-slate-900/60 dark:text-white dark:hover:bg-blue-900/40" disabled={!isExportRangeValid}>
-                    <Download className="mr-2 h-4 w-4" /> PDF
-                  </Button>
-                  <Button onClick={() => handleExport("png")} variant="outline" className="flex-1 border-border bg-muted text-foreground hover:bg-primary/10 dark:bg-slate-900/60 dark:text-white dark:hover:bg-blue-900/40" disabled={!isExportRangeValid}>
-                    <Download className="mr-2 h-4 w-4" /> PNG
-                  </Button>
-                </div>
-              )}
             </CardContent>
           </Card>
           {/* Visualization Card */}
@@ -913,6 +654,9 @@ const HeatmapGeneration = () => {
             onLoadedMetadata={e => setVideoDuration(e.target.duration)}
           />
         )}
+      </div>
+      <div className="mt-8">
+        <HeatmapHistoryPanel />
       </div>
     </div>
   );
