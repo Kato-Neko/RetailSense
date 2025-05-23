@@ -136,23 +136,6 @@ const CoordinateSelectionStep = ({
           </div>
           <p className="text-xs text-muted-foreground">You must select exactly 4 points to define the area.</p>
         </div>
-
-        <div className="flex justify-between">
-          <Button
-            onClick={onPrevious}
-            variant="outline"
-            className="px-6 border-border bg-muted/50 text-foreground hover:bg-muted/70 hover:text-foreground"
-          >
-            Previous
-          </Button>
-          <Button
-            onClick={onNext}
-            disabled={!isValid}
-            className="px-6 bg-gradient-to-r from-white to-cyan-200 text-black font-semibold shadow-md border border-border py-2 text-sm hover:opacity-90 dark:from-blue-900 dark:to-cyan-800 dark:text-white"
-          >
-            Next
-          </Button>
-        </div>
       </CardContent>
     </Card>
   )

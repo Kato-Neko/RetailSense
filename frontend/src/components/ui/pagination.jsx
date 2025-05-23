@@ -44,18 +44,30 @@ function PaginationLink({
   className,
   isActive,
   size = "icon",
+  disabled,
+  onClick,
   ...props
 }) {
   return (
-    <a
+    <button
+      type="button"
       aria-current={isActive ? "page" : undefined}
       data-slot="pagination-link"
       data-active={isActive}
-      className={cn(buttonVariants({
-        variant: isActive ? "outline" : "ghost",
-        size,
-      }), className)}
-      {...props} />
+      className={cn(
+        buttonVariants({
+          variant: isActive ? "outline" : "ghost",
+          size,
+        }),
+        disabled && "opacity-50 pointer-events-none cursor-not-allowed",
+        className
+      )}
+      disabled={disabled}
+      tabIndex={disabled ? -1 : 0}
+      aria-disabled={disabled}
+      onClick={disabled ? undefined : onClick}
+      {...props}
+    />
   );
 }
 

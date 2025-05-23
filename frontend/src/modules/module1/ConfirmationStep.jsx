@@ -97,15 +97,6 @@ const ConfirmationStep = ({
         </div>
 
         <div className="flex justify-between">
-          <Button
-            onClick={onPrevious}
-            variant="outline"
-            className="px-6 border-border bg-muted/50 text-foreground hover:bg-muted/70 hover:text-foreground"
-            disabled={isProcessing}
-          >
-            Previous
-          </Button>
-
           {isProcessing ? (
             <Button onClick={onCancel} variant="destructive" className="px-6 bg-red-600 hover:bg-red-700 text-white">
               Cancel Processing

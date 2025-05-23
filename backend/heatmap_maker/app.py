@@ -888,26 +888,23 @@ def get_heatmap_analysis(job_id):
     analysis = analyze_heatmap(heatmap, floorplan.shape[:2], detections=detections, fps=fps)
     return jsonify(analysis)
 
-@app.route('/api/heatmap_jobs/<job_id>/custom_heatmap', methods=['POST'])
-@jwt_required()
-def generate_custom_heatmap(job_id):
-    try:
-        data = request.get_json()
-        start_time = float(data.get('start_time'))
-        end_time = float(data.get('end_time'))
-        area = data.get('area', 'all')
+# Helper function to run custom heatmap generation in a thread
 
+def run_custom_heatmap_job(job_id, start_time, end_time):
+    try:
         # Fetch job info from DB
         conn = get_db_connection()
         job_row = conn.execute("SELECT * FROM jobs WHERE job_id = ?", (job_id,)).fetchone()
         conn.close()
         if not job_row or job_row['status'] != 'completed':
-            return jsonify({"error": "Job not found or not completed"}), 404
+            custom_heatmap_progress[job_id] = 1.0
+            return
 
         # Load detections
         detections_path = os.path.join(RESULTS_FOLDER, job_id, 'detections.json')
         if not os.path.exists(detections_path):
-            return jsonify({"error": "Detections file not found"}), 404
+            custom_heatmap_progress[job_id] = 1.0
+            return
         with open(detections_path, 'r') as f:
             det_data = json.load(f)
             detections = det_data.get("detections", [])
@@ -919,16 +916,11 @@ def generate_custom_heatmap(job_id):
             if 'timestamp' in det and start_time <= det['timestamp'] <= end_time
         ]
 
-        # (Optional) Filter by area if you have area logic
-        # For now, just pass through
-
-        # Generate a temporary output path for the custom heatmap
         custom_heatmap_path = os.path.join(
             RESULTS_FOLDER, job_id, f"custom_heatmap_{float(start_time):.1f}_{float(end_time):.1f}.jpg"
         )
         floorplan_path = os.path.join(UPLOAD_FOLDER, job_id, job_row['input_floorplan_name'])
 
-        # Generate the heatmap
         def progress_callback(progress):
             custom_heatmap_progress[job_id] = progress
 
@@ -940,12 +932,28 @@ def generate_custom_heatmap(job_id):
             os.path.join(UPLOAD_FOLDER, job_id, job_row['input_video_name']),
             progress_callback=progress_callback
         )
-        custom_heatmap_progress[job_id] = 1.0  # Mark as done
+        custom_heatmap_progress[job_id] = 1.0
+    except Exception as e:
+        custom_heatmap_progress[job_id] = 1.0
+        logger.error(f"Error in custom heatmap thread: {str(e)}", exc_info=True)
 
-        # Return the path or a URL to the generated heatmap
+@app.route('/api/heatmap_jobs/<job_id>/custom_heatmap', methods=['POST'])
+@jwt_required()
+def generate_custom_heatmap(job_id):
+    try:
+        data = request.get_json()
+        start_time = float(data.get('start_time'))
+        end_time = float(data.get('end_time'))
+        logger.info(f"Custom heatmap request: job_id={job_id}, start_time={start_time}, end_time={end_time}")
+        # Start background thread for custom heatmap generation
+        custom_heatmap_progress[job_id] = 0.0
+        t = threading.Thread(target=run_custom_heatmap_job, args=(job_id, start_time, end_time))
+        t.daemon = True
+        t.start()
+        # Immediately return success, frontend will poll progress
         return jsonify({
             "success": True,
-            "heatmap_url": f"/api/heatmap_jobs/{job_id}/custom_heatmap_image?start={start_time}&end={end_time}"
+            "message": "Custom heatmap generation started. Poll progress endpoint.",
         })
     except Exception as e:
         logger.error(f"Error generating custom heatmap: {str(e)}", exc_info=True)

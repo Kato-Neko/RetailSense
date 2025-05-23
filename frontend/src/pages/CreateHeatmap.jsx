@@ -9,6 +9,7 @@ import DateTimeSelectionStep from "../modules/module1/DateTimeSelectionStep"
 import CoordinateSelectionStep from "../modules/module1/CoordinateSelectionStep"
 import ConfirmationStep from "../modules/module1/ConfirmationStep"
 import { toast } from "sonner"
+import { Pagination, PaginationContent, PaginationItem, PaginationLink, PaginationNext, PaginationPrevious } from "@/components/ui/pagination"
 
 const CreateHeatmap = () => {
   const [file, setFile] = useState(null)
@@ -235,7 +236,7 @@ const CreateHeatmap = () => {
 
   useEffect(() => {
     if (processingComplete && jobId) {
-      navigate(`/heatmap-generation?jobId=${jobId}`)
+      navigate(`/view-heatmap?jobId=${jobId}`)
     }
   }, [processingComplete, jobId, navigate])
 
@@ -452,31 +453,6 @@ const CreateHeatmap = () => {
     }
   }
 
-  // Handle navigation between steps
-  const goToStep = (step) => {
-    if (step >= 0 && step <= 3) {
-      // If trying to go forward without completing previous steps
-      let canProceed = true
-
-      if (step > 0) {
-        for (let i = 0; i < step; i++) {
-          if (!isStepValid(i)) {
-            canProceed = false
-            break
-          }
-        }
-      }
-
-      if (!canProceed) {
-        toast.error("Please complete the previous steps before proceeding.")
-        return
-      }
-
-      setCurrentStep(step)
-      api?.scrollTo(step)
-    }
-  }
-
   // Handle cancel job with navigation-aware logic
   const handleCancelJob = async () => {
     if (!jobId) return;
@@ -515,45 +491,8 @@ const CreateHeatmap = () => {
     }
   };
 
-  // Force Next button to work properly
-  const forceNextStep = () => {
-    if (isStepValid(currentStep)) {
-      const nextStep = currentStep + 1
-      setCurrentStep(nextStep)
-      api?.scrollTo(nextStep)
-    } else {
-      toast.error("Please complete the current step before proceeding.")
-    }
-  }
-
   return (
     <div className="container mx-auto px-4 py-4 max-w-4xl">
-      {/* Step Pagination */}
-      <div className="mb-6">
-        <div className="flex justify-center mb-6">
-          <div className="flex space-x-2">
-            {['Select', 'Date', 'Points', 'Confirm'].map((step, index) => (
-              <button
-                key={index}
-                onClick={() => goToStep(index)}
-                disabled={isProcessing || (index > 0 && !isStepValid(index - 1) && index > currentStep)}
-                className={`relative w-10 h-10 rounded-full flex items-center justify-center transition-all duration-200 shadow-md backdrop-blur-md border border-border text-lg font-bold
-                  ${currentStep === index
-                    ? 'bg-gradient-to-br from-white to-cyan-200 text-black dark:from-blue-900 dark:to-cyan-800 dark:text-white'
-                    : index < currentStep
-                      ? 'bg-muted text-foreground'
-                      : 'bg-muted/60 text-muted-foreground'}
-                  ${(isProcessing || (index > 0 && !isStepValid(index - 1) && index > currentStep))
-                    ? 'opacity-50 cursor-not-allowed'
-                    : 'cursor-pointer'}
-                `}
-              >
-                {index + 1}
-              </button>
-            ))}
-          </div>
-        </div>
-      </div>
       {/* Carousel for steps */}
       <div className="bg-gradient-to-br from-background/80 to-muted/90 dark:from-slate-900/80 dark:to-slate-950/90 rounded-lg border border-border shadow-xl shadow-primary/10 backdrop-blur-xl">
         <Carousel
@@ -571,7 +510,6 @@ const CreateHeatmap = () => {
                 file={file}
                 videoPreviewUrl={videoPreviewUrl}
                 onFileChange={handleFileChange}
-                onNext={forceNextStep}
                 isValid={isStepValid(0)}
               />
             </CarouselItem>
@@ -589,8 +527,6 @@ const CreateHeatmap = () => {
                 setStartTime={setStartTime}
                 setEndTime={setEndTime}
                 isValid={isTimeRangeValid()}
-                onPrevious={() => goToStep(0)}
-                onNext={forceNextStep}
               />
             </CarouselItem>
             {/* Step 3: Coordinate Selection */}
@@ -601,8 +537,6 @@ const CreateHeatmap = () => {
                 onFrameClick={handleFrameClick}
                 onRemovePoint={handleRemovePoint}
                 isValid={pointsData.length === 4}
-                onPrevious={() => goToStep(1)}
-                onNext={forceNextStep}
               />
             </CarouselItem>
             {/* Step 4: Confirmation */}
@@ -618,13 +552,68 @@ const CreateHeatmap = () => {
                 statusMessage={statusMessage}
                 progressPercent={progressPercent}
                 backendError={backendError}
-                onPrevious={isProcessing ? undefined : () => goToStep(2)}
                 onProcess={handleProcessVideo}
                 onCancel={handleCancelJob}
               />
             </CarouselItem>
           </CarouselContent>
         </Carousel>
+      </div>
+      {/* Step Pagination (Unified) - now at the bottom */}
+      <div className="mt-20">
+        <Pagination>
+          <PaginationContent>
+            <PaginationItem>
+              <PaginationPrevious
+                onClick={() => {
+                  if (currentStep > 0 && !isProcessing) {
+                    setCurrentStep(currentStep - 1);
+                  }
+                }}
+                disabled={currentStep === 0 || isProcessing}
+              />
+            </PaginationItem>
+            {[0, 1, 2, 3].map((idx) => (
+              <PaginationItem key={idx}>
+                <PaginationLink
+                  isActive={currentStep === idx}
+                  onClick={() => {
+                    // Only allow navigation if all previous steps are valid
+                    let canProceed = true;
+                    for (let i = 0; i < idx; i++) {
+                      if (!isStepValid(i)) {
+                        canProceed = false;
+                        break;
+                      }
+                    }
+                    if (canProceed && !isProcessing) setCurrentStep(idx);
+                  }}
+                  disabled={
+                    (idx > 0 && !isStepValid(idx - 1)) ||
+                    (idx > currentStep + 1) ||
+                    isProcessing
+                  }
+                >
+                  {idx + 1}
+                </PaginationLink>
+              </PaginationItem>
+            ))}
+            <PaginationItem>
+              <PaginationNext
+                onClick={() => {
+                  if (isStepValid(currentStep) && currentStep < 3 && !isProcessing) {
+                    setCurrentStep(currentStep + 1);
+                  }
+                }}
+                disabled={
+                  !isStepValid(currentStep) ||
+                  currentStep === 3 ||
+                  isProcessing
+                }
+              />
+            </PaginationItem>
+          </PaginationContent>
+        </Pagination>
       </div>
     </div>
   )

@@ -75,16 +75,6 @@ const VideoSelectionStep = ({ file, videoPreviewUrl, onFileChange, onNext, isVal
             </div>
           )}
         </div>
-
-        <div className="flex justify-end">
-          <Button
-            onClick={onNext}
-            disabled={!isValid}
-            className="px-6 bg-gradient-to-r from-white to-cyan-200 text-black font-semibold shadow-md border border-border py-2 text-sm hover:opacity-90 dark:from-blue-900 dark:to-cyan-800 dark:text-white"
-          >
-            Next
-          </Button>
-        </div>
       </CardContent>
     </Card>
   )
