@@ -85,6 +85,54 @@ export const authService = {
       throw error.response ? error.response.data : error;
     }
   },
+
+  updatePassword: async (currentPassword, newPassword) => {
+    try {
+      const response = await apiClient.put("/user/password", {
+        current_password: currentPassword,
+        new_password: newPassword,
+      });
+      return response.data;
+    } catch (error) {
+      throw error.response ? error.response.data : error;
+    }
+  },
+
+  forgotPassword: async (email) => {
+    try {
+      const response = await apiClient.post("/forgot-password", { email });
+      return response.data;
+    } catch (error) {
+      throw error.response ? error.response.data : error;
+    }
+  },
+
+  requestOtp: async (email) => {
+    try {
+      const response = await apiClient.post("/request-otp", { email });
+      return response.data;
+    } catch (error) {
+      throw error.response ? error.response.data : error;
+    }
+  },
+
+  verifyOtp: async (email, otp, newPassword) => {
+    try {
+      const response = await apiClient.post("/verify-otp", { email, otp, new_password: newPassword });
+      return response.data;
+    } catch (error) {
+      throw error.response ? error.response.data : error;
+    }
+  },
+
+  verifyOtpOnly: async (email, otp) => {
+    try {
+      const response = await apiClient.post("/verify-otp-only", { email, otp });
+      return response.data;
+    } catch (error) {
+      throw error.response ? error.response.data : error;
+    }
+  },
 };
 
 // Heatmap job services

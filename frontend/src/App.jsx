@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react"
 import { BrowserRouter as Router, Routes, Route, Navigate } from "react-router-dom"
-import { Toaster } from "sonner"
+import { Toaster } from "@/components/ui/sonner"
 import LandingPage from "./pages/LandingPage"
 import Dashboard from "./pages/Dashboard"
 import CreateHeatmap from "./pages/CreateHeatmap"

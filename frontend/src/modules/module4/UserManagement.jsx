@@ -106,15 +106,21 @@ const UserManagement = () => {
     }
 
     try {
-      // TODO: Implement password update API call
-      toast.success("Password updated successfully");
-      setPasswordForm({
-        currentPassword: "",
-        newPassword: "",
-        confirmPassword: "",
-      });
+      const response = await authService.updatePassword(passwordForm.currentPassword, passwordForm.newPassword);
+      if (response.message) {
+        setPasswordForm({
+          currentPassword: "",
+          newPassword: "",
+          confirmPassword: "",
+        });
+        // Immediately log out the user and redirect to login
+        localStorage.removeItem("access_token");
+        window.location.href = "/?showAuth=true&tab=login";
+      } else {
+        throw new Error(response.error || "Failed to update password");
+      }
     } catch (error) {
-      toast.error(error.message || "Failed to update password");
+      toast.error(error.message || error.error || "Failed to update password");
     }
   };
 
@@ -147,6 +153,7 @@ const UserManagement = () => {
         setUserInfo(prev => ({ ...prev, username: newUsername }));
         setIsEditingUsername(false);
         toast.success("Username updated successfully");
+        window.dispatchEvent(new Event("user-info-updated"));
       } else {
         throw new Error("Failed to update username");
       }
@@ -190,7 +197,7 @@ const UserManagement = () => {
           </Avatar>
           <div className="flex-1">
             {isEditingUsername ? (
-              <form onSubmit={handleUsernameUpdate} className="flex items-center gap-2">
+              <form onSubmit={handleUsernameUpdate} className="flex items-center gap-2 relative z-10">
                 <Input
                   type="text"
                   value={newUsername}
@@ -263,9 +270,19 @@ const UserManagement = () => {
                     )}
                     <span className={`inline-block mt-1 px-2 py-0.5 rounded text-xs ${activity.status === 'completed' ? 'bg-green-700/40 text-green-300' : activity.status === 'error' ? 'bg-red-700/40 text-red-300' : 'bg-yellow-700/40 text-yellow-300'}`}>{activity.status}</span>
                   </div>
-                  <Button size="icon" variant="destructive" onClick={() => handleDeleteActivity(index)} title="Delete activity">
-                    <Trash2 className="h-5 w-5" />
-                  </Button>
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    className="h-5 w-5 text-red-500 cursor-pointer hover:scale-110 transition-transform"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                    title="Delete activity"
+                    tabIndex={0}
+                    onClick={() => handleDeleteActivity(index)}
+                    onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') handleDeleteActivity(index); }}
+                  >
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3m5 0H6" />
+                  </svg>
               </div>
             ))}
           </div>

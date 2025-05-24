@@ -1,7 +1,39 @@
 import { Button } from "@/components/ui/button"
 import { Download, CheckCircle, Calendar, Clock, BarChart2, Timer, Lightbulb } from "lucide-react"
 
-export default function AnalyticsSummaryBox({ customDateRange, customTimeRange, analysis, startDate, endDate, startTime, endTime }) {
+// Add a helper to bin detections by time and count unique visitors
+function getVisitorBins(detections, startMinute, endMinute, numBins = 5) {
+  if (!detections || detections.length === 0) return [];
+  const startTime = startMinute * 60;
+  const endTime = endMinute * 60;
+  const totalDuration = endTime - startTime;
+  const interval = totalDuration / numBins;
+  const bins = [];
+  for (let i = 0; i < numBins; i++) {
+    const binStart = startTime + i * interval;
+    const binEnd = binStart + interval;
+    const trackIds = new Set();
+    detections.forEach(det => {
+      const t = det.timestamp;
+      if (t >= binStart && t < binEnd) {
+        trackIds.add(det.track_id);
+      }
+    });
+    const formatSec = (sec) => {
+      const h = Math.floor(sec / 3600).toString().padStart(2, '0');
+      const m = Math.floor((sec % 3600) / 60).toString().padStart(2, '0');
+      const s = Math.floor(sec % 60).toString().padStart(2, '0');
+      return `${h}:${m}:${s}`;
+    };
+    bins.push({
+      range: `${formatSec(binStart)}-${formatSec(binEnd)}`,
+      visitors: trackIds.size,
+    });
+  }
+  return bins;
+}
+
+export default function AnalyticsSummaryBox({ customDateRange, customTimeRange, analysis, detections, startDate, endDate, startTime, endTime }) {
   // Accepts either customDateRange/customTimeRange or startDate/endDate/startTime/endTime
   const startDateStr = customDateRange?.start instanceof Date ? customDateRange.start.toISOString().slice(0, 10) : (customDateRange?.start || startDate);
   const endDateStr = customDateRange?.end instanceof Date ? customDateRange.end.toISOString().slice(0, 10) : (customDateRange?.end || endDate);
@@ -54,11 +86,26 @@ export default function AnalyticsSummaryBox({ customDateRange, customTimeRange, 
             {analysis?.peak_hour_label ? 'Peak Hour:' : 'Peak Minute:'}
           </div>
           <div className="text-sm text-right text-green-700 dark:text-green-300">
-            {analysis?.peak_hour_label
-              ? analysis.peak_hour_label
-              : (analysis?.peak_minutes && analysis.peak_minutes.length > 0)
-                ? `${analysis.peak_minutes[0].minute}`
-                : 'N/A'}
+            {(() => {
+              if (analysis?.peak_hours && analysis.peak_hours.length === 1) {
+                const bin = analysis.peak_hours[0];
+                const startTime = bin.start_minute * 60;
+                const endTime = bin.end_minute * 60;
+                const formatSec = (sec) => {
+                  const h = Math.floor(sec / 3600).toString().padStart(2, '0');
+                  const m = Math.floor((sec % 3600) / 60).toString().padStart(2, '0');
+                  const s = Math.floor(sec % 60).toString().padStart(2, '0');
+                  return `${h}:${m}:${s}`;
+                };
+                return `${formatSec(startTime)}-${formatSec(endTime)}`;
+              } else if (analysis?.peak_hour_label) {
+                return analysis.peak_hour_label;
+              } else if (analysis?.peak_minutes && analysis.peak_minutes.length > 0) {
+                return `${analysis.peak_minutes[0].minute}`;
+              } else {
+                return 'N/A';
+              }
+            })()}
           </div>
           {/* Recommendations */}
           <div className="text-sm font-semibold flex items-start text-green-700 dark:text-green-300">

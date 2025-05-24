@@ -52,7 +52,7 @@ jwt = JWTManager(app)
 CORS(app, resources={
     r"/api/*": {
         "origins": ["http://localhost:5173"],  # Frontend URL
-        "methods": ["GET", "POST", "DELETE", "OPTIONS"],
+        "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
         "allow_headers": ["Content-Type", "Authorization"],
         "supports_credentials": True
     }
@@ -542,41 +542,6 @@ def receive_live_detections(job_id):
         return jsonify({'success': True, 'count': len(detections)})
     except Exception as e:
         return jsonify({'error': str(e)}), 400
-
-@app.route('/api/user/username', methods=['PUT'])
-@jwt_required()
-def update_username():
-    user_id = get_jwt_identity()
-    if not user_id:
-        return jsonify({"error": "Not logged in"}), 401
-    
-    data = request.get_json()
-    new_username = data.get('username')
-    
-    if not new_username:
-        return jsonify({"error": "New username is required"}), 400
-    
-    conn = get_db_connection()
-    try:
-        cursor = conn.cursor()
-        # Check if new username already exists
-        cursor.execute("SELECT username FROM users WHERE username = ?", (new_username,))
-        if cursor.fetchone():
-            return jsonify({"error": "Username already exists"}), 400
-        
-        # Update username
-        cursor.execute("UPDATE users SET username = ? WHERE id = ?", 
-                      (new_username, user_id))
-        conn.commit()
-        
-        return jsonify({
-            "message": "Username updated successfully",
-            "username": new_username
-        })
-    except Exception as e:
-        return jsonify({"error": f"Database error: {str(e)}"}), 500
-    finally:
-        conn.close()
 
 # Helper function to load detections and fps from detections.json
 

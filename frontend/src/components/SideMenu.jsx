@@ -31,6 +31,15 @@ const SideMenu = ({ isAuthenticated, setIsAuthenticated }) => {
     if (isAuthenticated) {
       fetchUserInfo()
     }
+    // Listen for user-info-updated event
+    const handleUserInfoUpdated = () => {
+      fetchUserInfo();
+    };
+    window.addEventListener("user-info-updated", handleUserInfoUpdated);
+
+    return () => {
+      window.removeEventListener("user-info-updated", handleUserInfoUpdated);
+    };
   }, [isAuthenticated])
 
   const fetchUserInfo = async () => {
@@ -208,23 +217,30 @@ const SideMenu = ({ isAuthenticated, setIsAuthenticated }) => {
         {isAuthenticated && (
           <div className="p-4 mt-auto border-t border-border bg-background dark:bg-gradient-to-r dark:from-slate-900 dark:to-slate-900/80 backdrop-blur-sm">
             <div className="flex items-center gap-3">
-              <Avatar className="h-12 w-12 ring-2 ring-border shadow-lg">
-                <AvatarImage
-                  src={userInfo?.profileImage || "https://github.com/shadcn.png"}
-                  alt={userInfo?.username || "User"}
-                />
-                <AvatarFallback className="bg-gradient-to-br from-primary to-cyan-400 text-foreground font-medium">
-                  {isLoading ? "..." : getUserInitials()}
-                </AvatarFallback>
-              </Avatar>
-              <div className="flex flex-col">
-                <span className="text-base font-semibold text-foreground">
-                  {isLoading ? "Loading..." : userInfo?.username || "User"}
-                </span>
-                <span className="text-xs text-muted-foreground truncate max-w-[140px]">
-                  {isLoading ? "" : userInfo?.email || ""}
-                </span>
-              </div>
+              <button
+                className="focus:outline-none group flex items-center gap-3 bg-transparent border-none p-0 m-0"
+                onClick={() => navigate("/user-management")}
+                title="Go to Account Management"
+                style={{ background: 'none', border: 'none', cursor: 'pointer' }}
+              >
+                <Avatar className="h-12 w-12 ring-2 ring-border shadow-lg group-hover:ring-primary transition-all">
+                  <AvatarImage
+                    src={userInfo?.profileImage || "https://github.com/shadcn.png"}
+                    alt={userInfo?.username || "User"}
+                  />
+                  <AvatarFallback className="bg-gradient-to-br from-primary to-cyan-400 text-foreground font-medium">
+                    {isLoading ? "..." : getUserInitials()}
+                  </AvatarFallback>
+                </Avatar>
+                <div className="flex flex-col text-left">
+                  <span className="text-base font-semibold text-foreground group-hover:underline">
+                    {isLoading ? "Loading..." : userInfo?.username || "User"}
+                  </span>
+                  <span className="text-xs text-muted-foreground truncate max-w-[140px]">
+                    {isLoading ? "" : userInfo?.email || ""}
+                  </span>
+                </div>
+              </button>
             </div>
           </div>
         )}
