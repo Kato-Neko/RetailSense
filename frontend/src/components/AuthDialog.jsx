@@ -343,7 +343,7 @@ const AuthDialog = ({ isOpen, onOpenChange, setIsAuthenticated, defaultTab = "lo
 
                       <Button
                         type="submit"
-                        className="w-full bg-gradient-to-r from-blue-500 to-cyan-400 text-black dark:from-blue-900 dark:to-cyan-600 dark:text-white hover:from-blue-600 hover:to-cyan-500 dark:hover:from-blue-800 dark:hover:to-cyan-700 mt-2"
+                        className="w-full bg-gradient-to-r from-blue-300 to-cyan-100 text-black dark:from-blue-900 dark:to-cyan-600 dark:text-white hover:from-blue-600 hover:to-cyan-500 dark:hover:from-blue-800 dark:hover:to-cyan-700 mt-2"
                       >
                         Sign in
                       </Button>
@@ -484,12 +484,12 @@ const AuthDialog = ({ isOpen, onOpenChange, setIsAuthenticated, defaultTab = "lo
                             <div className="space-y-1 leading-none">
                               <FormLabel className="text-sm font-normal text-muted-foreground">
                                 I agree to the{" "}
-                                <a href="#" className="text-primary hover:text-primary/80 underline">
-                                  terms of service
+                                <a href="/terms" className="text-primary hover:text-primary/80 underline">
+                                  Terms of Service
                                 </a>{" "}
                                 and{" "}
-                                <a href="#" className="text-primary hover:text-primary/80 underline">
-                                  privacy policy
+                                <a href="/privacy-policy" className="text-primary hover:text-primary/80 underline">
+                                  Privacy Policy
                                 </a>
                               </FormLabel>
                             </div>
@@ -499,7 +499,7 @@ const AuthDialog = ({ isOpen, onOpenChange, setIsAuthenticated, defaultTab = "lo
 
                       <Button
                         type="submit"
-                        className="w-full bg-gradient-to-r from-blue-500 to-cyan-400 text-black dark:from-blue-900 dark:to-cyan-600 dark:text-white hover:from-blue-600 hover:to-cyan-500 dark:hover:from-blue-800 dark:hover:to-cyan-700 mt-2"
+                        className="w-full bg-gradient-to-r from-blue-300 to-cyan-100 text-black dark:from-blue-900 dark:to-cyan-600 dark:text-white hover:from-blue-600 hover:to-cyan-500 dark:hover:from-blue-800 dark:hover:to-cyan-700 mt-2"
                       >
                         Create account
                       </Button>

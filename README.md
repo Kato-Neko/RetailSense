@@ -63,12 +63,30 @@ If you want to add more shadcn components to use, visit the website https://ui.s
 The button.jsx will be automatically added into the src/components/ui
 ```
 
+Another thing, add this to your src/lib/utils.js to make tailwind work
+```bash
+import { clsx } from "clsx";
+import { twMerge } from "tailwind-merge"
+
+export function cn(...inputs) {
+  return twMerge(clsx(inputs));
+}
+```
+
 ## Supabase Setup
 
 1. Send a private message to either of the collaborators of this project:
    ```bash
    nickcarter.lacanglacang@cit.edu
    louiejames.carbungco@cit.edu
+   ```
+
+   or you can add the following to your backend/main/.env
+   ```bash
+   SUPABASE_URL=
+   SUPABASE_KEY=
+   GMAIL_USER=
+   GMAIL_PASS=
    ```
 
 Now you should be all set up to run the project!

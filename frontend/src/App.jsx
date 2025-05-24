@@ -8,6 +8,14 @@ import Dashboard from "./pages/Dashboard"
 import CreateHeatmap from "./pages/CreateHeatmap"
 import ViewHeatmap from "./pages/ViewHeatmap"
 import UserManagement from "./modules/module4/UserManagement"
+import AboutPage from "./pages/AboutPage"
+import RRLPage from "./pages/RRLPage"
+import FeaturesPage from "./pages/FeaturesPage"
+import ContactPage from "./pages/ContactPage"
+import PrivacyPolicy from "./pages/PrivacyPolicy"
+import TermsOfService from "./pages/TermsOfService"
+import CookiePolicy from "./pages/CookiePolicy"
+import DPA from "./pages/DPA"
 import { authService } from "./services/api"
 import "./App.css"
 import { ThemeProvider } from "./components/ThemeContext"
@@ -85,6 +93,14 @@ function App() {
             />
             <Route path="/login" element={<Navigate to="/?showAuth=true" replace />} />
             <Route path="/register" element={<Navigate to="/?showAuth=true&tab=register" replace />} />
+            <Route path="/about" element={<AboutPage />} />
+            <Route path="/rrl" element={<RRLPage />} />
+            <Route path="/features" element={<FeaturesPage />} />
+            <Route path="/contact" element={<ContactPage />} />
+            <Route path="/privacy-policy" element={<PrivacyPolicy />} />
+            <Route path="/terms" element={<TermsOfService />} />
+            <Route path="/cookie-policy" element={<CookiePolicy />} />
+            <Route path="/dpa" element={<DPA />} />
             <Route path="/" element={<Base />}>
               <Route path="/dashboard" element={isAuthenticated ? <Dashboard /> : <Navigate to="/" />} />
               <Route path="/video-processing" element={isAuthenticated ? <CreateHeatmap /> : <Navigate to="/" />} />

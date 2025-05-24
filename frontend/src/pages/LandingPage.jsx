@@ -10,6 +10,8 @@ import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet"
 import AuthDialog from "../components/AuthDialog"
 import HeatmapVisualizer from "../components/HeatmapVisualizer"
 import AnalyticsChart from "../components/AnalyticsChart"
+import PublicHeader from "@/components/PublicHeader"
+import PublicFooter from "@/components/PublicFooter"
 
 const LandingPage = ({ setIsAuthenticated }) => {
   const navigate = useNavigate()
@@ -45,69 +47,7 @@ const LandingPage = ({ setIsAuthenticated }) => {
       />
 
       {/* Header */}
-      <header className="border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 sticky top-0 z-50">
-        <div className="container mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 flex h-16 items-center justify-between">
-          <div className="flex items-center gap-2">
-            <div className="flex items-center justify-center h-10 w-10 bg-transparent rounded-full p-1">
-              <img src="/rs_logo.svg" alt="RetailSense Logo" className="h-7 w-7 object-contain" />
-            </div>
-            <span className="text-xl font-bold bg-gradient-to-r from-primary to-cyan-400 text-transparent bg-clip-text">
-              RetailSense
-            </span>
-          </div>
-          <div className="hidden md:flex gap-6 items-center">
-            <Button variant="ghost" className="text-sm text-muted-foreground hover:text-foreground hover:bg-muted">Features</Button>
-            <Button variant="ghost" className="text-sm text-muted-foreground hover:text-foreground hover:bg-muted">Pricing</Button>
-            <Button variant="ghost" className="text-sm text-muted-foreground hover:text-foreground hover:bg-muted">About</Button>
-            <Button variant="ghost" className="text-sm text-muted-foreground hover:text-foreground hover:bg-muted">Contact</Button>
-            <Button
-              variant="outline"
-              className="ml-4 border-border bg-muted/50 text-foreground hover:bg-muted hover:text-foreground"
-              onClick={() => setIsAuthOpen(true)}
-            >
-              Sign In
-            </Button>
-          </div>
-          <div className="md:hidden">
-            <Sheet>
-              <SheetTrigger asChild>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="border-border bg-muted/50 text-foreground hover:bg-muted"
-                >
-                  Menu
-                </Button>
-              </SheetTrigger>
-              <SheetContent side="right" className="border-border bg-background">
-                <div className="flex items-center gap-2 mb-8">
-                  <div className="flex items-center justify-center h-8 w-8 bg-transparent rounded-full p-1">
-                    <img src="/rs_logo.svg" alt="RetailSense Logo" className="h-5 w-5 object-contain" />
-                  </div>
-                  <span className="text-lg font-bold bg-gradient-to-r from-primary to-cyan-400 text-transparent bg-clip-text">
-                    RetailSense
-                  </span>
-                </div>
-                <div className="flex flex-col gap-4 mt-8">
-                  <Button variant="ghost" className="justify-start text-muted-foreground hover:text-foreground hover:bg-muted">Features</Button>
-                  <Button variant="ghost" className="justify-start text-muted-foreground hover:text-foreground hover:bg-muted">Pricing</Button>
-                  <Button variant="ghost" className="justify-start text-muted-foreground hover:text-foreground hover:bg-muted">About</Button>
-                  <Button variant="ghost" className="justify-start text-muted-foreground hover:text-foreground hover:bg-muted">Contact</Button>
-                  <Separator className="bg-border" />
-                  <Button
-                    onClick={() => {
-                      setIsAuthOpen(true)
-                    }}
-                    className="justify-start bg-gradient-to-r from-primary to-cyan-400 hover:from-primary/90 hover:to-cyan-400/90 text-white"
-                  >
-                    Sign In
-                  </Button>
-                </div>
-              </SheetContent>
-            </Sheet>
-          </div>
-        </div>
-      </header>
+      <PublicHeader />
 
       {/* Hero Section */}
       <section className="relative py-20 overflow-hidden">
@@ -135,17 +75,10 @@ const LandingPage = ({ setIsAuthenticated }) => {
             <div className="flex flex-col sm:flex-row gap-4 mt-4">
               <Button
                 size="lg"
-                className="bg-gradient-to-r from-blue-500 to-cyan-400 text-black dark:from-blue-900 dark:to-cyan-600 dark:text-white hover:from-blue-600 hover:to-cyan-500 dark:hover:from-blue-800 dark:hover:to-cyan-700 gap-2"
+                className="bg-gradient-to-r from-blue-300 to-cyan-100 text-black dark:from-blue-900 dark:to-cyan-600 dark:text-white hover:from-blue-600 hover:to-cyan-500 dark:hover:from-blue-800 dark:hover:to-cyan-700 gap-2"
                 onClick={() => setIsAuthOpen(true)}
               >
                 Get Started <ArrowRight className="h-4 w-4" />
-              </Button>
-              <Button
-                variant="outline"
-                size="lg"
-                className="border-border bg-muted/50 text-foreground hover:bg-muted hover:text-foreground"
-              >
-                Watch Demo
               </Button>
             </div>
           </div>
@@ -313,72 +246,7 @@ const LandingPage = ({ setIsAuthenticated }) => {
         </div>
       </section>
 
-      {/* Footer */}
-      <footer className="border-t border-border bg-background py-12">
-        <div className="container mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-8">
-            <div className="space-y-4">
-              <div className="flex items-center gap-2">
-                <div className="flex items-center justify-center h-8 w-8 bg-transparent rounded-full p-1">
-                  <img src="/rs_logo.svg" alt="RetailSense Logo" className="h-5 w-5 object-contain" />
-                </div>
-                <span className="text-lg font-bold bg-gradient-to-r from-primary to-cyan-400 text-transparent bg-clip-text">
-                  RetailSense
-                </span>
-              </div>
-              <p className="text-muted-foreground text-sm">
-                Advanced AI-powered retail analytics to optimize your store layout and increase sales.
-              </p>
-            </div>
-            <div>
-              <h4 className="text-foreground font-medium mb-4">Product</h4>
-              <ul className="space-y-2">
-                {["Features", "Pricing", "Case Studies", "Documentation"].map((item, index) => (
-                  <li key={index}>
-                    <a href="#" className="text-muted-foreground hover:text-foreground text-sm">
-                      {item}
-                    </a>
-                  </li>
-                ))}
-              </ul>
-            </div>
-            <div>
-              <h4 className="text-foreground font-medium mb-4">Company</h4>
-              <ul className="space-y-2">
-                {["About", "Careers", "Blog", "Contact"].map((item, index) => (
-                  <li key={index}>
-                    <a href="#" className="text-muted-foreground hover:text-foreground text-sm">
-                      {item}
-                    </a>
-                  </li>
-                ))}
-              </ul>
-            </div>
-            <div>
-              <h4 className="text-foreground font-medium mb-4">Legal</h4>
-              <ul className="space-y-2">
-                {["Privacy Policy", "Terms of Service", "Cookie Policy", "GDPR"].map((item, index) => (
-                  <li key={index}>
-                    <a href="#" className="text-muted-foreground hover:text-foreground text-sm">
-                      {item}
-                    </a>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          </div>
-          <div className="border-t border-border mt-12 pt-8 flex flex-col md:flex-row justify-between items-center">
-            <div className="text-sm text-muted-foreground">© 2025 RetailSense. All rights reserved.</div>
-            <div className="flex gap-4 mt-4 md:mt-0">
-              {["Twitter", "LinkedIn", "GitHub", "YouTube"].map((item, index) => (
-                <a key={index} href="#" className="text-muted-foreground hover:text-foreground text-sm">
-                  {item}
-                </a>
-              ))}
-            </div>
-          </div>
-        </div>
-      </footer>
+      <PublicFooter />
     </div>
   )
 }
