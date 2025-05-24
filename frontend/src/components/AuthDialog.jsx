@@ -109,7 +109,7 @@ const AuthDialog = ({ isOpen, onOpenChange, setIsAuthenticated, defaultTab = "lo
           <div className="relative z-10 p-6">
             <div className="flex items-center gap-2 mb-6">
               <div className="flex items-center justify-center h-8 w-8 bg-transparent rounded-full p-1">
-                <img src="/retailsense.svg" alt="RetailSense Logo" className="h-5 w-5 object-contain" />
+                <img src="/rs_logo.svg" alt="RetailSense Logo" className="h-5 w-5 object-contain" />
               </div>
               <span className="text-lg font-bold bg-gradient-to-r from-blue-400 to-cyan-400 text-transparent bg-clip-text">
                 RetailSense
