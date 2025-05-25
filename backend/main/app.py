@@ -51,7 +51,7 @@ jwt = JWTManager(app)
 # Configure CORS properly
 CORS(app, resources={
     r"/api/*": {
-        "origins": ["http://localhost:5173"],  # Frontend URL
+        "origins": ["http://localhost:[0-9]+"],  # Matches any localhost port
         "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
         "allow_headers": ["Content-Type", "Authorization"],
         "supports_credentials": True
