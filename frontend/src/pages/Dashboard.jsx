@@ -646,15 +646,15 @@ const Dashboard = () => {
                   className="w-full bg-gradient-to-r from-white to-cyan-200 text-black font-semibold shadow-md border border-border py-2 text-sm hover:opacity-90 dark:from-white/10 dark:to-cyan-400/30 dark:text-white"
                 >
               <Link to="/video-processing">
-                <Video className="mr-2 h-5 w-5" /> Process New Video
+                <Video className="mr-2 h-5 w-5" /> Upload New Video
               </Link>
             </Button>
                 <Button
                   asChild
                   className="w-full bg-gradient-to-r from-cyan-100 to-green-200 text-black font-semibold shadow-md border border-border py-2 text-sm hover:opacity-90 dark:from-cyan-400/30 dark:to-green-400/30 dark:text-white"
                 >
-              <Link to="/heatmap-generation">
-                <Map className="mr-2 h-5 w-5" /> Generate Heatmap
+              <Link to="/view-heatmap">
+                <Map className="mr-2 h-5 w-5" /> Customize a Heatmap
               </Link>
             </Button>
           </div>
