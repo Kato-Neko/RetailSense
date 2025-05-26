@@ -19,7 +19,7 @@ const AboutPage = () => {
       role: "Full Stack Developer & Team Lead",
       bio: "Lead developer and architect behind RetailSense, specializing in full-stack development and system architecture. Drives the technical vision and implementation of our retail analytics platform, ensuring robust and scalable solutions.",
       email: "nickcarter.lacanglacang@cit.edu",
-      image: "/team/nick.jpg",
+      image: "/team/nick.png",
       fallbackImage: "https://api.dicebear.com/7.x/avataaars/svg?seed=Nick",
       neonColor: "from-red-600 to-orange-500"
     },
@@ -28,7 +28,7 @@ const AboutPage = () => {
       role: "UI/UX Designer & Frontend Developer",
       bio: "Creative designer behind RetailSense's visual identity, responsible for the app's logo, color schemes, and overall user experience design. Specializes in creating intuitive and visually appealing interfaces.",
       email: "louiejames.carbungco@cit.edu",
-      image: "/team/louie.jpg",
+      image: "/team/louie.png",
       fallbackImage: "https://api.dicebear.com/7.x/avataaars/svg?seed=Louie",
       neonColor: "from-orange-600 to-yellow-500"
     },
@@ -37,7 +37,7 @@ const AboutPage = () => {
       role: "AI Research & Quality Assurance",
       bio: "Key contributor to RetailSense's AI implementation, specializing in computer vision research and testing. Led the research and integration of YOLO and DeepSORT algorithms, while conducting extensive research to validate our approach. Plays a crucial role in quality assurance and bug fixing.",
       email: "jierellejane.ravanes@cit.edu",
-      image: "/team/jierelle.jpg",
+      image: "/team/jierelle.png",
       fallbackImage: "https://api.dicebear.com/7.x/avataaars/svg?seed=Jierelle",
       neonColor: "from-yellow-600 to-green-500"
     },
@@ -46,7 +46,7 @@ const AboutPage = () => {
       role: "Project Leader & Initiator",
       bio: "Pioneered the RetailSense project, laying the foundational groundwork and initial architecture. His vision and early development efforts set the stage for what would become a comprehensive retail analytics platform.",
       email: "rigel.baltazar@cit.edu",
-      image: "/team/rigel.jpg",
+      image: "/team/rigel.png",
       fallbackImage: "https://api.dicebear.com/7.x/avataaars/svg?seed=Rigel",
       neonColor: "from-green-600 to-blue-500"
     },
@@ -55,7 +55,7 @@ const AboutPage = () => {
       role: "Backend & Cloud Integration Specialist",
       bio: "Specialized in backend development and cloud infrastructure, with expertise in database management and API integration. Contributed to the planning and architecture of RetailSense's backend systems and cloud infrastructure.",
       email: "yoshinori.kyonojr@cit.edu",
-      image: "/team/yoshinori.jpg",
+      image: "/team/yoshinori.png",
       fallbackImage: "https://api.dicebear.com/7.x/avataaars/svg?seed=Yoshinori",
       neonColor: "from-blue-600 to-violet-500"
     }
