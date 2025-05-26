@@ -11,7 +11,7 @@ const teamMembers = [
     email: "nickcarter.lacanglacang@cit.edu",
     privateEmail: "ng112403@gmail.com",
     phone: "09931672343",
-    avatar: "/team/nick.jpg",
+    avatar: "/team/nick.png",
     fallback: "https://api.dicebear.com/7.x/avataaars/svg?seed=Nick",
     neonColor: "from-red-600 to-orange-500",
     borderColor: "border-red-600"
@@ -20,7 +20,7 @@ const teamMembers = [
     name: "Louie James Carbungco",
     role: "UI/UX Designer & Frontend Developer",
     email: "louiejames.carbungco@cit.edu",
-    avatar: "/team/louie.jpg",
+    avatar: "/team/louie.png",
     fallback: "https://api.dicebear.com/7.x/avataaars/svg?seed=Louie",
     neonColor: "from-orange-600 to-yellow-500",
     borderColor: "border-orange-600"
@@ -29,7 +29,7 @@ const teamMembers = [
     name: "Jierelle Jane Ravanes",
     role: "AI Research & Quality Assurance",
     email: "jierellejane.ravanes@cit.edu",
-    avatar: "/team/jierelle.jpg",
+    avatar: "/team/jierelle.png",
     fallback: "https://api.dicebear.com/7.x/avataaars/svg?seed=Jierelle",
     neonColor: "from-yellow-600 to-green-500",
     borderColor: "border-yellow-500"
@@ -38,7 +38,7 @@ const teamMembers = [
     name: "Rigel Baltazar",
     role: "Project Leader & Initiator",
     email: "rigel.baltazar@cit.edu",
-    avatar: "/team/rigel.jpg",
+    avatar: "/team/rigel.png",
     fallback: "https://api.dicebear.com/7.x/avataaars/svg?seed=Rigel",
     neonColor: "from-green-600 to-blue-500",
     borderColor: "border-green-600"
@@ -47,7 +47,7 @@ const teamMembers = [
     name: "Yoshinori Kyono",
     role: "Backend & Cloud Integration Specialist",
     email: "yoshinori.kyono@cit.edu",
-    avatar: "/team/yoshinori.jpg",
+    avatar: "/team/yoshinori.png",
     fallback: "https://api.dicebear.com/7.x/avataaars/svg?seed=Yoshinori",
     neonColor: "from-blue-600 to-violet-500",
     borderColor: "border-blue-600"
@@ -160,7 +160,7 @@ const ContactPage = () => {
                   {/* Card content with solid background and no border */}
                   <div className="relative z-10 bg-muted/80 dark:bg-slate-900/60 rounded-2xl flex flex-col items-center text-center group overflow-hidden h-[400px] w-full p-8" style={{ minHeight: '400px', maxWidth: '100%' }}>
                     <div className={`mb-4 flex justify-center`}>
-                      <div className={`w-20 h-20 rounded-full border-4 border-gradient-to-br ${borderGradient} p-1 relative group-hover:scale-105 transition-transform duration-300 bg-background`}>
+                      <div className={`w-20 h-20 rounded-full border-4 border-gradient-to-br ${borderGradient} p-1 relative group-hover:scale-105 transition-transform duration-300 bg-transparent`}>
                         <img
                           src={member.avatar}
                           alt={member.name}
@@ -176,7 +176,7 @@ const ContactPage = () => {
                       </h3>
                     </div>
                     {/* Title section */}
-                    <div className="flex items-center justify-center w-full h-12 min-h-[48px] mt-5">
+                    <div className="flex items-center justify-center w-full h-12 min-h-[48px] mt-10">
                       <p className="text-lg font-bold text-foreground mb-0 w-full flex items-center justify-center">
                         {member.role}
                       </p>
