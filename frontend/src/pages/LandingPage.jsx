@@ -126,7 +126,7 @@ const LandingPage = ({ setIsAuthenticated }) => {
                   "Optimize staffing based on customer traffic patterns",
                 ].map((item, index) => (
                   <li key={index} className="flex items-start gap-2">
-                    <div className="rounded-full bg-gradient-to-r from-primary to-cyan-400 p-1 mt-1">
+                    <div className="rounded-full bg-gradient-to-r from-secondary to-cyan-400 p-1 mt-1">
                       <svg
                         xmlns="http://www.w3.org/2000/svg"
                         width="12"
@@ -137,12 +137,12 @@ const LandingPage = ({ setIsAuthenticated }) => {
                         strokeWidth="3"
                         strokeLinecap="round"
                         strokeLinejoin="round"
-                        className="text-white"
+                        className="text-foreground"
                       >
                         <polyline points="20 6 9 17 4 12"></polyline>
                       </svg>
                     </div>
-                    <span className="text-muted-foreground">{item}</span>
+                    <span className="text-foreground">{item}</span>
                   </li>
                 ))}
               </ul>
@@ -214,11 +214,11 @@ const LandingPage = ({ setIsAuthenticated }) => {
               <div>
                 <h2 className="text-3xl font-bold text-foreground mb-4">Ready to optimize your retail space?</h2>
                 <p className="text-muted-foreground mb-6">
-                  Join retailers who have increased sales by up to 25% through optimized store layouts and product placements.
+                  Join retailers who have increased sales through optimized store layouts and product placements.
                 </p>
                 <Button
                   size="lg"
-                  className="bg-gradient-to-r from-blue-500 to-cyan-400 text-black dark:from-blue-900 dark:to-cyan-600 dark:text-white hover:from-blue-600 hover:to-cyan-500 dark:hover:from-blue-800 dark:hover:to-cyan-700 gap-2"
+                  className="bg-gradient-to-r from-blue-300 to-cyan-100 text-black dark:from-blue-900 dark:to-cyan-600 dark:text-white hover:from-blue-600 hover:to-cyan-500 dark:hover:from-blue-800 dark:hover:to-cyan-700 gap-2"
                   onClick={() => setIsAuthOpen(true)}
                 >
                   Start Free Trial <ChevronRight className="h-4 w-4" />
@@ -226,17 +226,21 @@ const LandingPage = ({ setIsAuthenticated }) => {
               </div>
               <div className="hidden lg:block">
                 <div className="bg-muted/80 backdrop-blur-sm rounded-xl p-6 border border-border">
-                  <div className="text-foreground font-medium mb-4">What our customers say</div>
+                  <div className="text-foreground font-medium mb-4">What the articles say</div>
                   <blockquote className="text-muted-foreground italic">
-                    "RetailSense has completely transformed how we approach store layouts. The insights we've gained have directly contributed to a 20% increase in sales."
+                    "You might think retail product placement is as simple as filling the shelves. Yet, more thought is given to shopping space than this. In fact, organising the retail space is something of a fine art. Others would claim it to be a science. Whether it is talent or intellect that wins the battle, the placement of items in a store is done with deliberation."
                   </blockquote>
                   <div className="mt-4 text-muted-foreground text-sm flex items-center gap-2">
                     <div className="w-8 h-8 rounded-full bg-muted flex items-center justify-center text-foreground">
-                      SJ
+                      DA
                     </div>
                     <div>
-                      <div className="text-foreground">Sarah Johnson</div>
-                      <div className="text-muted-foreground text-xs">Retail Operations Manager</div>
+                      <div className="text-foreground">DotActiv Blog</div>
+                      <div className="text-muted-foreground text-xs">
+                        <a href="https://www.dotactiv.com/blog/retail-product-placement" target="_blank" rel="noopener noreferrer" className="underline">
+                          Read the full article
+                        </a>
+                      </div>
                     </div>
                   </div>
                 </div>

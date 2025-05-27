@@ -29,6 +29,7 @@ const teamMembers = [
     name: "Jierelle Jane Ravanes",
     role: "AI Research & Quality Assurance",
     email: "jierellejane.ravanes@cit.edu",
+    privateEmail: "jrllejane@gmail.com",
     avatar: "/team/jierelle.png",
     fallback: "https://api.dicebear.com/7.x/avataaars/svg?seed=Jierelle",
     neonColor: "from-yellow-600 to-green-500",
@@ -152,7 +153,7 @@ const ContactPage = () => {
           </motion.h2>
           <div className="flex flex-col md:flex-row gap-10 w-full items-stretch">
             {teamMembers.map((member, idx) => {
-              const hasPrivate = member.name === "Nick Carter Lacanglacang";
+              const hasPrivate = member.name === "Nick Carter Lacanglacang" || member.name === "Jierelle Jane Ravanes";
               const borderGradient = member.neonColor || "from-primary to-cyan-400";
               const lit = litStates[idx];
               return (
