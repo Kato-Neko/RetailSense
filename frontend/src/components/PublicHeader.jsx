@@ -30,7 +30,7 @@ const PublicHeader = ({ onSignIn }) => {
           <div className="flex items-center justify-center h-10 w-10 bg-transparent rounded-full p-1">
             <img src="/rs_logo.svg" alt="RetailSense Logo" className="h-7 w-7 object-contain" />
           </div>
-          <span className="text-xl font-bold bg-gradient-to-r from-primary to-cyan-400 text-transparent bg-clip-text">
+          <span className="text-xl font-bold bg-gradient-to-r from-primary to-cyan-400 text-transparent bg-clip-text" style={{ fontFamily: 'Outfit, sans-serif' }}>
             RetailSense
           </span>
         </div>
@@ -87,7 +87,7 @@ const PublicHeader = ({ onSignIn }) => {
                 <div className="flex items-center justify-center h-8 w-8 bg-transparent rounded-full p-1">
                   <img src="/rs_logo.svg" alt="RetailSense Logo" className="h-5 w-5 object-contain" />
                 </div>
-                <span className="text-lg font-bold bg-gradient-to-r from-primary to-cyan-400 text-transparent bg-clip-text">
+                <span className="text-lg font-bold bg-gradient-to-r from-primary to-cyan-400 text-transparent bg-clip-text" style={{ fontFamily: 'Outfit, sans-serif' }}>
                   RetailSense
                 </span>
               </div>

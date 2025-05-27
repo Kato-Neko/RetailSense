@@ -84,7 +84,7 @@ const SideMenu = ({ isAuthenticated, setIsAuthenticated }) => {
             <img src="/rs_logo.svg" alt="RetailSense Logo" className="h-7 w-7 object-contain" />
           </div>
           <div className="ml-3">
-            <span className="text-lg font-bold bg-gradient-to-r from-primary to-cyan-400 text-transparent bg-clip-text">
+            <span className="text-lg font-bold bg-gradient-to-r from-primary to-cyan-400 text-transparent bg-clip-text" style={{ fontFamily: 'Outfit, sans-serif' }}>
               RetailSense
             </span>
             <div className="text-xs text-muted-foreground">Analytics Platform</div>
