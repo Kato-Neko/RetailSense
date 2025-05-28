@@ -27,9 +27,11 @@ from reportlab.platypus import Image, Paragraph, Spacer, SimpleDocTemplate
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 import numpy as np
 from io import BytesIO
+import pytz
+from dateutil import parser
 
 # Import from backend files
-from job_manager import init_db, get_db_connection
+from job_manager import get_db_connection
 from video_processing import validate_video_file
 from heatmap_maker import blend_heatmap, analyze_heatmap
 from utils import hash_password, verify_password
@@ -49,14 +51,7 @@ app.config['JWT_SECRET_KEY'] = 'superjwtsecretkey'  # Change this in production
 jwt = JWTManager(app)
 
 # Configure CORS properly
-CORS(app, resources={
-    r"/api/*": {
-        "origins": ["http://localhost:[0-9]+"],  # Matches any localhost port
-        "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-        "allow_headers": ["Content-Type", "Authorization"],
-        "supports_credentials": True
-    }
-})
+CORS(app, resources={r"/api/*": {"origins": "*"}})
 
 UPLOAD_FOLDER = os.path.abspath(os.path.join(os.path.dirname(__file__), '../../project_uploads'))
 RESULTS_FOLDER = os.path.abspath(os.path.join(os.path.dirname(__file__), '../../project_results'))
@@ -78,18 +73,68 @@ app.register_blueprint(auth_bp)
 
 custom_heatmap_progress = {}
 
+# Use this helper to convert datetimes to Asia/Manila
+manila = pytz.timezone('Asia/Manila')
+def to_manila_iso(dt):
+    if not dt:
+        return ''
+    if isinstance(dt, str):
+        dt = parser.parse(dt)
+    if dt.tzinfo is None:
+        # Assume naive datetimes are already in Asia/Manila
+        dt = manila.localize(dt)
+    return dt.isoformat()
+
 def allowed_file(filename, allowed_extensions):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in allowed_extensions
 
 def update_job_status_in_db(job_id, job):
     conn = get_db_connection()
-    conn.execute('''
+    cur = conn.cursor()
+    cur.execute('''
         UPDATE jobs 
-        SET status = ?, message = ?, updated_at = CURRENT_TIMESTAMP
-        WHERE job_id = ?
+        SET status = %s, message = %s, updated_at = CURRENT_TIMESTAMP
+        WHERE job_id = %s
     ''', (job['status'], job['message'], job_id))
+    cur.close()
     conn.commit()
     conn.close()
+
+# Helper to upload a file to Supabase Storage and remove local copy
+
+def upload_to_supabase_and_remove_local(local_path, supabase_path, content_type):
+    try:
+        bucket = "projectresults"
+        with open(local_path, "rb") as f:
+            supabase.storage.from_(bucket).upload(supabase_path, f, {"content-type": content_type})
+        os.remove(local_path)
+        logger.info(f"Uploaded and removed local: {local_path} -> {bucket}/{supabase_path}")
+    except Exception as e:
+        logger.error(f"Failed to upload {local_path} to Supabase: {e}")
+        raise
+
+def upload_json_to_supabase(data, supabase_path):
+    bucket = "projectresults"
+    json_bytes = json.dumps(data).encode("utf-8")
+    supabase.storage.from_(bucket).upload(
+        supabase_path,
+        json_bytes,  # Pass raw bytes, not BytesIO
+        {"content-type": "application/json"}
+    )
+    logger.info(f"Uploaded JSON to Supabase: {bucket}/{supabase_path}")
+
+def upload_image_to_supabase(image_np, supabase_path):
+    bucket = "projectresults"
+    success, img_encoded = cv2.imencode('.jpg', image_np)
+    if not success:
+        raise Exception("Failed to encode image to JPEG")
+    img_bytes = img_encoded.tobytes()
+    supabase.storage.from_(bucket).upload(
+        supabase_path,
+        img_bytes,  # Pass raw bytes, not BytesIO
+        {"content-type": "image/jpg"}  # Use image/jpg instead of image/jpeg
+    )
+    logger.info(f"Uploaded image to Supabase: {bucket}/{supabase_path}")
 
 def process_video_job(job_id):
     """
@@ -137,10 +182,12 @@ def process_video_job(job_id):
             update_job_status_in_db(job_id, job)
             return
 
-        # Save detections and fps to JSON
-        detections_path = os.path.join(RESULTS_FOLDER, job_id, 'detections.json')
-        with open(detections_path, 'w') as f:
-            json.dump({"fps": fps, "detections": detections}, f)
+        # Save detections and fps to Supabase (no local file)
+        detections_data = {"fps": fps, "detections": detections}
+        upload_json_to_supabase(
+            detections_data,
+            f"{job_id}/detections.json"
+        )
 
         # For testing: use static points from Points/floorplan_points.txt
         points = [[768, 204], [690, 200], [655, 305], [793, 309]]
@@ -154,12 +201,19 @@ def process_video_job(job_id):
 
         # Now, generate the blended heatmap using blend_heatmap with real detections and points
         output_heatmap_image_path = job['output_files_expected']['image']
-        blend_heatmap(
+        # Instead of saving to disk, get the blended image from blend_heatmap
+        blended_img = blend_heatmap(
             detections,
             floorplan_path,
-            output_heatmap_image_path,
+            None,  # Don't save to disk
             output_video_path,
-            video_path
+            video_path,
+            return_image=True
+        )
+        # Upload main heatmap JPG to Supabase (no local file)
+        upload_image_to_supabase(
+            blended_img,
+            f"{job_id}/video_heatmap.jpg"
         )
 
         # Check for cancellation after heatmap generation
@@ -175,11 +229,13 @@ def process_video_job(job_id):
         job['message'] = 'Processing completed successfully'
         # Update database
         conn = get_db_connection()
-        conn.execute('''
+        cur = conn.cursor()
+        cur.execute('''
             UPDATE jobs 
-            SET status = ?, message = ?, updated_at = CURRENT_TIMESTAMP, output_heatmap_path = ?
-            WHERE job_id = ?
+            SET status = %s, message = %s, updated_at = CURRENT_TIMESTAMP, output_heatmap_path = %s
+            WHERE job_id = %s
         ''', (job['status'], job['message'], output_heatmap_image_path, job_id))
+        cur.close()
         conn.commit()
         conn.close()
 
@@ -194,11 +250,13 @@ def process_video_job(job_id):
         logger.error(f"Error processing job {job_id}: {str(e)}", exc_info=True)
         # Update database with error
         conn = get_db_connection()
-        conn.execute('''
+        cur = conn.cursor()
+        cur.execute('''
             UPDATE jobs 
-            SET status = ?, message = ?, updated_at = CURRENT_TIMESTAMP
-            WHERE job_id = ?
+            SET status = %s, message = %s, updated_at = CURRENT_TIMESTAMP
+            WHERE job_id = %s
         ''', (job['status'], job['message'], job_id))
+        cur.close()
         conn.commit()
         conn.close()
 
@@ -209,11 +267,13 @@ def update_job_progress(job_id, stage, progress):
     
     # Update database
     conn = get_db_connection()
-    conn.execute('''
+    cur = conn.cursor()
+    cur.execute('''
         UPDATE jobs 
-        SET message = ?, updated_at = CURRENT_TIMESTAMP
-        WHERE job_id = ?
+        SET message = %s, updated_at = CURRENT_TIMESTAMP
+        WHERE job_id = %s
     ''', (job['message'], job_id))
+    cur.close()
     conn.commit()
     conn.close()
 
@@ -241,7 +301,10 @@ def create_heatmap_job():
             current_user = get_jwt_identity()
             # Find the most recent job for this user with this video file
             conn = get_db_connection()
-            job_row = conn.execute('''SELECT job_id FROM jobs WHERE user = ? AND input_video_name = ? ORDER BY created_at DESC LIMIT 1''', (current_user, video_filename)).fetchone()
+            cur = conn.cursor()
+            cur.execute('''SELECT job_id FROM jobs WHERE "user" = %s AND input_video_name = %s ORDER BY created_at DESC LIMIT 1''', (current_user, video_filename))
+            job_row = cur.fetchone()
+            cur.close()
             conn.close()
             if not job_row:
                 logger.error("No previous upload found to reuse.")
@@ -365,11 +428,18 @@ def create_heatmap_job():
         conn = get_db_connection()
         try:
             logger.debug("Creating database entry")
-            conn.execute('''
-                INSERT INTO jobs (job_id, user, input_video_name, input_floorplan_name, status, message, start_datetime, end_datetime)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)''',
+            cur = conn.cursor()
+            cur.execute('''
+                INSERT INTO jobs (job_id, "user", input_video_name, input_floorplan_name, status, message, start_datetime, end_datetime)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)''',
                 (job_id, current_user, video_filename, floorplan_filename, 'pending', 'Job submitted, awaiting processing.', start_datetime, end_datetime))
             conn.commit()
+            logger.info(f"Inserted job into Supabase: {job_id}")
+            # Fetch the inserted row for debug
+            cur.execute('SELECT * FROM jobs WHERE job_id = %s', (job_id,))
+            inserted_row = cur.fetchone()
+            logger.info(f"Inserted row: {inserted_row}")
+            cur.close()
             logger.debug("Database entry created successfully")
         except Exception as db_error:
             logger.error(f"Database error: {str(db_error)}")
@@ -382,7 +452,7 @@ def create_heatmap_job():
         processing_thread.daemon = True
         processing_thread.start()
 
-        return jsonify({"job_id": job_id, "status": "pending", "message": "Job submitted for processing."}), 202
+        return jsonify({"job_id": job_id, "status": "pending", "message": "Job submitted for processing.", "inserted_row": str(inserted_row)}), 202
     except Exception as e:
         logger.error(f"Error in create_heatmap_job: {str(e)}", exc_info=True)
         return jsonify({"error": f"Server error: {str(e)}"}), 500
@@ -394,7 +464,10 @@ def get_job_status(job_id):
         return jsonify({"job_id": job_id, "status": job['status'], "message": job.get('message', '')})
     else:
         conn = get_db_connection()
-        db_job = conn.execute("SELECT job_id, status, message FROM jobs WHERE job_id = ?", (job_id,)).fetchone()
+        cur = conn.cursor()
+        cur.execute("SELECT job_id, status, message FROM jobs WHERE job_id = %s", (job_id,))
+        db_job = cur.fetchone()
+        cur.close()
         conn.close()
         if db_job:
             return jsonify({"job_id": db_job['job_id'], "status": db_job['status'], "message": db_job['message']})
@@ -403,26 +476,20 @@ def get_job_status(job_id):
 
 @app.route('/api/heatmap_jobs/<job_id>/result/image', methods=['GET'])
 def get_heatmap_image(job_id):
-    conn = get_db_connection()
-    job_row = conn.execute("SELECT * FROM jobs WHERE job_id = ?", (job_id,)).fetchone()
-    conn.close()
-    if not job_row or job_row['status'] != 'completed':
-        return jsonify({"error": "Job not found or not completed"}), 404
-
-    output_image_path = job_row['output_heatmap_path'] if 'output_heatmap_path' in job_row.keys() else None
-    if not output_image_path or not os.path.exists(output_image_path):
-        # Try .jpg if .png not found
-        jpg_path = output_image_path.replace('.png', '.jpg') if output_image_path else None
-        if jpg_path and os.path.exists(jpg_path):
-            output_image_path = jpg_path
-        else:
-            return jsonify({"error": "Result image file not found on server"}), 404
-    return send_from_directory(os.path.dirname(output_image_path), os.path.basename(output_image_path))
+    # Always fetch from Supabase
+    supabase_path = f"{job_id}/video_heatmap.jpg"
+    img_bytes = download_image_bytes_from_supabase(supabase_path)
+    if img_bytes is None:
+        return jsonify({"error": "Result image file not found in Supabase"}), 404
+    return Response(img_bytes, mimetype="image/jpeg")
 
 @app.route('/api/heatmap_jobs/<job_id>/result/video', methods=['GET'])
 def get_processed_video(job_id):
     conn = get_db_connection()
-    job_row = conn.execute("SELECT * FROM jobs WHERE job_id = ?", (job_id,)).fetchone()
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM jobs WHERE job_id = %s", (job_id,))
+    job_row = cur.fetchone()
+    cur.close()
     conn.close()
     if not job_row or job_row['status'] != 'completed':
         return jsonify({"error": "Job not found or not completed"}), 404
@@ -435,9 +502,10 @@ def get_processed_video(job_id):
 @app.route('/api/heatmap_jobs/history', methods=['GET'])
 @jwt_required()
 def get_job_history():
-    current_user = get_jwt_identity()  # Get the current user's ID from the JWT
+    current_user = get_jwt_identity()
     conn = get_db_connection()
-    history_jobs_cursor = conn.execute('''
+    cur = conn.cursor()
+    cur.execute('''
         SELECT job_id,
                input_video_name,
                input_floorplan_name,
@@ -447,9 +515,24 @@ def get_job_history():
                end_datetime,
                created_at,
                updated_at
-        FROM jobs WHERE user = ? ORDER BY created_at DESC
+        FROM jobs WHERE "user" = %s ORDER BY created_at DESC
     ''', (current_user,))
-    history_jobs = [dict(row) for row in history_jobs_cursor.fetchall()]
+    rows = cur.fetchall()
+    history_jobs = [
+        {
+            "job_id": row[0],
+            "input_video_name": row[1],
+            "input_floorplan_name": row[2],
+            "status": row[3],
+            "message": row[4],
+            "start_datetime": to_manila_iso(row[5]),
+            "end_datetime": to_manila_iso(row[6]),
+            "created_at": to_manila_iso(row[7]),
+            "updated_at": to_manila_iso(row[8]),
+        }
+        for row in rows
+    ]
+    cur.close()
     conn.close()
     return jsonify(history_jobs)
 
@@ -458,12 +541,16 @@ def get_job_history():
 def delete_heatmap_job(job_id):
     try:
         conn = get_db_connection()
-        job_row = conn.execute("SELECT * FROM jobs WHERE job_id = ?", (job_id,)).fetchone()
+        cur = conn.cursor()
+        cur.execute("SELECT * FROM jobs WHERE job_id = %s", (job_id,))
+        job_row = cur.fetchone()
         if not job_row:
+            cur.close()
             conn.close()
             return jsonify({"error": "Job not found"}), 404
         # Remove from DB
-        conn.execute("DELETE FROM jobs WHERE job_id = ?", (job_id,))
+        cur.execute("DELETE FROM jobs WHERE job_id = %s", (job_id,))
+        cur.close()
         conn.commit()
         conn.close()
         # Remove files (results and uploads)
@@ -472,6 +559,17 @@ def delete_heatmap_job(job_id):
         for folder in [results_folder, uploads_folder]:
             if os.path.exists(folder):
                 shutil.rmtree(folder)
+        # Delete all files in the job's folder from Supabase Storage
+        bucket = "projectresults"
+        try:
+            files = supabase.storage.from_(bucket).list(path=job_id)
+            if files and isinstance(files, list):
+                for file in files:
+                    file_path = f"{job_id}/{file['name']}"
+                    supabase.storage.from_(bucket).remove(file_path)
+            logger.info(f"Deleted files in Supabase bucket for job {job_id}")
+        except Exception as e:
+            logger.error(f"Error deleting files from Supabase bucket for job {job_id}: {e}")
         return jsonify({"success": True, "message": "Heatmap job deleted."})
     except Exception as e:
         logger.error(f"Error deleting job {job_id}: {str(e)}", exc_info=True)
@@ -489,24 +587,31 @@ def cancel_heatmap_job(job_id):
         logger.info(f"Job {job_id} found in memory, marked as cancelled.")
         # Also update status in DB immediately
         conn = get_db_connection()
-        conn.execute("UPDATE jobs SET status = ?, message = ?, updated_at = CURRENT_TIMESTAMP WHERE job_id = ?", ('cancelled', 'Job was cancelled by user.', job_id))
+        cur = conn.cursor()
+        cur.execute("UPDATE jobs SET status = %s, message = %s, updated_at = CURRENT_TIMESTAMP WHERE job_id = %s", ('cancelled', 'Job was cancelled by user.', job_id))
+        cur.close()
         conn.commit()
         conn.close()
         logger.info(f"Job {job_id} status updated to 'cancelled' in DB (in-memory case).")
         return jsonify({"success": True, "message": "Job cancelled."})
     # If not in memory, try to cancel in the database
     conn = get_db_connection()
-    job_row = conn.execute("SELECT * FROM jobs WHERE job_id = ?", (job_id,)).fetchone()
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM jobs WHERE job_id = %s", (job_id,))
+    job_row = cur.fetchone()
     if not job_row:
+        cur.close()
         conn.close()
         logger.error(f"Cancel failed: Job {job_id} not found in DB.")
         return jsonify({"error": "Job not found"}), 404
     if job_row['status'] in ('completed', 'cancelled', 'error'):
+        cur.close()
         conn.close()
         logger.info(f"Job {job_id} already finished with status {job_row['status']}.")
         return jsonify({"success": True, "message": f"Job already {job_row['status']}."})
     # Update status in DB
-    conn.execute("UPDATE jobs SET status = ?, message = ?, updated_at = CURRENT_TIMESTAMP WHERE job_id = ?", ('cancelled', 'Job was cancelled by user.', job_id))
+    cur.execute("UPDATE jobs SET status = %s, message = %s, updated_at = CURRENT_TIMESTAMP WHERE job_id = %s", ('cancelled', 'Job was cancelled by user.', job_id))
+    cur.close()
     conn.commit()
     conn.close()
     logger.info(f"Job {job_id} status updated to 'cancelled' in DB (DB-only case).")
@@ -543,22 +648,16 @@ def receive_live_detections(job_id):
     except Exception as e:
         return jsonify({'error': str(e)}), 400
 
-# Helper function to load detections and fps from detections.json
-
+# Helper function to load detections and fps from Supabase
 def load_detections(job_id):
-    detections_path = os.path.join(RESULTS_FOLDER, job_id, 'detections.json')
-    if not os.path.exists(detections_path):
-        logger.error(f"Detections file not found for job ID: {job_id}")
+    supabase_path = f"{job_id}/detections.json"
+    det_data = download_json_from_supabase(supabase_path)
+    if det_data is None:
+        logger.error(f"Detections file not found for job ID: {job_id} in Supabase")
         return None, None
-    try:
-        with open(detections_path, 'r') as f:
-            det_data = json.load(f)
-            detections = det_data.get("detections", [])
-            fps = det_data.get("fps")
-        return detections, fps
-    except Exception as e:
-        logger.error(f"Error reading detections file for job ID {job_id}: {str(e)}")
-        return None, None
+    detections = det_data.get("detections", [])
+    fps = det_data.get("fps")
+    return detections, fps
 
 @app.route('/api/heatmap_jobs/<job_id>/detections', methods=['GET'])
 @jwt_required()
@@ -573,15 +672,18 @@ def get_detections_from_json(job_id):
 def export_heatmap_csv(job_id):
     try:
         conn = get_db_connection()
-        job_row = conn.execute("SELECT * FROM jobs WHERE job_id = ?", (job_id,)).fetchone()
+        cur = conn.cursor()
+        cur.execute("SELECT * FROM jobs WHERE job_id = %s", (job_id,))
+        job_row = cur.fetchone()
+        cur.close()
         conn.close()
         
         if not job_row:
             logger.error(f"Job {job_id} not found in database")
             return jsonify({"error": "Job not found"}), 404
             
-        if job_row['status'] != 'completed':
-            logger.error(f"Job {job_id} status is {job_row['status']}, not completed")
+        if job_row[6] != 'completed':  # status
+            logger.error(f"Job {job_id} status is {job_row[6]}, not completed")
             return jsonify({"error": "Job not completed"}), 404
 
         # Get date and time range from query parameters
@@ -600,32 +702,24 @@ def export_heatmap_csv(job_id):
             logger.warning(f"No detections found in detections.json for job {job_id}")
             return jsonify({"error": "No detections data available"}), 404
 
-        # Filter detections by time range if specified
-        if start_time is not None and end_time is not None:
-            detections = [
-                det for det in detections
-                if 'timestamp' in det and start_time <= det['timestamp'] <= end_time
-            ]
-
         # --- Load analysis data ---
         if start_time is not None and end_time is not None:
-            # Use custom heatmap for analysis
-            heatmap_path = os.path.join(
-                RESULTS_FOLDER, job_id, f"custom_heatmap_{float(start_time):.1f}_{float(end_time):.1f}.jpg"
-            )
+            # Use custom heatmap from Supabase
+            supabase_path = f"{job_id}/custom_heatmap_{float(start_time):.1f}_{float(end_time):.1f}.jpg"
         else:
-            heatmap_path = job_row['output_heatmap_path']
+            supabase_path = f"{job_id}/video_heatmap.jpg"
+        heatmap_color = download_image_from_supabase(supabase_path)
+        if heatmap_color is None:
+            logger.error(f"Heatmap not found in Supabase: {supabase_path}")
+            return jsonify({"error": "Heatmap not found in Supabase"}), 404
+        # Convert to grayscale for analysis only
+        heatmap = heatmap_color
+        if len(heatmap.shape) == 3:
+            heatmap_gray = cv2.cvtColor(heatmap, cv2.COLOR_BGR2GRAY)
+        else:
+            heatmap_gray = heatmap
 
-        if not os.path.exists(heatmap_path):
-            logger.error(f"Heatmap file not found at {heatmap_path}")
-            return jsonify({"error": "Heatmap file not found"}), 404
-
-        heatmap = cv2.imread(heatmap_path, cv2.IMREAD_GRAYSCALE)
-        if heatmap is None:
-            logger.error(f"Could not load heatmap from {heatmap_path}")
-            return jsonify({"error": "Could not load heatmap"}), 500
-            
-        analysis = analyze_heatmap(heatmap, (1080, 1920), detections=detections, fps=fps)
+        analysis = analyze_heatmap(heatmap_gray, (1080, 1920), detections=detections, fps=fps)
 
         output = io.StringIO()
         writer = csv.writer(output)
@@ -700,13 +794,16 @@ def export_heatmap_pdf(job_id):
 
         # Get job data from database
         conn = get_db_connection()
-        job_row = conn.execute("SELECT * FROM jobs WHERE job_id = ?", (job_id,)).fetchone()
+        cur = conn.cursor()
+        cur.execute("SELECT * FROM jobs WHERE job_id = %s", (job_id,))
+        job_row = cur.fetchone()
+        cur.close()
         conn.close()
         
         if not job_row:
             return jsonify({'error': 'Job not found'}), 404
             
-        if job_row['status'] != 'completed':
+        if job_row[6] != 'completed':  # status
             return jsonify({'error': 'Job not completed'}), 404
 
         # Load detections
@@ -723,26 +820,25 @@ def export_heatmap_pdf(job_id):
 
         # Get analysis data
         if start_time is not None and end_time is not None:
-            # Use custom heatmap for analysis
-            heatmap_path = os.path.join(
-                RESULTS_FOLDER, job_id, f"custom_heatmap_{float(start_time):.1f}_{float(end_time):.1f}.jpg"
-            )
+            supabase_path = f"{job_id}/custom_heatmap_{float(start_time):.1f}_{float(end_time):.1f}.jpg"
         else:
-            heatmap_path = job_row['output_heatmap_path']
+            supabase_path = f"{job_id}/video_heatmap.jpg"
+        heatmap_color = download_image_from_supabase(supabase_path)
+        if heatmap_color is None:
+            return jsonify({'error': 'Heatmap not found in Supabase'}), 404
+        # Convert to grayscale for analysis only
+        heatmap = heatmap_color
+        if len(heatmap.shape) == 3:
+            heatmap_gray = cv2.cvtColor(heatmap, cv2.COLOR_BGR2GRAY)
+        else:
+            heatmap_gray = heatmap
 
-        if not os.path.exists(heatmap_path):
-            return jsonify({'error': 'Heatmap file not found'}), 404
-
-        heatmap = cv2.imread(heatmap_path, cv2.IMREAD_GRAYSCALE)
-        if heatmap is None:
-            return jsonify({'error': 'Could not load heatmap'}), 500
-
-        analysis = analyze_heatmap(heatmap, (1080, 1920), detections=detections, fps=fps)
+        analysis = analyze_heatmap(heatmap_gray, (1080, 1920), detections=detections, fps=fps)
         if not analysis:
             return jsonify({'error': 'Analysis not found'}), 404
 
         # Create PDF
-        buffer = BytesIO()
+        buffer = io.BytesIO()
         doc = SimpleDocTemplate(buffer, pagesize=letter)
         elements = []
 
@@ -754,7 +850,7 @@ def export_heatmap_pdf(job_id):
             fontSize=24,
             spaceAfter=30
         )
-        elements.append(Paragraph(f"Heatmap Analysis Report - {job_row['input_video_name']}", title_style))
+        elements.append(Paragraph(f"Heatmap Analysis Report - {job_row[2]}", title_style))  # input_video_name
 
         # Add date and time range
         date_style = ParagraphStyle(
@@ -769,10 +865,12 @@ def export_heatmap_pdf(job_id):
         elements.append(Paragraph(f"Area: {area}", date_style))
         elements.append(Spacer(1, 20))
 
-        # Add heatmap image
-        if os.path.exists(heatmap_path):
-            img = Image(heatmap_path, width=400, height=300)
-            elements.append(img)
+        # Add heatmap image (always color)
+        _, img_encoded = cv2.imencode('.jpg', heatmap_color)
+        img_bytes = img_encoded.tobytes()
+        img_buffer = io.BytesIO(img_bytes)
+        img = Image(img_buffer, width=400, height=300)
+        elements.append(img)
 
         elements.append(Spacer(1, 20))
 
@@ -820,37 +918,42 @@ def export_heatmap_pdf(job_id):
 @jwt_required()
 def get_heatmap_analysis(job_id):
     conn = get_db_connection()
-    job_row = conn.execute("SELECT * FROM jobs WHERE job_id = ?", (job_id,)).fetchone()
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM jobs WHERE job_id = %s", (job_id,))
+    job_row = cur.fetchone()
+    cur.close()
     conn.close()
-    if not job_row or job_row['status'] != 'completed':
-        return jsonify({"error": "Job not found or not completed"}), 404
 
-    heatmap_path = job_row['output_heatmap_path']
-    if not os.path.exists(heatmap_path):
-        return jsonify({"error": "Heatmap file not found"}), 404
+    if not job_row:
+        logger.error(f"Job {job_id} not found in database")
+        return jsonify({"error": "Job not found"}), 404
 
-    heatmap = cv2.imread(heatmap_path, cv2.IMREAD_GRAYSCALE)
-    if heatmap is None:
-        return jsonify({"error": "Could not load heatmap"}), 500
+    if job_row[6] != 'completed':  # status is 7th column (index 6)
+        logger.error(f"Job {job_id} status is {job_row[6]}, not completed")
+        return jsonify({"error": "Job not completed"}), 404
 
-    floorplan_filename = job_row['input_floorplan_name']
+    # Get the heatmap path from the job row
+    heatmap_path = job_row[4]  # output_heatmap_path is 5th column (index 4)
+
+    supabase_path = f"{job_id}/video_heatmap.jpg"
+    img = download_image_from_supabase(supabase_path)
+    if img is None:
+        return jsonify({"error": "Heatmap file not found in Supabase"}), 404
+
+    # Convert to grayscale if needed
+    if len(img.shape) == 3:
+        img_gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    else:
+        img_gray = img
+
+    floorplan_filename = job_row[3]  # input_floorplan_name is 4th col (index 3)
     floorplan_path = os.path.join(UPLOAD_FOLDER, job_id, floorplan_filename)
     floorplan = cv2.imread(floorplan_path)
     if floorplan is None:
         return jsonify({"error": "Could not load floorplan"}), 500
 
-    # Load detections and fps
-    detections_path = os.path.join(RESULTS_FOLDER, job_id, 'detections.json')
-    if os.path.exists(detections_path):
-        with open(detections_path, 'r') as f:
-            det_data = json.load(f)
-            fps = det_data.get("fps")
-            detections = det_data.get("detections", [])
-    else:
-        fps = None
-        detections = None
-
-    analysis = analyze_heatmap(heatmap, floorplan.shape[:2], detections=detections, fps=fps)
+    detections, fps = load_detections(job_id)
+    analysis = analyze_heatmap(img_gray, floorplan.shape[:2], detections=detections, fps=fps)
     return jsonify(analysis)
 
 # Helper function to run custom heatmap generation in a thread
@@ -859,21 +962,22 @@ def run_custom_heatmap_job(job_id, start_time, end_time):
     try:
         # Fetch job info from DB
         conn = get_db_connection()
-        job_row = conn.execute("SELECT * FROM jobs WHERE job_id = ?", (job_id,)).fetchone()
+        cur = conn.cursor()
+        cur.execute("SELECT * FROM jobs WHERE job_id = %s", (job_id,))
+        job_row = cur.fetchone()
+        cur.close()
         conn.close()
-        if not job_row or job_row['status'] != 'completed':
+        if not job_row or job_row[6] != 'completed':  # status is 7th col (index 6)
             custom_heatmap_progress[job_id] = 1.0
             return
 
-        # Load detections
-        detections_path = os.path.join(RESULTS_FOLDER, job_id, 'detections.json')
-        if not os.path.exists(detections_path):
+        # Load detections from Supabase
+        det_data = download_json_from_supabase(f"{job_id}/detections.json")
+        if det_data is None:
             custom_heatmap_progress[job_id] = 1.0
             return
-        with open(detections_path, 'r') as f:
-            det_data = json.load(f)
-            detections = det_data.get("detections", [])
-            fps = det_data.get("fps")
+        detections = det_data.get("detections", [])
+        fps = det_data.get("fps")
 
         # Filter detections by time range
         filtered_detections = [
@@ -884,18 +988,25 @@ def run_custom_heatmap_job(job_id, start_time, end_time):
         custom_heatmap_path = os.path.join(
             RESULTS_FOLDER, job_id, f"custom_heatmap_{float(start_time):.1f}_{float(end_time):.1f}.jpg"
         )
-        floorplan_path = os.path.join(UPLOAD_FOLDER, job_id, job_row['input_floorplan_name'])
+        floorplan_path = os.path.join(UPLOAD_FOLDER, job_id, job_row[3])  # input_floorplan_name is 4th col (index 3)
 
         def progress_callback(progress):
             custom_heatmap_progress[job_id] = progress
 
-        blend_heatmap(
+        # Instead of saving to disk, get the blended image from blend_heatmap
+        blended_img = blend_heatmap(
             filtered_detections,
             floorplan_path,
-            custom_heatmap_path,
+            None,  # Don't save to disk
             os.path.join(RESULTS_FOLDER, job_id, f"video_{job_id}.mp4"),
-            os.path.join(UPLOAD_FOLDER, job_id, job_row['input_video_name']),
-            progress_callback=progress_callback
+            os.path.join(UPLOAD_FOLDER, job_id, job_row[2]),  # input_video_name is 3rd col (index 2)
+            progress_callback=progress_callback,
+            return_image=True
+        )
+        # Upload custom heatmap JPG to Supabase (no local file)
+        upload_image_to_supabase(
+            blended_img,
+            f"{job_id}/custom_heatmap_{float(start_time):.1f}_{float(end_time):.1f}.jpg"
         )
         custom_heatmap_progress[job_id] = 1.0
     except Exception as e:
@@ -925,15 +1036,14 @@ def generate_custom_heatmap(job_id):
         return jsonify({"error": str(e)}), 500
 
 @app.route('/api/heatmap_jobs/<job_id>/custom_heatmap_image')
-#@jwt_required()
 def get_custom_heatmap_image(job_id):
     start = request.args.get('start')
     end = request.args.get('end')
-    filename = f"custom_heatmap_{float(start):.1f}_{float(end):.1f}.jpg"
-    folder = os.path.join(RESULTS_FOLDER, job_id)
-    if not os.path.exists(os.path.join(folder, filename)):
-        return jsonify({"error": "Custom heatmap not found"}), 404
-    return send_from_directory(folder, filename)
+    supabase_path = f"{job_id}/custom_heatmap_{float(start):.1f}_{float(end):.1f}.jpg"
+    img_bytes = download_image_bytes_from_supabase(supabase_path)
+    if img_bytes is None:
+        return jsonify({"error": "Custom heatmap not found in Supabase"}), 404
+    return Response(img_bytes, mimetype="image/jpeg")
 
 @app.route('/api/heatmap_jobs/<job_id>/custom_heatmap_progress')
 def get_custom_heatmap_progress(job_id):
@@ -944,57 +1054,41 @@ def get_custom_heatmap_progress(job_id):
 @jwt_required()
 def get_custom_heatmap_analysis(job_id):
     try:
-        # Get time range parameters
         start_time = request.args.get('start_time', type=float)
         end_time = request.args.get('end_time', type=float)
         area = request.args.get('area', 'all')
-
-        # Get job data from database
         conn = get_db_connection()
-        job_row = conn.execute("SELECT * FROM jobs WHERE job_id = ?", (job_id,)).fetchone()
+        cur = conn.cursor()
+        cur.execute("SELECT * FROM jobs WHERE job_id = %s", (job_id,))
+        job_row = cur.fetchone()
+        cur.close()
         conn.close()
-        
         if not job_row:
             return jsonify({'error': 'Job not found'}), 404
-            
-        if job_row['status'] != 'completed':
+        if job_row[6] != 'completed':
             return jsonify({'error': 'Job not completed'}), 404
-
-        # Load detections
-        detections_path = os.path.join(RESULTS_FOLDER, job_id, 'detections.json')
-        if not os.path.exists(detections_path):
+        detections, fps = load_detections(job_id)
+        if detections is None:
             return jsonify({'error': 'Detections file not found'}), 404
-
-        with open(detections_path, 'r') as f:
-            det_data = json.load(f)
-            detections = det_data.get("detections", [])
-            fps = det_data.get("fps")
-
-        # Filter detections by time range
         filtered_detections = [
             det for det in detections
             if 'timestamp' in det and start_time <= det['timestamp'] <= end_time
         ]
-
-        # Load the custom heatmap
-        custom_heatmap_path = os.path.join(
-            RESULTS_FOLDER, job_id, f"custom_heatmap_{float(start_time):.1f}_{float(end_time):.1f}.jpg"
-        )
-        if not os.path.exists(custom_heatmap_path):
-            return jsonify({'error': 'Custom heatmap not found'}), 404
-
-        # Analyze the custom heatmap
-        heatmap = cv2.imread(custom_heatmap_path, cv2.IMREAD_GRAYSCALE)
-        if heatmap is None:
-            return jsonify({'error': 'Could not load custom heatmap'}), 500
-
+        supabase_path = f"{job_id}/custom_heatmap_{float(start_time):.1f}_{float(end_time):.1f}.jpg"
+        img = download_image_from_supabase(supabase_path)
+        if img is None:
+            return jsonify({'error': 'Custom heatmap not found in Supabase'}), 404
+        # Convert to grayscale if needed
+        if len(img.shape) == 3:
+            img_gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+        else:
+            img_gray = img
         analysis = analyze_heatmap(
-            heatmap,
-            (1080, 1920),  # Default dimensions
+            img_gray,
+            (1080, 1920),
             detections=filtered_detections,
             fps=fps
         )
-
         return jsonify(analysis)
     except Exception as e:
         logger.error(f"Error getting custom heatmap analysis: {str(e)}")
@@ -1030,23 +1124,21 @@ def get_job_time_range(job_id):
     Returns start_date, end_date, start_time, end_time as separate fields for easy frontend restoration.
     """
     conn = get_db_connection()
-    job_row = conn.execute("SELECT start_datetime, end_datetime FROM jobs WHERE job_id = ?", (job_id,)).fetchone()
+    cur = conn.cursor()
+    cur.execute("SELECT start_datetime, end_datetime FROM jobs WHERE job_id = %s", (job_id,))
+    job_row = cur.fetchone()
+    cur.close()
     conn.close()
     if not job_row:
         return jsonify({"error": "Job not found"}), 404
-    # Parse the datetime strings
-    start_dt = str(job_row['start_datetime']) if job_row['start_datetime'] else ''
-    end_dt = str(job_row['end_datetime']) if job_row['end_datetime'] else ''
+    start_dt = to_manila_iso(job_row[0])
+    end_dt = to_manila_iso(job_row[1])
     # Split into date and time
     start_date, start_time = ('', '')
     end_date, end_time = ('', '')
-    if ' ' in start_dt:
-        start_date, start_time = start_dt.split(' ')
-    elif 'T' in start_dt:
+    if 'T' in start_dt:
         start_date, start_time = start_dt.split('T')
-    if ' ' in end_dt:
-        end_date, end_time = end_dt.split(' ')
-    elif 'T' in end_dt:
+    if 'T' in end_dt:
         end_date, end_time = end_dt.split('T')
     # Truncate time to HH:MM:SS
     start_time = start_time[:8]
@@ -1062,22 +1154,48 @@ def get_job_time_range(job_id):
 
 def cleanup_orphaned_jobs():
     conn = get_db_connection()
+    cur = conn.cursor()
     # Find jobs that are not completed/cancelled/errored
-    orphaned = conn.execute(
+    cur.execute(
         "SELECT job_id FROM jobs WHERE status IN ('pending', 'processing')"
-    ).fetchall()
+    )
+    orphaned = cur.fetchall()
     for row in orphaned:
-        job_id = row['job_id']
+        job_id = row[0]  # psycopg2 returns tuples, not dicts
         # If job is not in memory (not running), mark as error
         if job_id not in jobs:
-            conn.execute(
-                "UPDATE jobs SET status = ?, message = ?, updated_at = CURRENT_TIMESTAMP WHERE job_id = ?",
+            cur.execute(
+                "UPDATE jobs SET status = %s, message = %s, updated_at = CURRENT_TIMESTAMP WHERE job_id = %s",
                 ('error', 'Job was interrupted by server shutdown.', job_id)
             )
+    cur.close()
     conn.commit()
     conn.close()
 
+def download_json_from_supabase(supabase_path):
+    bucket = "projectresults"
+    res = supabase.storage.from_(bucket).download(supabase_path)
+    if res is None:
+        return None
+    return json.loads(res.decode('utf-8'))
+
+def download_image_from_supabase(supabase_path):
+    bucket = "projectresults"
+    res = supabase.storage.from_(bucket).download(supabase_path)
+    if res is None:
+        return None
+    file_bytes = np.frombuffer(res, np.uint8)
+    img = cv2.imdecode(file_bytes, cv2.IMREAD_COLOR)
+    return img
+
+def download_image_bytes_from_supabase(supabase_path):
+    bucket = "projectresults"
+    res = supabase.storage.from_(bucket).download(supabase_path)
+    if res is None:
+        return None
+    return res
+
 if __name__ == '__main__':
-    init_db()
+    # init_db()  # No longer needed, handled by Supabase
     cleanup_orphaned_jobs()  # Clean up jobs on startup
     app.run(host='0.0.0.0', port=5000, debug=True)

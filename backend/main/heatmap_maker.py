@@ -49,17 +49,18 @@ def analyze_peak_hours(detections, fps, bin_minutes=5):
         })
     return results
 
-def blend_heatmap(detections, floorplan_path, output_heatmap_path, output_video_path, video_path, progress_callback=None):
+def blend_heatmap(detections, floorplan_path, output_heatmap_path, output_video_path, video_path, progress_callback=None, return_image=False):
     """
     Generate and blend heatmap from detections.
     
     Args:
         detections: List of detections from object tracking
         floorplan_path: Path to floorplan image
-        output_heatmap_path: Path to save the heatmap image
+        output_heatmap_path: Path to save the heatmap image (can be None)
         output_video_path: Path to save the processed video
         video_path: Path to the video
         progress_callback: Optional callback function(progress) to report progress
+        return_image: If True, return the blended image as a numpy array
     """
     # Load floorplan
     floorplan = cv2.imread(floorplan_path)
@@ -102,8 +103,8 @@ def blend_heatmap(detections, floorplan_path, output_heatmap_path, output_video_
     alpha_mask = alpha_mask * 0.7
     blended = (floorplan * (1 - alpha_mask) + heatmap_colored * alpha_mask).astype(np.uint8)
     
-    # Save heatmap image
-    cv2.imwrite(output_heatmap_path, blended)
+    if output_heatmap_path:
+        cv2.imwrite(output_heatmap_path, blended)
     
     # Create video with detections (Phase 2: 50%–100%)
     cap = cv2.VideoCapture(video_path)
@@ -166,6 +167,8 @@ def blend_heatmap(detections, floorplan_path, output_heatmap_path, output_video_
     # Release resources
     cap.release()
     out.release()
+    if return_image:
+        return blended
 
 def analyze_heatmap(heatmap, floorplan_shape, detections=None, fps=None):
     """

@@ -404,6 +404,7 @@ const Dashboard = () => {
       const imgData = await domtoimage.toPng(chartArea, { bgcolor: '#fff' });
       const pdf = new jsPDF({ orientation: 'landscape', unit: 'pt', format: 'a4' });
       const pageWidth = pdf.internal.pageSize.getWidth();
+      const pageHeight = pdf.internal.pageSize.getHeight();
       let y = 40;
       pdf.setFontSize(18);
       pdf.text('Foot Traffic Analytics', 40, y);
@@ -426,8 +427,15 @@ const Dashboard = () => {
       const img = new window.Image();
       img.src = imgData;
       img.onload = () => {
-        const imgWidth = pageWidth - 80;
-        const imgHeight = (img.height * imgWidth) / img.width;
+        let imgWidth = pageWidth - 80;
+        let imgHeight = (img.height * imgWidth) / img.width;
+
+        // If the image is too tall for the page, scale it down
+        if (imgHeight > pageHeight - y - 40) {
+          imgHeight = pageHeight - y - 40;
+          imgWidth = (img.width * imgHeight) / img.height;
+        }
+
         pdf.addImage(img, 'PNG', 40, y, imgWidth, imgHeight);
         pdf.save(`foot_traffic_${activeChart}.pdf`);
       };
