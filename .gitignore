@@ -177,3 +177,8 @@ cython_debug/
 
 # PyPI configuration file
 .pypirc
+
+
+frontend/dist-electron/
+!frontend/dist-electron/builder-debug.yml
+!frontend/dist-electron/builder-effective-config.yaml
