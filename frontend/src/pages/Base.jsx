@@ -9,7 +9,7 @@ import { Moon, Sun } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { ThemeProvider, useTheme } from "../components/ThemeContext"
 
-const BaseContent = () => {
+const BaseContent = ({ isAuthenticated, setIsAuthenticated }) => {
   // Control the sidebar open/closed state
   const [open, setOpen] = useState(true)
   const location = useLocation()
@@ -43,8 +43,8 @@ const BaseContent = () => {
     <SidebarProvider open={open} onOpenChange={setOpen}>
       <div className="flex h-screen w-full overflow-hidden bg-background dark:bg-gradient-to-b dark:from-slate-950 dark:via-slate-950 dark:to-slate-900">
         <SideMenu
-          isAuthenticated={true} // Pass actual authentication state
-          setIsAuthenticated={() => {}} // Pass actual set function
+          isAuthenticated={isAuthenticated}
+          setIsAuthenticated={setIsAuthenticated}
         />
 
         {/* Main content area that expands to fill available space */}

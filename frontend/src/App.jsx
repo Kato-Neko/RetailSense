@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { BrowserRouter as Router, Routes, Route, Navigate } from "react-router-dom"
+import { HashRouter as Router, Routes, Route, Navigate } from "react-router-dom"
 import { Toaster } from "@/components/ui/sonner"
 import LandingPage from "./pages/LandingPage"
 import Dashboard from "./pages/Dashboard"
@@ -101,7 +101,7 @@ function App() {
             <Route path="/terms" element={<TermsOfService />} />
             <Route path="/cookie-policy" element={<CookiePolicy />} />
             <Route path="/dpa" element={<DPA />} />
-            <Route path="/" element={<Base />}>
+            <Route path="/" element={<Base isAuthenticated={isAuthenticated} setIsAuthenticated={setIsAuthenticated} />}>
               <Route path="/dashboard" element={isAuthenticated ? <Dashboard /> : <Navigate to="/" />} />
               <Route path="/video-processing" element={isAuthenticated ? <CreateHeatmap /> : <Navigate to="/" />} />
               <Route

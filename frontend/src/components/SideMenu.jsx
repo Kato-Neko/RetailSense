@@ -81,7 +81,7 @@ const SideMenu = ({ isAuthenticated, setIsAuthenticated }) => {
       <SidebarHeader className="border-b border-border">
         <div className="flex h-16 items-center px-4 my-2">
           <div className="flex items-center justify-center h-10 w-10 bg-transparent rounded-full p-1 shadow-lg shadow-primary/10">
-            <img src="/rs_logo.svg" alt="RetailSense Logo" className="h-7 w-7 object-contain" />
+            <img src={`${import.meta.env.BASE_URL}rs_logo.svg`} alt="RetailSense Logo" className="h-7 w-7 object-contain" />
           </div>
           <div className="ml-3">
             <span className="text-lg font-bold bg-gradient-to-r from-primary to-cyan-400 text-transparent bg-clip-text" style={{ fontFamily: 'Outfit, sans-serif' }}>
