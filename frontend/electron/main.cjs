@@ -16,6 +16,7 @@ function createWindow() {
     minHeight: 800,
     vibrancy: 'acrylic',
     title: 'RetailSense',
+    frame: false, // Use a frameless window for custom title bar
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
@@ -95,112 +96,9 @@ function stopPythonBackend() {
   }
 }
 
-// Create application menu
-function createMenu() {
-  const template = [
-    {
-      label: 'File',
-      submenu: [
-        {
-          label: 'Open Video File',
-          accelerator: 'CmdOrCtrl+O',
-          click: async () => {
-            const result = await dialog.showOpenDialog(mainWindow, {
-              properties: ['openFile'],
-              filters: [
-                { name: 'Video Files', extensions: ['mp4', 'avi', 'mov'] }
-              ]
-            });
-            
-            if (!result.canceled && result.filePaths.length > 0) {
-              mainWindow.webContents.send('file-selected', result.filePaths[0]);
-            }
-          }
-        },
-        {
-          label: 'Open Floor Plan',
-          accelerator: 'CmdOrCtrl+Shift+O',
-          click: async () => {
-            const result = await dialog.showOpenDialog(mainWindow, {
-              properties: ['openFile'],
-              filters: [
-                { name: 'Image Files', extensions: ['png', 'jpg', 'jpeg'] }
-              ]
-            });
-            
-            if (!result.canceled && result.filePaths.length > 0) {
-              mainWindow.webContents.send('floorplan-selected', result.filePaths[0]);
-            }
-          }
-        },
-        { type: 'separator' },
-        {
-          label: 'Quit',
-          accelerator: process.platform === 'darwin' ? 'Cmd+Q' : 'Ctrl+Q',
-          click: () => {
-            app.quit();
-          }
-        }
-      ]
-    },
-    {
-      label: 'Edit',
-      submenu: [
-        { role: 'undo' },
-        { role: 'redo' },
-        { type: 'separator' },
-        { role: 'cut' },
-        { role: 'copy' },
-        { role: 'paste' }
-      ]
-    },
-    {
-      label: 'View',
-      submenu: [
-        { role: 'reload' },
-        { role: 'forceReload' },
-        { role: 'toggleDevTools' },
-        { type: 'separator' },
-        { role: 'resetZoom' },
-        { role: 'zoomIn' },
-        { role: 'zoomOut' },
-        { type: 'separator' },
-        { role: 'togglefullscreen' }
-      ]
-    },
-    {
-      label: 'Window',
-      submenu: [
-        { role: 'minimize' },
-        { role: 'close' }
-      ]
-    },
-    {
-      label: 'Help',
-      submenu: [
-        {
-          label: 'About RetailSense',
-          click: () => {
-            dialog.showMessageBox(mainWindow, {
-              type: 'info',
-              title: 'About RetailSense',
-              message: 'RetailSense',
-              detail: 'Version 1.0.0\n\nA desktop application for retail analytics and heatmap generation.\n\nTransform your retail space with intelligent analytics.'
-            });
-          }
-        }
-      ]
-    }
-  ];
-
-  const menu = Menu.buildFromTemplate(template);
-  Menu.setApplicationMenu(menu);
-}
-
 // App event handlers
 app.whenReady().then(() => {
   createWindow();
-  createMenu();
   startPythonBackend();
 
   app.on('activate', () => {
@@ -218,6 +116,29 @@ app.on('window-all-closed', () => {
 
 app.on('before-quit', () => {
   stopPythonBackend();
+});
+
+// IPC handlers for window controls
+ipcMain.on('minimize-window', () => {
+  if (mainWindow) mainWindow.minimize();
+});
+ipcMain.on('maximize-window', () => {
+  if (mainWindow) {
+    if (mainWindow.isMaximized()) {
+      mainWindow.unmaximize();
+    } else {
+      mainWindow.maximize();
+    }
+  }
+});
+ipcMain.on('close-window', () => {
+  if (mainWindow) mainWindow.close();
+});
+ipcMain.on('toggle-devtools', () => {
+  if (mainWindow) mainWindow.webContents.toggleDevTools();
+});
+ipcMain.on('toggle-fullscreen', () => {
+  if (mainWindow) mainWindow.setFullScreen(!mainWindow.isFullScreen());
 });
 
 // IPC handlers for communication between main and renderer processes
@@ -253,8 +174,4 @@ ipcMain.handle('select-save-directory', async () => {
   });
   
   return result.canceled ? null : result.filePaths[0];
-});
-
-ipcMain.on('minimize-window', () => {
-  if (mainWindow) mainWindow.minimize();
 }); 

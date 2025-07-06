@@ -11,7 +11,7 @@ const teamMembers = [
     email: "nickcarter.lacanglacang@cit.edu",
     privateEmail: "ng112403@gmail.com",
     phone: "09931672343",
-    avatar: "/team/nick.png",
+    avatar: `${import.meta.env.BASE_URL}/team/nick.png`,
     fallback: "https://api.dicebear.com/7.x/avataaars/svg?seed=Nick",
     neonColor: "from-red-600 to-orange-500",
     borderColor: "border-red-600"
@@ -20,7 +20,7 @@ const teamMembers = [
     name: "Louie James Carbungco",
     role: "UI/UX Designer & Frontend Developer",
     email: "louiejames.carbungco@cit.edu",
-    avatar: "/team/louie.png",
+    avatar: `${import.meta.env.BASE_URL}/team/louie.png`,
     fallback: "https://api.dicebear.com/7.x/avataaars/svg?seed=Louie",
     neonColor: "from-orange-600 to-yellow-500",
     borderColor: "border-orange-600"
@@ -30,7 +30,7 @@ const teamMembers = [
     role: "AI Research & Quality Assurance",
     email: "jierellejane.ravanes@cit.edu",
     privateEmail: "jrllejane@gmail.com",
-    avatar: "/team/jierelle.png",
+    avatar: `${import.meta.env.BASE_URL}/team/jierelle.png`,
     fallback: "https://api.dicebear.com/7.x/avataaars/svg?seed=Jierelle",
     neonColor: "from-yellow-600 to-green-500",
     borderColor: "border-yellow-500"
@@ -39,7 +39,7 @@ const teamMembers = [
     name: "Rigel Baltazar",
     role: "Project Leader & Initiator",
     email: "rigel.baltazar@cit.edu",
-    avatar: "/team/rigel.png",
+    avatar: `${import.meta.env.BASE_URL}/team/rigel.png`,
     fallback: "https://api.dicebear.com/7.x/avataaars/svg?seed=Rigel",
     neonColor: "from-green-600 to-blue-500",
     borderColor: "border-green-600"
@@ -48,7 +48,7 @@ const teamMembers = [
     name: "Yoshinori Kyono",
     role: "Backend & Cloud Integration Specialist",
     email: "yoshinori.kyono@cit.edu",
-    avatar: "/team/yoshinori.png",
+    avatar: `${import.meta.env.BASE_URL}/team/yoshinori.png`,
     fallback: "https://api.dicebear.com/7.x/avataaars/svg?seed=Yoshinori",
     neonColor: "from-blue-600 to-violet-500",
     borderColor: "border-blue-600"

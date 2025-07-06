@@ -20,6 +20,7 @@ import { authService } from "./services/api"
 import "./App.css"
 import { ThemeProvider } from "./components/ThemeContext"
 import Base from "./pages/Base"
+import CustomTitleBar from './components/CustomTitleBar'
 
 function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(false)
@@ -80,42 +81,49 @@ function App() {
   if (loading) return <div>Loading...</div>
 
   return (
-    <ThemeProvider>
-      <Router>
-        <div className="app">
-          <Toaster position="top-right" />
-          <Routes>
-            <Route
-              path="/"
-              element={
-                isAuthenticated ? <Navigate to="/dashboard" /> : <LandingPage setIsAuthenticated={setIsAuthenticated} />
-              }
-            />
-            <Route path="/login" element={<Navigate to="/?showAuth=true" replace />} />
-            <Route path="/register" element={<Navigate to="/?showAuth=true&tab=register" replace />} />
-            <Route path="/about" element={<AboutPage />} />
-            <Route path="/rrl" element={<RRLPage />} />
-            <Route path="/features" element={<FeaturesPage />} />
-            <Route path="/contact" element={<ContactPage />} />
-            <Route path="/privacy-policy" element={<PrivacyPolicy />} />
-            <Route path="/terms" element={<TermsOfService />} />
-            <Route path="/cookie-policy" element={<CookiePolicy />} />
-            <Route path="/dpa" element={<DPA />} />
-            <Route path="/" element={<Base isAuthenticated={isAuthenticated} setIsAuthenticated={setIsAuthenticated} />}>
-              <Route path="/dashboard" element={isAuthenticated ? <Dashboard /> : <Navigate to="/" />} />
-              <Route path="/video-processing" element={isAuthenticated ? <CreateHeatmap /> : <Navigate to="/" />} />
-              <Route
-                path="/view-heatmap"
-                element={isAuthenticated ? (
-                  <ViewHeatmap />
-                ) : <Navigate to="/" />}
-              />
-              <Route path="/user-management" element={isAuthenticated ? <UserManagement /> : <Navigate to="/" />} />
-            </Route>
-          </Routes>
-        </div>
-      </Router>
-    </ThemeProvider>
+    <div className="flex flex-col w-full h-full">
+      <div className="z-[100]">
+        <CustomTitleBar />
+      </div>
+      <div className="flex-1 flex flex-col">
+        <ThemeProvider>
+          <Router>
+            <div className="app">
+              <Toaster position="top-right" />
+              <Routes>
+                <Route
+                  path="/"
+                  element={
+                    isAuthenticated ? <Navigate to="/dashboard" /> : <LandingPage setIsAuthenticated={setIsAuthenticated} />
+                  }
+                />
+                <Route path="/login" element={<Navigate to="/?showAuth=true" replace />} />
+                <Route path="/register" element={<Navigate to="/?showAuth=true&tab=register" replace />} />
+                <Route path="/about" element={<AboutPage />} />
+                <Route path="/rrl" element={<RRLPage />} />
+                <Route path="/features" element={<FeaturesPage />} />
+                <Route path="/contact" element={<ContactPage />} />
+                <Route path="/privacy-policy" element={<PrivacyPolicy />} />
+                <Route path="/terms" element={<TermsOfService />} />
+                <Route path="/cookie-policy" element={<CookiePolicy />} />
+                <Route path="/dpa" element={<DPA />} />
+                <Route path="/" element={<Base isAuthenticated={isAuthenticated} setIsAuthenticated={setIsAuthenticated} />}>
+                  <Route path="/dashboard" element={isAuthenticated ? <Dashboard /> : <Navigate to="/" />} />
+                  <Route path="/video-processing" element={isAuthenticated ? <CreateHeatmap /> : <Navigate to="/" />} />
+                  <Route
+                    path="/view-heatmap"
+                    element={isAuthenticated ? (
+                      <ViewHeatmap />
+                    ) : <Navigate to="/" />}
+                  />
+                  <Route path="/user-management" element={isAuthenticated ? <UserManagement /> : <Navigate to="/" />} />
+                </Route>
+              </Routes>
+            </div>
+          </Router>
+        </ThemeProvider>
+      </div>
+    </div>
   )
 }
 

@@ -77,7 +77,7 @@ const SideMenu = ({ isAuthenticated, setIsAuthenticated }) => {
   }
 
   return (
-    <Sidebar className="bg-background dark:bg-gradient-to-b dark:from-slate-900 dark:via-slate-900 dark:to-slate-950 border-r border-border">
+    <Sidebar className="sticky top-10 z-40 bg-background dark:bg-gradient-to-b dark:from-slate-900 dark:via-slate-900 dark:to-slate-950 border-r border-border">
       <SidebarHeader className="border-b border-border">
         <div className="flex h-16 items-center px-4 my-2">
           <div className="flex items-center justify-center h-10 w-10 bg-transparent rounded-full p-1 shadow-lg shadow-primary/10">

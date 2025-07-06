@@ -41,7 +41,7 @@ const BaseContent = ({ isAuthenticated, setIsAuthenticated }) => {
 
   return (
     <SidebarProvider open={open} onOpenChange={setOpen}>
-      <div className="flex h-screen w-full overflow-hidden bg-background dark:bg-gradient-to-b dark:from-slate-950 dark:via-slate-950 dark:to-slate-900">
+      <div className="flex h-screen w-full overflow-hidden bg-background dark:bg-gradient-to-b dark:from-slate-950 dark:via-slate-950 dark:to-slate-900 pt-10">
         <SideMenu
           isAuthenticated={isAuthenticated}
           setIsAuthenticated={setIsAuthenticated}
@@ -70,7 +70,7 @@ const BaseContent = ({ isAuthenticated, setIsAuthenticated }) => {
           </header>
 
           {/* Content area with transparent background */}
-          <div className="flex-1 w-full h-full overflow-auto p-6 bg-background">
+          <div className="flex-1 w-full h-full overflow-auto p-6 bg-background scrollbar-hide">
             <div className="relative">
               {/* Background gradient effects */}
               <div className="absolute inset-0 overflow-hidden pointer-events-none">
