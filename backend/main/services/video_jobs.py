@@ -112,9 +112,9 @@ def process_video_job(job_id: str):
         cur = conn.cursor()
         cur.execute('''
             UPDATE jobs 
-            SET status = %s, message = %s, updated_at = CURRENT_TIMESTAMP, output_heatmap_path = %s
+            SET status = %s, message = %s, updated_at = CURRENT_TIMESTAMP, output_heatmap_path = %s, output_video_path = %s
             WHERE job_id = %s
-        ''', (job['status'], job['message'], output_heatmap_image_path, job_id))
+        ''', (job['status'], job['message'], output_heatmap_image_path, output_video_path, job_id))
         cur.close()
         conn.commit()
         conn.close()

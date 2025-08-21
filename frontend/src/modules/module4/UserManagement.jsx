@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { User, Mail, Calendar, Key, Eye, EyeOff, Video, Map, Clock, BarChart2, Edit2, Check, X, Trash2 } from "lucide-react";
 import { authService, heatmapService } from "../../services/api";
-import toast from "react-hot-toast";
+import { toast } from "sonner";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -33,6 +33,8 @@ const UserManagement = () => {
   });
   const [isEditingUsername, setIsEditingUsername] = useState(false);
   const [newUsername, setNewUsername] = useState("");
+  const [deletingJobId, setDeletingJobId] = useState(null);
+  const [deletingIndex, setDeletingIndex] = useState(null);
 
   useEffect(() => {
     fetchUserInfo();
@@ -53,6 +55,7 @@ const UserManagement = () => {
   const fetchUserActivity = async () => {
     try {
       const jobHistory = await heatmapService.getJobHistory();
+      console.log("Raw job history:", jobHistory);
       
       // Calculate statistics
       const totalVideos = jobHistory.filter(job => job.input_video_name).length;
@@ -61,12 +64,15 @@ const UserManagement = () => {
       
       // Get recent activities (last 5)
       const recentActivities = jobHistory.slice(0, 5).map(job => ({
+        job_id: job.job_id,
         type: job.input_video_name ? 'video' : 'heatmap',
         name: job.input_video_name || job.input_floorplan_name || 'Unknown',
         status: job.status,
         date: new Date(job.created_at),
         peopleCount: job.people_counted
       }));
+
+      console.log("Processed recent activities:", recentActivities);
 
       setActivityStats({
         totalVideos,
@@ -162,12 +168,45 @@ const UserManagement = () => {
     }
   };
 
-  // Delete activity from UI only
-  const handleDeleteActivity = (index) => {
-    setActivityStats((prev) => ({
-      ...prev,
-      recentActivities: prev.recentActivities.filter((_, i) => i !== index)
-    }));
+  // Delete activity from backend and UI
+  const handleDeleteActivity = async (jobId, index) => {
+    try {
+      const activity = activityStats.recentActivities[index];
+      console.log("[UserManagement] Delete clicked:", { index, jobId, activity });
+      
+      // Confirm deletion
+      if (!window.confirm(`Are you sure you want to delete this ${activity.type === 'video' ? 'video processing' : 'heatmap generation'} job? This action cannot be undone.`)) {
+        return;
+      }
+      
+      console.log("Starting delete for activity:", activity);
+      console.log("Job ID to delete:", jobId);
+      
+      setDeletingJobId(jobId);
+      setDeletingIndex(index);
+      
+      console.log("Calling heatmapService.deleteJob with:", jobId);
+      const result = await heatmapService.deleteJob(jobId);
+      console.log("Delete result:", result);
+      
+      toast.success("Job deleted successfully");
+      
+      // Remove from UI and refresh stats
+      setActivityStats((prev) => ({
+        ...prev,
+        recentActivities: prev.recentActivities.filter((_, i) => i !== index)
+      }));
+      
+      // Refresh the activity stats to get updated counts
+      fetchUserActivity();
+    } catch (error) {
+      console.error("Failed to delete job:", error);
+      console.error("Error details:", error.response || error);
+      toast.error(error.error || "Failed to delete job");
+    } finally {
+      setDeletingJobId(null);
+      setDeletingIndex(null);
+    }
   };
 
   if (isLoading) {
@@ -270,19 +309,21 @@ const UserManagement = () => {
                     )}
                     <span className={`inline-block mt-1 px-2 py-0.5 rounded text-xs ${activity.status === 'completed' ? 'bg-green-700/40 text-green-300' : activity.status === 'error' ? 'bg-red-700/40 text-red-300' : 'bg-yellow-700/40 text-yellow-300'}`}>{activity.status}</span>
                   </div>
-                  <svg
-                    xmlns="http://www.w3.org/2000/svg"
-                    className="h-5 w-5 text-red-500 cursor-pointer hover:scale-110 transition-transform"
-                    fill="none"
-                    viewBox="0 0 24 24"
-                    stroke="currentColor"
+                  <button
+                    type="button"
+                    className="h-8 w-8 inline-flex items-center justify-center rounded-md text-red-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/20"
                     title="Delete activity"
-                    tabIndex={0}
-                    onClick={() => handleDeleteActivity(index)}
-                    onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') handleDeleteActivity(index); }}
+                    onClick={(e) => { e.preventDefault(); e.stopPropagation(); console.log('[UserManagement] Delete icon clicked', { index, jobId: activity.job_id }); handleDeleteActivity(activity.job_id, index); }}
+                    disabled={deletingIndex === index}
+                    style={{ pointerEvents: 'auto' }}
+                    aria-label="Delete activity"
                   >
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3m5 0H6" />
-                  </svg>
+                    {deletingIndex === index ? (
+                      <div className="h-4 w-4 animate-spin rounded-full border-2 border-red-500 border-t-transparent" />
+                    ) : (
+                      <Trash2 className="h-4 w-4" />
+                    )}
+                  </button>
               </div>
             ))}
           </div>

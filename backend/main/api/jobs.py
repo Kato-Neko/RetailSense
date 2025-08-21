@@ -128,9 +128,9 @@ def create_heatmap_job():
         try:
             cur = conn.cursor()
             cur.execute('''
-                INSERT INTO jobs (job_id, "user", input_video_name, input_floorplan_name, status, message, start_datetime, end_datetime)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)''',
-                (job_id, current_user, video_filename, floorplan_filename, 'pending', 'Job submitted, awaiting processing.', start_datetime, end_datetime))
+                INSERT INTO jobs (job_id, "user", input_video_name, input_floorplan_name, status, message, start_datetime, end_datetime, created_at, updated_at, output_heatmap_path, output_video_path)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)''',
+                (job_id, current_user, video_filename, floorplan_filename, 'pending', 'Job submitted, awaiting processing.', start_datetime, end_datetime, datetime.datetime.now(), datetime.datetime.now(), '', ''))
             conn.commit()
             cur.close()
         except Exception:
@@ -225,15 +225,18 @@ def get_job_history():
 @jobs_bp.route('/api/heatmap_jobs/<job_id>', methods=['DELETE'])
 @jwt_required()
 def delete_heatmap_job(job_id):
+    current_user = get_jwt_identity()
+    from core.config import logger
+    logger.info(f"User {current_user} attempting to delete job {job_id}")
     try:
         conn = get_db_connection()
         cur = conn.cursor()
-        cur.execute("SELECT * FROM jobs WHERE job_id = %s", (job_id,))
+        cur.execute("SELECT * FROM jobs WHERE job_id = %s AND \"user\" = %s", (job_id, current_user))
         job_row = cur.fetchone()
         if not job_row:
             cur.close()
             conn.close()
-            return jsonify({"error": "Job not found"}), 404
+            return jsonify({"error": "Job not found or not authorized"}), 404
         cur.execute("DELETE FROM jobs WHERE job_id = %s", (job_id,))
         cur.close()
         conn.commit()
@@ -253,8 +256,10 @@ def delete_heatmap_job(job_id):
                     supabase.storage.from_(bucket).remove(file_path)
         except Exception:
             pass
+        logger.info(f"Successfully deleted job {job_id} for user {current_user}")
         return jsonify({"success": True, "message": "Heatmap job deleted."})
     except Exception as e:
+        logger.error(f"Failed to delete job {job_id} for user {current_user}: {str(e)}")
         return jsonify({"error": f"Server error: {str(e)}"}), 500
 
 
