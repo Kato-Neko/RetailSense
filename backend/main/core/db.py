@@ -1,13 +1,10 @@
 """
-job_manager.py
-Handles job queueing, status, and database management for the backend.
+Database connection utilities.
 """
 
 import os
 import psycopg2
-import logging
 
-logger = logging.getLogger(__name__)
 
 def get_db_connection():
     return psycopg2.connect(
@@ -18,4 +15,3 @@ def get_db_connection():
         port=os.getenv("SUPABASE_DB_PORT", 5432),
     )
 
-# Add more job/database utilities as needed 

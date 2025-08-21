@@ -1,0 +1,85 @@
+"""
+Supabase Storage helpers: upload and download JSON and images.
+"""
+
+import os
+import json
+import cv2
+import numpy as np
+from .config import supabase, logger
+
+
+def upload_to_supabase_and_remove_local(local_path, supabase_path, content_type):
+    try:
+        bucket = "projectresults"
+        with open(local_path, "rb") as f:
+            supabase.storage.from_(bucket).upload(supabase_path, f, {"content-type": content_type})
+        os.remove(local_path)
+        logger.info(f"Uploaded and removed local: {local_path} -> {bucket}/{supabase_path}")
+    except Exception as e:
+        logger.error(f"Failed to upload {local_path} to Supabase: {e}")
+        raise
+
+
+def upload_json_to_supabase(data, supabase_path):
+    bucket = "projectresults"
+    json_bytes = json.dumps(data).encode("utf-8")
+    supabase.storage.from_(bucket).upload(
+        supabase_path,
+        json_bytes,
+        {"content-type": "application/json"}
+    )
+    logger.info(f"Uploaded JSON to Supabase: {bucket}/{supabase_path}")
+
+
+def upload_image_to_supabase(image_np, supabase_path):
+    bucket = "projectresults"
+    success, img_encoded = cv2.imencode('.jpg', image_np)
+    if not success:
+        raise Exception("Failed to encode image to JPEG")
+    img_bytes = img_encoded.tobytes()
+    supabase.storage.from_(bucket).upload(
+        supabase_path,
+        img_bytes,
+        {"content-type": "image/jpg"}
+    )
+    logger.info(f"Uploaded image to Supabase: {bucket}/{supabase_path}")
+
+
+def download_json_from_supabase(supabase_path):
+    bucket = "projectresults"
+    try:
+        res = supabase.storage.from_(bucket).download(supabase_path)
+        if res is None:
+            return None
+        return json.loads(res.decode('utf-8'))
+    except Exception as e:
+        logger.warning(f"Failed to download JSON from Supabase at {bucket}/{supabase_path}: {e}")
+        return None
+
+
+def download_image_from_supabase(supabase_path):
+    bucket = "projectresults"
+    try:
+        res = supabase.storage.from_(bucket).download(supabase_path)
+        if res is None:
+            return None
+        file_bytes = np.frombuffer(res, np.uint8)
+        img = cv2.imdecode(file_bytes, cv2.IMREAD_COLOR)
+        return img
+    except Exception as e:
+        logger.warning(f"Failed to download image from Supabase at {bucket}/{supabase_path}: {e}")
+        return None
+
+
+def download_image_bytes_from_supabase(supabase_path):
+    bucket = "projectresults"
+    try:
+        res = supabase.storage.from_(bucket).download(supabase_path)
+        if res is None:
+            return None
+        return res
+    except Exception as e:
+        logger.warning(f"Failed to download image bytes from Supabase at {bucket}/{supabase_path}: {e}")
+        return None
+
