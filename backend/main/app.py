@@ -3,6 +3,7 @@ app.py
 Flask entry point for the backend, using refactored modules.
 """
 
+import os
 from flask import Flask
 from flask_cors import CORS
 from flask_jwt_extended import JWTManager
@@ -16,12 +17,13 @@ from core.config import logger
 from core.db import get_db_connection
 
 app = Flask(__name__)
-app.secret_key = b'supersecretkey'  # Replace with a secure key in production
-app.config['JWT_SECRET_KEY'] = 'superjwtsecretkey'  # Change this in production
+app.secret_key = os.getenv('FLASK_SECRET_KEY', 'supersecretkey')
+app.config['JWT_SECRET_KEY'] = os.getenv('JWT_SECRET_KEY', 'superjwtsecretkey')
 jwt = JWTManager(app)
 
 # Configure CORS properly
-CORS(app, resources={r"/api/*": {"origins": "*"}})
+allowed_origins = os.getenv('ALLOWED_ORIGINS', '*').split(',')
+CORS(app, resources={r"/api/*": {"origins": allowed_origins}})
 
 
 jobs = {}
@@ -117,4 +119,6 @@ def cleanup_orphaned_jobs():
 if __name__ == '__main__':
     # init_db()  # No longer needed, handled by Supabase
     cleanup_orphaned_jobs()  # Clean up jobs on startup
-    app.run(host='0.0.0.0', port=5000, debug=True)
+    debug_mode = os.getenv('FLASK_DEBUG', 'False').lower() == 'true'
+    port = int(os.getenv('PORT', 5000))
+    app.run(host='0.0.0.0', port=port, debug=debug_mode)

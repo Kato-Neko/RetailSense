@@ -14,7 +14,8 @@ from dateutil import parser
 load_dotenv()
 
 # Configure logging
-logging.basicConfig(level=logging.DEBUG)
+log_level = os.getenv('LOG_LEVEL', 'INFO').upper()
+logging.basicConfig(level=getattr(logging, log_level, logging.INFO))
 logger = logging.getLogger(__name__)
 
 # Supabase client

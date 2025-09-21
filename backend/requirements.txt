@@ -1,6 +1,7 @@
 flask>=2.3.0
 flask-cors>=4.0.0
 werkzeug>=3.0.0
+gunicorn>=21.0.0
 opencv-python>=4.8.0
 numpy>=1.26.0
 scipy>=1.11.0
