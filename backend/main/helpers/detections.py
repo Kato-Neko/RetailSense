@@ -1,5 +1,5 @@
-from core.config import logger
-from core.storage import download_json_from_supabase
+from ..core.config import logger
+from ..core.storage import download_json_from_supabase
 
 
 def load_detections(job_id: str):

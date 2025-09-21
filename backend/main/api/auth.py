@@ -7,9 +7,9 @@ from datetime import datetime, timedelta
 from flask import Blueprint, request, jsonify
 from flask_jwt_extended import create_access_token, jwt_required, get_jwt_identity
 
-from core.config import supabase
-from core.security import hash_password
-from services.notifications import send_otp_email_gmail
+from ..core.config import supabase
+from ..core.security import hash_password
+from ..services.notifications import send_otp_email_gmail
 import pytz
 
 auth_bp = Blueprint('auth', __name__)

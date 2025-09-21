@@ -9,12 +9,12 @@ from flask_cors import CORS
 from flask_jwt_extended import JWTManager
 
 # Import from backend files
-from api.auth import auth_bp 
-from services import attach_jobs_store
-from api.heatmap import heatmap_bp
-from api.jobs import jobs_bp
-from core.config import logger
-from core.db import get_db_connection
+from .api.auth import auth_bp 
+from .services import attach_jobs_store
+from .api.heatmap import heatmap_bp
+from .api.jobs import jobs_bp
+from .core.config import logger
+from .core.db import get_db_connection
 
 app = Flask(__name__)
 app.secret_key = os.getenv('FLASK_SECRET_KEY', 'supersecretkey')

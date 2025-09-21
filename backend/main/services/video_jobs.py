@@ -3,10 +3,10 @@ import json
 import cv2
 from typing import Callable, Dict, Any
 
-from core.config import logger, UPLOAD_FOLDER, RESULTS_FOLDER
-from core.db import get_db_connection
-from core.storage import upload_json_to_supabase, upload_image_to_supabase
-from helpers.files import validate_video_file
+from ..core.config import logger, UPLOAD_FOLDER, RESULTS_FOLDER
+from ..core.db import get_db_connection
+from ..core.storage import upload_json_to_supabase, upload_image_to_supabase
+from ..helpers.files import validate_video_file
 from .tracking import detect_and_track
 from .heatmap_processing import blend_heatmap
 from .state import get_jobs_store
