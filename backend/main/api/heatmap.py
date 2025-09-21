@@ -8,9 +8,10 @@ import cv2
 from ..core.config import RESULTS_FOLDER, UPLOAD_FOLDER
 from ..core.db import get_db_connection
 from ..core.storage import download_image_from_supabase, download_image_bytes_from_supabase
-from ..helpers import load_detections
+from ..helpers.detections import load_detections
 from ..helpers.analysis import analyze_heatmap
-from ..services import run_custom_heatmap_job, get_custom_progress, set_custom_progress
+from ..services.video_jobs import run_custom_heatmap_job
+from ..services.state import get_custom_progress, set_custom_progress
 
 heatmap_bp = Blueprint('heatmap', __name__)
 

@@ -8,8 +8,9 @@ import cv2
 
 from ..core.config import UPLOAD_FOLDER, RESULTS_FOLDER, ALLOWED_EXTENSIONS_VIDEO, to_manila_iso
 from ..core.db import get_db_connection
-from ..services import process_video_job, get_jobs_store
-from ..helpers import allowed_file
+from ..services.video_jobs import process_video_job
+from ..services.state import get_jobs_store
+from ..helpers.files import allowed_file
 from werkzeug.utils import secure_filename
 
 jobs_bp = Blueprint('jobs', __name__)
