@@ -11,12 +11,14 @@ const apiClient = axios.create({
 apiClient.interceptors.response.use(
   (response) => response,
   (error) => {
-    if (error.response && error.response.status === 401) {
-      localStorage.removeItem('access_token'); // Clear the token
-      // Optionally redirect to login
-      window.location.href = '/'; // Adjust based on your routing
+    if (error?.response?.status === 401) {
+      localStorage.removeItem('access_token');
+      window.location.href = '/';
     }
-    return Promise.reject(error.response.data);
+    const payload = error && error.response
+      ? error.response.data
+      : { error: (error && (error.message || error.toString())) || 'Network error' };
+    return Promise.reject(payload);
   }
 );
 
