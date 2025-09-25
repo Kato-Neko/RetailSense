@@ -22,8 +22,19 @@ app.config['JWT_SECRET_KEY'] = os.getenv('JWT_SECRET_KEY', 'superjwtsecretkey')
 jwt = JWTManager(app)
 
 # Configure CORS properly
-allowed_origins = os.getenv('ALLOWED_ORIGINS', '*').split(',')
-CORS(app, resources={r"/api/*": {"origins": allowed_origins}})
+allowed_origins = [o.strip() for o in os.getenv('ALLOWED_ORIGINS', '*').split(',')]
+CORS(
+    app,
+    resources={
+        r"/api/*": {
+            "origins": allowed_origins,
+            "supports_credentials": True,
+            "allow_headers": ["Content-Type", "Authorization"],
+            "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+            "expose_headers": ["Content-Type", "Authorization"]
+        }
+    }
+)
 
 
 jobs = {}
