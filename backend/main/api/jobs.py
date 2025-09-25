@@ -93,7 +93,7 @@ def create_heatmap_job():
 
         start_datetime = datetime.datetime.strptime(f"{start_date} {start_time}", "%Y-%m-%d %H:%M:%S")
         end_datetime = datetime.datetime.strptime(f"{end_date} {end_time}", "%Y-%m-%d %H:%M:%S")
-        from helpers import get_video_duration
+        from ..helpers.files import get_video_duration
         video_duration = get_video_duration(input_video_path)
         if (end_datetime - start_datetime).total_seconds() > video_duration:
             return jsonify({"error": "Time range exceeds video duration"}), 400
