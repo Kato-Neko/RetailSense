@@ -1,0 +1,8 @@
+[build]
+builder = "nixpacks"
+
+[deploy]
+restartPolicyType = "never"
+
+[variables]
+NIXPACKS_APT_PKGS = "dnsutils"
