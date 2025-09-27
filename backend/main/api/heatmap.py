@@ -16,7 +16,7 @@ from ..services.state import get_custom_progress, set_custom_progress
 heatmap_bp = Blueprint('heatmap', __name__)
 
 
-@heatmap_bp.route('/api/heatmap_jobs/<job_id>/preview/detections', methods=['GET'])
+@heatmap_bp.route('/heatmap_jobs/<job_id>/preview/detections', methods=['GET'])
 def get_detection_preview(job_id):
     job_folder = os.path.join(RESULTS_FOLDER, job_id)
     preview_path = os.path.join(job_folder, 'preview_detections.jpg')
@@ -25,7 +25,7 @@ def get_detection_preview(job_id):
     return send_from_directory(job_folder, 'preview_detections.jpg')
 
 
-@heatmap_bp.route('/api/heatmap_jobs/<job_id>/preview/heatmap', methods=['GET'])
+@heatmap_bp.route('/heatmap_jobs/<job_id>/preview/heatmap', methods=['GET'])
 def get_heatmap_preview(job_id):
     job_folder = os.path.join(RESULTS_FOLDER, job_id)
     preview_path = os.path.join(job_folder, 'preview_heatmap.jpg')
@@ -34,7 +34,7 @@ def get_heatmap_preview(job_id):
     return send_from_directory(job_folder, 'preview_heatmap.jpg')
 
 
-@heatmap_bp.route('/api/heatmap_jobs/<job_id>/detections', methods=['POST'])
+@heatmap_bp.route('/heatmap_jobs/<job_id>/detections', methods=['POST'])
 def receive_live_detections(job_id):
     from services import get_jobs_store
     jobs = get_jobs_store()
@@ -51,7 +51,7 @@ def receive_live_detections(job_id):
         return jsonify({'error': str(e)}), 400
 
 
-@heatmap_bp.route('/api/heatmap_jobs/<job_id>/detections', methods=['GET'])
+@heatmap_bp.route('/heatmap_jobs/<job_id>/detections', methods=['GET'])
 @jwt_required()
 def get_detections_from_json(job_id):
     detections, fps = load_detections(job_id)
@@ -60,7 +60,7 @@ def get_detections_from_json(job_id):
     return jsonify({"detections": detections, "fps": fps}), 200
 
 
-@heatmap_bp.route('/api/heatmap_jobs/<job_id>/result/image', methods=['GET'])
+@heatmap_bp.route('/heatmap_jobs/<job_id>/result/image', methods=['GET'])
 def get_heatmap_image(job_id):
     supabase_path = f"{job_id}/video_heatmap.jpg"
     img_bytes = download_image_bytes_from_supabase(supabase_path)
@@ -69,7 +69,7 @@ def get_heatmap_image(job_id):
     return Response(img_bytes, mimetype="image/jpeg")
 
 
-@heatmap_bp.route('/api/heatmap_jobs/<job_id>/export/csv', methods=['GET'])
+@heatmap_bp.route('/heatmap_jobs/<job_id>/export/csv', methods=['GET'])
 @jwt_required()
 def export_heatmap_csv(job_id):
     try:
@@ -163,7 +163,7 @@ def export_heatmap_csv(job_id):
         return jsonify({"error": f"Error generating CSV export: {str(e)}"}), 500
 
 
-@heatmap_bp.route('/api/heatmap_jobs/<job_id>/export/pdf', methods=['GET'])
+@heatmap_bp.route('/heatmap_jobs/<job_id>/export/pdf', methods=['GET'])
 def export_heatmap_pdf(job_id):
     try:
         start_datetime = request.args.get('start_datetime', 'Full video duration')
@@ -254,7 +254,7 @@ def export_heatmap_pdf(job_id):
         return jsonify({'error': str(e)}), 500
 
 
-@heatmap_bp.route('/api/heatmap_jobs/<job_id>/custom_heatmap', methods=['POST'])
+@heatmap_bp.route('/heatmap_jobs/<job_id>/custom_heatmap', methods=['POST'])
 @jwt_required()
 def generate_custom_heatmap(job_id):
     try:
@@ -271,7 +271,7 @@ def generate_custom_heatmap(job_id):
         return jsonify({"error": str(e)}), 500
 
 
-@heatmap_bp.route('/api/heatmap_jobs/<job_id>/custom_heatmap_image')
+@heatmap_bp.route('/heatmap_jobs/<job_id>/custom_heatmap_image')
 def get_custom_heatmap_image(job_id):
     start = request.args.get('start')
     end = request.args.get('end')
@@ -282,13 +282,13 @@ def get_custom_heatmap_image(job_id):
     return Response(img_bytes, mimetype="image/jpeg")
 
 
-@heatmap_bp.route('/api/heatmap_jobs/<job_id>/custom_heatmap_progress')
+@heatmap_bp.route('/heatmap_jobs/<job_id>/custom_heatmap_progress')
 def get_custom_heatmap_progress(job_id):
     progress = get_custom_progress(job_id)
     return jsonify({"progress": progress})
 
 
-@heatmap_bp.route('/api/heatmap_jobs/<job_id>/analysis', methods=['GET'])
+@heatmap_bp.route('/heatmap_jobs/<job_id>/analysis', methods=['GET'])
 @jwt_required()
 def get_heatmap_analysis(job_id):
     conn = get_db_connection()

@@ -246,12 +246,3 @@ def verify_otp_only():
     if now_naive > expires_at_naive:
         return jsonify({'error': 'OTP has expired.'}), 400
     return jsonify({'success': True}), 200
-
-@auth_bp.route('/test-dns', methods=['GET'])
-def test_dns():
-    import socket
-    try:
-        result = socket.gethostbyname('ewgcosxkomcudboffux.supabase.co')
-        return jsonify({"dns_result": result})
-    except Exception as e:
-        return jsonify({"dns_error": str(e)})

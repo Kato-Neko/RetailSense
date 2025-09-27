@@ -16,7 +16,7 @@ from werkzeug.utils import secure_filename
 jobs_bp = Blueprint('jobs', __name__)
 
 
-@jobs_bp.route('/api/heatmap_jobs', methods=['POST'])
+@jobs_bp.route('/heatmap_jobs', methods=['POST'])
 @jwt_required()
 def create_heatmap_job():
     try:
@@ -149,7 +149,7 @@ def create_heatmap_job():
         return jsonify({"error": f"Server error: {str(e)}"}), 500
 
 
-@jobs_bp.route('/api/heatmap_jobs/<job_id>/status', methods=['GET'])
+@jobs_bp.route('/heatmap_jobs/<job_id>/status', methods=['GET'])
 def get_job_status(job_id):
     jobs = get_jobs_store()
     job = jobs.get(job_id)
@@ -168,7 +168,7 @@ def get_job_status(job_id):
             return jsonify({"error": "Job not found or not authorized"}), 404
 
 
-@jobs_bp.route('/api/heatmap_jobs/<job_id>/result/video', methods=['GET'])
+@jobs_bp.route('/heatmap_jobs/<job_id>/result/video', methods=['GET'])
 def get_processed_video(job_id):
     conn = get_db_connection()
     cur = conn.cursor()
@@ -185,7 +185,7 @@ def get_processed_video(job_id):
     return send_from_directory(os.path.dirname(output_video_path), os.path.basename(output_video_path), as_attachment=True)
 
 
-@jobs_bp.route('/api/heatmap_jobs/history', methods=['GET'])
+@jobs_bp.route('/heatmap_jobs/history', methods=['GET'])
 @jwt_required()
 def get_job_history():
     current_user = get_jwt_identity()
@@ -223,7 +223,7 @@ def get_job_history():
     return jsonify(history_jobs)
 
 
-@jobs_bp.route('/api/heatmap_jobs/<job_id>', methods=['DELETE'])
+@jobs_bp.route('/heatmap_jobs/<job_id>', methods=['DELETE'])
 @jwt_required()
 def delete_heatmap_job(job_id):
     current_user = get_jwt_identity()
@@ -264,7 +264,7 @@ def delete_heatmap_job(job_id):
         return jsonify({"error": f"Server error: {str(e)}"}), 500
 
 
-@jobs_bp.route('/api/heatmap_jobs/<job_id>/cancel', methods=['POST'])
+@jobs_bp.route('/heatmap_jobs/<job_id>/cancel', methods=['POST'])
 @jwt_required()
 def cancel_heatmap_job(job_id):
     current_user = get_jwt_identity()
@@ -298,7 +298,7 @@ def cancel_heatmap_job(job_id):
     return jsonify({"success": True, "message": "Job cancelled in DB."})
 
 
-@jobs_bp.route('/api/heatmap_jobs/<job_id>/points', methods=['GET'])
+@jobs_bp.route('/heatmap_jobs/<job_id>/points', methods=['GET'])
 @jwt_required()
 def get_job_points(job_id):
     job_upload_folder = os.path.join(UPLOAD_FOLDER, job_id)
@@ -315,7 +315,7 @@ def get_job_points(job_id):
         return jsonify({"error": f"Failed to read points file: {str(e)}"}), 500
 
 
-@jobs_bp.route('/api/heatmap_jobs/<job_id>/time_range', methods=['GET'])
+@jobs_bp.route('/heatmap_jobs/<job_id>/time_range', methods=['GET'])
 @jwt_required()
 def get_job_time_range(job_id):
     conn = get_db_connection()
