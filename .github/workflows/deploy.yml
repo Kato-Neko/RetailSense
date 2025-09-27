@@ -1,0 +1,45 @@
+name: Deploy to Railway
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'backend/**'
+      - '.github/workflows/deploy.yml'
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: production
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Install Railway CLI
+      run: npm install -g @railway/cli
+    
+    - name: Login to Railway
+      run: railway login --token ${{ secrets.RAILWAY_TOKEN }}
+    
+    - name: Deploy to Railway
+      run: |
+        cd backend
+        railway up --detach
+      env:
+        # Pass all your environment variables to Railway
+        DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        SUPABASE_URL: ${{ vars.SUPABASE_URL }}
+        SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+        JWT_SECRET_KEY: ${{ secrets.JWT_SECRET_KEY }}
+        FLASK_SECRET_KEY: ${{ secrets.FLASK_SECRET_KEY }}
+        ALLOWED_ORIGINS: ${{ vars.ALLOWED_ORIGINS }}
+        FLASK_DEBUG: ${{ vars.FLASK_DEBUG }}
+        LOG_LEVEL: ${{ vars.LOG_LEVEL }}
+        GMAIL_USER: ${{ vars.GMAIL_USER }}
+        GMAIL_PASS: ${{ secrets.GMAIL_PASS }}
+        SUPABASE_DB_HOST: ${{ vars.SUPABASE_DB_HOST }}
+        SUPABASE_DB_NAME: ${{ vars.SUPABASE_DB_NAME }}
+        SUPABASE_DB_PORT: ${{ vars.SUPABASE_DB_PORT }}
+        SUPABASE_DB_USER: ${{ vars.SUPABASE_DB_USER }}
+        SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
