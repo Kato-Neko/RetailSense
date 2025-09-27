@@ -24,21 +24,24 @@ jobs:
     
     - name: Set Railway Environment Variables
       run: |
-        railway variables set SUPABASE_URL="${{ vars.SUPABASE_URL }}"
-        railway variables set SUPABASE_KEY="${{ secrets.SUPABASE_KEY }}"
-        railway variables set JWT_SECRET_KEY="${{ secrets.JWT_SECRET_KEY }}"
+        # Secrets (sensitive data)
         railway variables set FLASK_SECRET_KEY="${{ secrets.FLASK_SECRET_KEY }}"
-        railway variables set DATABASE_URL="${{ secrets.DATABASE_URL }}"
-        railway variables set ALLOWED_ORIGINS="${{ vars.ALLOWED_ORIGINS }}"
-        railway variables set FLASK_DEBUG="${{ vars.FLASK_DEBUG }}"
-        railway variables set LOG_LEVEL="${{ vars.LOG_LEVEL }}"
-        railway variables set GMAIL_USER="${{ vars.GMAIL_USER }}"
         railway variables set GMAIL_PASS="${{ secrets.GMAIL_PASS }}"
+        railway variables set JWT_SECRET_KEY="${{ secrets.JWT_SECRET_KEY }}"
+        railway variables set SUPABASE_KEY="${{ secrets.SUPABASE_KEY }}"
+        railway variables set SUPABASE_DB_PASSWORD="${{ secrets.SUPABASE_DB_PASSWORD }}"
+        
+        # Environment variables (non-sensitive config)
+        railway variables set ALLOWED_ORIGINS="${{ vars.ALLOWED_ORIGINS }}"
+        railway variables set DATABASE_URL="${{ vars.DATABASE_URL }}"
+        railway variables set FLASK_DEBUG="${{ vars.FLASK_DEBUG }}"
+        railway variables set GMAIL_USER="${{ vars.GMAIL_USER }}"
+        railway variables set LOG_LEVEL="${{ vars.LOG_LEVEL }}"
         railway variables set SUPABASE_DB_HOST="${{ vars.SUPABASE_DB_HOST }}"
         railway variables set SUPABASE_DB_NAME="${{ vars.SUPABASE_DB_NAME }}"
         railway variables set SUPABASE_DB_PORT="${{ vars.SUPABASE_DB_PORT }}"
         railway variables set SUPABASE_DB_USER="${{ vars.SUPABASE_DB_USER }}"
-        railway variables set SUPABASE_DB_PASSWORD="${{ secrets.SUPABASE_DB_PASSWORD }}"
+        railway variables set SUPABASE_URL="${{ vars.SUPABASE_URL }}"
     
     - name: Deploy to Railway
       run: railway up --detach
