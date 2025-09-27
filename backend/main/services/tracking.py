@@ -56,8 +56,8 @@ def detect_and_track(
         fps = int(cap.get(cv2.CAP_PROP_FPS))
         total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
 
-        # Optimize: Resize frames for faster processing (max 640px width)
-        max_width = 640
+        # Optimize: Resize frames for faster processing (max 480px width - even more aggressive)
+        max_width = 480
         if original_width > max_width:
             scale_factor = max_width / original_width
             width = max_width
@@ -74,7 +74,7 @@ def detect_and_track(
 
         detections_for_heatmap: List[Dict[str, Any]] = []
         frame_count = 0
-        frame_skip = 2  # Process every 2nd frame for speed
+        frame_skip = 5  # Process every 5th frame for much faster processing
         
         while cap.isOpened():
             if cancelled_flag is not None and cancelled_flag():
@@ -83,20 +83,28 @@ def detect_and_track(
             if not ret:
                 break
                 
-            # Skip frames for faster processing
+            # Skip frames for much faster processing
             if frame_count % frame_skip != 0:
                 frame_count += 1
                 continue
                 
             timestamp = frame_count / fps
 
-            # Resize frame for faster processing
+            # Resize frame for faster processing (even more aggressive)
             if scale_factor != 1.0:
                 frame = cv2.resize(frame, (width, height))
 
-            # Memory check before processing
-            if frame_count % 30 == 0:  # Check every 30 frames
-                cleanup_memory_if_needed(75.0)  # Clean up at 75% memory usage
+            # Aggressive memory management - check every 10 frames
+            if frame_count % 10 == 0:
+                cleanup_memory_if_needed(60.0)  # Clean up at 60% memory usage
+                log_memory_usage(f"frame {frame_count}")
+                
+                # Pause if memory is still too high
+                import psutil
+                if psutil.virtual_memory().percent > 80:
+                    import time
+                    logger.warning(f"Memory usage high ({psutil.virtual_memory().percent:.1f}%), pausing for cleanup...")
+                    time.sleep(0.5)  # Pause for half a second
 
             results = model(frame, classes=[0], verbose=False)  # class 0 is person, disable verbose
 
@@ -144,6 +152,11 @@ def detect_and_track(
                 center_x = int((x1 + x2) / 2)
                 center_y = int((y1 + y2) / 2)
                 cv2.circle(frame, (center_x, center_y), 4, (255, 255, 255), -1)
+
+            # Force cleanup after each processed frame
+            del frame
+            import gc
+            gc.collect()
 
             out.write(frame)
             if preview_folder and frame_count % 10 == 0:
