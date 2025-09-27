@@ -40,4 +40,4 @@ COPY *.py ./
 ENV PYTHONPATH=/app
 
 EXPOSE 8000
-CMD ["python", "-m", "main.app"]
+CMD ["gunicorn", "--bind", "0.0.0.0:8000", "--workers", "2", "--threads", "4", "--timeout", "300", "main.app:app"]
