@@ -47,19 +47,3 @@ jobs:
         SUPABASE_DB_PORT: ${{ vars.SUPABASE_DB_PORT }}
         SUPABASE_DB_USER: ${{ vars.SUPABASE_DB_USER }}
         SUPABASE_URL: ${{ vars.SUPABASE_URL }}
-        # Pass all environment variables directly
-        FLASK_SECRET_KEY: ${{ secrets.FLASK_SECRET_KEY }}
-        GMAIL_PASS: ${{ secrets.GMAIL_PASS }}
-        JWT_SECRET_KEY: ${{ secrets.JWT_SECRET_KEY }}
-        SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
-        SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
-        ALLOWED_ORIGINS: ${{ vars.ALLOWED_ORIGINS }}
-        DATABASE_URL: ${{ vars.DATABASE_URL }}
-        FLASK_DEBUG: ${{ vars.FLASK_DEBUG }}
-        GMAIL_USER: ${{ vars.GMAIL_USER }}
-        LOG_LEVEL: ${{ vars.LOG_LEVEL }}
-        SUPABASE_DB_HOST: ${{ vars.SUPABASE_DB_HOST }}
-        SUPABASE_DB_NAME: ${{ vars.SUPABASE_DB_NAME }}
-        SUPABASE_DB_PORT: ${{ vars.SUPABASE_DB_PORT }}
-        SUPABASE_DB_USER: ${{ vars.SUPABASE_DB_USER }}
-        SUPABASE_URL: ${{ vars.SUPABASE_URL }}
