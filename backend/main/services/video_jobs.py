@@ -53,9 +53,9 @@ def process_video_job(job_id: str):
             job['message'] = 'Starting video processing...'
             job['cancelled'] = job.get('cancelled', False)
 
-                # Check memory before starting
-                log_memory_usage("before video processing")
-                cleanup_memory_if_needed(50.0)  # Clean up at 50% memory usage
+            # Check memory before starting
+            log_memory_usage("before video processing")
+            cleanup_memory_if_needed(50.0)  # Clean up at 50% memory usage
 
             video_path = job['input_files']['video']
             floorplan_path = job['input_files']['floorplan']
@@ -68,10 +68,10 @@ def process_video_job(job_id: str):
             duration = total_frames / fps if fps > 0 else 0
             cap.release()
 
-                # Check video duration and reject if too long (reduced for memory constraints)
-                max_duration_minutes = 5  # 5 minutes max for Railway memory limits
-                if duration > max_duration_minutes * 60:
-                    raise Exception(f"Video too long ({duration/60:.1f} minutes). Maximum allowed: {max_duration_minutes} minutes.")
+            # Check video duration and reject if too long (reduced for memory constraints)
+            max_duration_minutes = 5  # 5 minutes max for Railway memory limits
+            if duration > max_duration_minutes * 60:
+                raise Exception(f"Video too long ({duration/60:.1f} minutes). Maximum allowed: {max_duration_minutes} minutes.")
             
             logger.info(f"Processing video: {total_frames} frames, {duration:.1f}s, {fps} fps")
 
