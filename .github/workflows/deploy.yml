@@ -22,22 +22,23 @@ jobs:
     - name: Login to Railway
       run: railway login --token ${{ secrets.RAILWAY_TOKEN }}
     
+    - name: Set Railway Environment Variables
+      run: |
+        railway variables set SUPABASE_URL="${{ vars.SUPABASE_URL }}"
+        railway variables set SUPABASE_KEY="${{ secrets.SUPABASE_KEY }}"
+        railway variables set JWT_SECRET_KEY="${{ secrets.JWT_SECRET_KEY }}"
+        railway variables set FLASK_SECRET_KEY="${{ secrets.FLASK_SECRET_KEY }}"
+        railway variables set DATABASE_URL="${{ secrets.DATABASE_URL }}"
+        railway variables set ALLOWED_ORIGINS="${{ vars.ALLOWED_ORIGINS }}"
+        railway variables set FLASK_DEBUG="${{ vars.FLASK_DEBUG }}"
+        railway variables set LOG_LEVEL="${{ vars.LOG_LEVEL }}"
+        railway variables set GMAIL_USER="${{ vars.GMAIL_USER }}"
+        railway variables set GMAIL_PASS="${{ secrets.GMAIL_PASS }}"
+        railway variables set SUPABASE_DB_HOST="${{ vars.SUPABASE_DB_HOST }}"
+        railway variables set SUPABASE_DB_NAME="${{ vars.SUPABASE_DB_NAME }}"
+        railway variables set SUPABASE_DB_PORT="${{ vars.SUPABASE_DB_PORT }}"
+        railway variables set SUPABASE_DB_USER="${{ vars.SUPABASE_DB_USER }}"
+        railway variables set SUPABASE_DB_PASSWORD="${{ secrets.SUPABASE_DB_PASSWORD }}"
+    
     - name: Deploy to Railway
       run: railway up --detach
-      env:
-        # Pass all your environment variables to Railway
-        DATABASE_URL: ${{ secrets.DATABASE_URL }}
-        SUPABASE_URL: ${{ vars.SUPABASE_URL }}
-        SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
-        JWT_SECRET_KEY: ${{ secrets.JWT_SECRET_KEY }}
-        FLASK_SECRET_KEY: ${{ secrets.FLASK_SECRET_KEY }}
-        ALLOWED_ORIGINS: ${{ vars.ALLOWED_ORIGINS }}
-        FLASK_DEBUG: ${{ vars.FLASK_DEBUG }}
-        LOG_LEVEL: ${{ vars.LOG_LEVEL }}
-        GMAIL_USER: ${{ vars.GMAIL_USER }}
-        GMAIL_PASS: ${{ secrets.GMAIL_PASS }}
-        SUPABASE_DB_HOST: ${{ vars.SUPABASE_DB_HOST }}
-        SUPABASE_DB_NAME: ${{ vars.SUPABASE_DB_NAME }}
-        SUPABASE_DB_PORT: ${{ vars.SUPABASE_DB_PORT }}
-        SUPABASE_DB_USER: ${{ vars.SUPABASE_DB_USER }}
-        SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
