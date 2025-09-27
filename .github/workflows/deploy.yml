@@ -16,33 +16,25 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
     
-    - name: Install Railway CLI
-      run: npm install -g @railway/cli
-    
-    - name: Set Railway Environment Variables
-      run: |
-        # Secrets (sensitive data)
-        railway variables set FLASK_SECRET_KEY="${{ secrets.FLASK_SECRET_KEY }}"
-        railway variables set GMAIL_PASS="${{ secrets.GMAIL_PASS }}"
-        railway variables set JWT_SECRET_KEY="${{ secrets.JWT_SECRET_KEY }}"
-        railway variables set SUPABASE_KEY="${{ secrets.SUPABASE_KEY }}"
-        railway variables set SUPABASE_DB_PASSWORD="${{ secrets.SUPABASE_DB_PASSWORD }}"
-        
-        # Environment variables (non-sensitive config)
-        railway variables set ALLOWED_ORIGINS="${{ vars.ALLOWED_ORIGINS }}"
-        railway variables set DATABASE_URL="${{ vars.DATABASE_URL }}"
-        railway variables set FLASK_DEBUG="${{ vars.FLASK_DEBUG }}"
-        railway variables set GMAIL_USER="${{ vars.GMAIL_USER }}"
-        railway variables set LOG_LEVEL="${{ vars.LOG_LEVEL }}"
-        railway variables set SUPABASE_DB_HOST="${{ vars.SUPABASE_DB_HOST }}"
-        railway variables set SUPABASE_DB_NAME="${{ vars.SUPABASE_DB_NAME }}"
-        railway variables set SUPABASE_DB_PORT="${{ vars.SUPABASE_DB_PORT }}"
-        railway variables set SUPABASE_DB_USER="${{ vars.SUPABASE_DB_USER }}"
-        railway variables set SUPABASE_URL="${{ vars.SUPABASE_URL }}"
-      env:
-        RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
-    
     - name: Deploy to Railway
-      run: railway up --detach
+      uses: railway/cli@v3
+      with:
+        command: up --detach
       env:
         RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+        # Pass all environment variables directly
+        FLASK_SECRET_KEY: ${{ secrets.FLASK_SECRET_KEY }}
+        GMAIL_PASS: ${{ secrets.GMAIL_PASS }}
+        JWT_SECRET_KEY: ${{ secrets.JWT_SECRET_KEY }}
+        SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+        SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+        ALLOWED_ORIGINS: ${{ vars.ALLOWED_ORIGINS }}
+        DATABASE_URL: ${{ vars.DATABASE_URL }}
+        FLASK_DEBUG: ${{ vars.FLASK_DEBUG }}
+        GMAIL_USER: ${{ vars.GMAIL_USER }}
+        LOG_LEVEL: ${{ vars.LOG_LEVEL }}
+        SUPABASE_DB_HOST: ${{ vars.SUPABASE_DB_HOST }}
+        SUPABASE_DB_NAME: ${{ vars.SUPABASE_DB_NAME }}
+        SUPABASE_DB_PORT: ${{ vars.SUPABASE_DB_PORT }}
+        SUPABASE_DB_USER: ${{ vars.SUPABASE_DB_USER }}
+        SUPABASE_URL: ${{ vars.SUPABASE_URL }}
