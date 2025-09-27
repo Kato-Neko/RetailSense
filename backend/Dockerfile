@@ -39,5 +39,5 @@ COPY *.py ./
 # Set PYTHONPATH for proper imports
 ENV PYTHONPATH=/app
 
-EXPOSE 8000
-CMD ["gunicorn", "--bind", "0.0.0.0:8000", "--workers", "2", "--threads", "4", "--timeout", "300", "main.app:app"]
+EXPOSE $PORT
+CMD ["sh", "-c", "gunicorn --bind 0.0.0.0:${PORT:-8000} --workers 2 --threads 4 --timeout 300 main.app:app"]
