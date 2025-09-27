@@ -4,7 +4,7 @@ Flask entry point for the backend, using refactored modules.
 """
 
 import os
-from flask import Flask
+from flask import Flask, jsonify
 from flask_cors import CORS
 from flask_jwt_extended import JWTManager
 
@@ -27,14 +27,14 @@ CORS(
     app,
     resources={
         r"/api/*": {
-            "origins": ["https://retailsense.vercel.app"],
+            "origins": allowed_origins,
             "supports_credentials": True,
             "allow_headers": ["Content-Type", "Authorization"],
             "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
             "expose_headers": ["Content-Type", "Authorization"]
         },
         r"/*": {  # Add this to catch any routes not under /api
-            "origins": ["https://retailsense.vercel.app"],
+            "origins": allowed_origins,
             "supports_credentials": True,
             "allow_headers": ["Content-Type", "Authorization"],
             "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
@@ -52,6 +52,11 @@ attach_jobs_store(jobs)
 app.register_blueprint(auth_bp)
 app.register_blueprint(heatmap_bp) 
 app.register_blueprint(jobs_bp)
+
+# Add a simple test route to verify routing is working
+@app.route('/api/test')
+def test_route():
+    return jsonify({"message": "API routing is working"})
 
 ## no in-memory progress kept here; services.state manages progress
 
