@@ -27,7 +27,7 @@ CORS(
     app,
     resources={
         r"/api/*": {
-            "origins": allowed_origins,
+            "origins": ["https://retailsense.vercel.app", "https://retailsense.vercel.app/"],
             "supports_credentials": True,
             "allow_headers": ["Content-Type", "Authorization"],
             "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
