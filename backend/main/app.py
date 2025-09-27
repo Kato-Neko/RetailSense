@@ -42,9 +42,9 @@ attach_jobs_store(jobs)
 
 
 # Register the authentication blueprint
-app.register_blueprint(auth_bp)
-app.register_blueprint(heatmap_bp)
-app.register_blueprint(jobs_bp)
+app.register_blueprint(auth_bp, url_prefix='/api')
+app.register_blueprint(heatmap_bp, url_prefix='/api') 
+app.register_blueprint(jobs_bp, url_prefix='/api')
 
 ## no in-memory progress kept here; services.state manages progress
 
