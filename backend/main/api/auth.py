@@ -16,7 +16,7 @@ auth_bp = Blueprint('auth', __name__)
 logger = logging.getLogger(__name__)
 
 
-@auth_bp.route('/register', methods=['POST'])
+@auth_bp.route('/api/register', methods=['POST'])
 def register():
     data = request.get_json()
     username = data.get('username')
@@ -45,7 +45,7 @@ def register():
         return jsonify({"error": f"Error: {str(e)}"}), 500
 
 
-@auth_bp.route('/login', methods=['POST'])
+@auth_bp.route('/api/login', methods=['POST'])
 def login_api():
     data = request.get_json()
     email = data.get('email')
@@ -78,12 +78,12 @@ def login_api():
         return jsonify({"error": f"Error: {str(e)}"}), 500
 
 
-@auth_bp.route('/logout', methods=['POST'])
+@auth_bp.route('/api/logout', methods=['POST'])
 def logout_api():
     return jsonify({"success": True, "message": "Logged out successfully"})
 
 
-@auth_bp.route('/user', methods=['GET'])
+@auth_bp.route('/api/user', methods=['GET'])
 @jwt_required()
 def get_user_info():
     current_user_uid = get_jwt_identity()
@@ -100,7 +100,7 @@ def get_user_info():
         return jsonify({"error": f"Database error: {str(e)}"}), 500
 
 
-@auth_bp.route('/user/username', methods=['PUT'])
+@auth_bp.route('/api/user/username', methods=['PUT'])
 @jwt_required()
 def update_username():
     user_id = get_jwt_identity()
@@ -123,7 +123,7 @@ def update_username():
         return jsonify({"error": f"Supabase error: {str(e)}"}), 500
 
 
-@auth_bp.route('/user/password', methods=['PUT'])
+@auth_bp.route('/api/user/password', methods=['PUT'])
 @jwt_required()
 def change_password():
     user_id = get_jwt_identity()
@@ -153,7 +153,7 @@ def change_password():
         return jsonify({"error": f"Supabase error: {str(e)}"}), 500
 
 
-@auth_bp.route('/forgot-password', methods=['POST'])
+@auth_bp.route('/api/forgot-password', methods=['POST'])
 def forgot_password():
     data = request.get_json()
     email = data.get('email')
@@ -172,7 +172,7 @@ def forgot_password():
         return jsonify({'error': f'Error: {str(e)}'}), 500
 
 
-@auth_bp.route('/request-otp', methods=['POST'])
+@auth_bp.route('/api/request-otp', methods=['POST'])
 def request_otp():
     data = request.get_json()
     email = data.get('email')
@@ -198,7 +198,7 @@ def request_otp():
     return jsonify({'message': 'OTP sent to your email.'}), 200
 
 
-@auth_bp.route('/verify-otp', methods=['POST'])
+@auth_bp.route('/api/verify-otp', methods=['POST'])
 def verify_otp():
     data = request.get_json()
     email = data.get('email')
@@ -229,7 +229,7 @@ def verify_otp():
         return jsonify({'error': f'Error: {str(e)}'}), 500
 
 
-@auth_bp.route('/verify-otp-only', methods=['POST'])
+@auth_bp.route('/api/verify-otp-only', methods=['POST'])
 def verify_otp_only():
     data = request.get_json()
     email = data.get('email')
