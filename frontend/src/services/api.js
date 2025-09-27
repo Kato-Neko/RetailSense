@@ -42,7 +42,20 @@ export const authService = {
       const response = await apiClient.post("/login", { email, password });
       return response.data;  // Ensure this returns the expected structure
     } catch (error) {
-      throw error.response ? error.response.data : error;
+      // Handle different types of errors with better messages
+      if (error.code === 'ERR_NETWORK' || error.message?.includes('Name or service not known')) {
+        throw { error: 'Cannot connect to server. Please check your internet connection and try again.' };
+      } else if (error.response?.status === 500) {
+        throw { error: 'Server error. Please try again later or contact support if the issue persists.' };
+      } else if (error.response?.status === 401) {
+        throw { error: 'Invalid email or password. Please check your credentials and try again.' };
+      } else if (error.response?.status === 429) {
+        throw { error: 'Too many login attempts. Please wait a moment before trying again.' };
+      } else if (error.response?.data?.error) {
+        throw error.response.data;
+      } else {
+        throw { error: 'Login failed. Please try again.' };
+      }
     }
   },
 
@@ -55,7 +68,18 @@ export const authService = {
       });
       return response.data;
     } catch (error) {
-      throw error.response ? error.response.data : error;
+      // Handle different types of errors with better messages
+      if (error.code === 'ERR_NETWORK' || error.message?.includes('Name or service not known')) {
+        throw { error: 'Cannot connect to server. Please check your internet connection and try again.' };
+      } else if (error.response?.status === 500) {
+        throw { error: 'Server error. Please try again later or contact support if the issue persists.' };
+      } else if (error.response?.status === 409) {
+        throw { error: 'Username or email already exists. Please choose different credentials.' };
+      } else if (error.response?.data?.error) {
+        throw error.response.data;
+      } else {
+        throw { error: 'Registration failed. Please try again.' };
+      }
     }
   },
 
@@ -142,14 +166,20 @@ export const heatmapService = {
       const response = await apiClient.post("/heatmap_jobs", formData);
       return response.data;
     } catch (error) {
-      if (!error.response) {
-        console.error("Network error during job creation:", error);
-        throw {
-          error:
-            "Network error. Please check if the backend server is running.",
-        };
+      // Handle different types of errors with better messages
+      if (error.code === 'ERR_NETWORK' || error.message?.includes('Name or service not known')) {
+        throw { error: 'Cannot connect to server. Please check your internet connection and try again.' };
+      } else if (error.response?.status === 500) {
+        throw { error: 'Server error during video processing. Please try again later or contact support if the issue persists.' };
+      } else if (error.response?.status === 401) {
+        throw { error: 'Session expired. Please log in again.' };
+      } else if (error.response?.status === 413) {
+        throw { error: 'Video file is too large. Please choose a smaller video file.' };
+      } else if (error.response?.data?.error) {
+        throw error.response.data;
+      } else {
+        throw { error: 'Failed to start video processing. Please try again.' };
       }
-      throw error.response ? error.response.data : error;
     }
   },
 

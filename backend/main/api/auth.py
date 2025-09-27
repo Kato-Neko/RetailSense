@@ -50,10 +50,21 @@ def login_api():
     data = request.get_json()
     email = data.get('email')
     password = data.get('password')
+    
+    # Debug logging
+    supabase_url = os.getenv('SUPABASE_URL')
+    supabase_key_exists = bool(os.getenv('SUPABASE_KEY'))
+    logger.info(f"SUPABASE_URL: {supabase_url}")
+    logger.info(f"SUPABASE_KEY exists: {supabase_key_exists}")
+    
     if not email or not password:
         return jsonify({"error": "Missing email or password"}), 400
+        
     try:
+        # Test if supabase client is working
+        logger.info("Attempting Supabase auth...")
         response = supabase.auth.sign_in_with_password({"email": email, "password": password})
+        
         if response.user:
             access_token = create_access_token(identity=response.user.id, expires_delta=timedelta(days=1))
             return jsonify({"success": True, "message": "Login successful", "access_token": access_token}), 200
@@ -61,6 +72,9 @@ def login_api():
             return jsonify({"error": "Invalid credentials"}), 401
     except Exception as e:
         logger.error(f"Error during login: {str(e)}")
+        logger.error(f"Exception type: {type(e).__name__}")
+        import traceback
+        logger.error(f"Traceback: {traceback.format_exc()}")
         return jsonify({"error": f"Error: {str(e)}"}), 500
 
 
