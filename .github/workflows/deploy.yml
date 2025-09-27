@@ -30,8 +30,6 @@ jobs:
         # Set Railway environment variables directly
         RAILWAY_PROJECT_ID: "e0c507a8-60df-492e-89f6-bb9e45c77401"
         RAILWAY_SERVICE_ID: "7a2b35b3-14e2-4c90-9030-e9ed75a60b17"
-      env:
-        RAILWAY_API_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
         # Pass all environment variables directly
         FLASK_SECRET_KEY: ${{ secrets.FLASK_SECRET_KEY }}
         GMAIL_PASS: ${{ secrets.GMAIL_PASS }}
