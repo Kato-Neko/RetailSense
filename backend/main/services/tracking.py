@@ -6,6 +6,7 @@ import os
 import cv2
 import numpy as np
 from typing import Callable, Tuple, List, Dict, Any, Optional
+from ..core.config import logger
 from ..helpers.memory import MemoryMonitor, cleanup_memory_if_needed, log_memory_usage
 
 # Lazy singletons for heavy models
