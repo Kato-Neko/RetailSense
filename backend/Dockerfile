@@ -36,5 +36,8 @@ COPY --from=builder /root/.local/bin /usr/local/bin
 COPY main/ ./main/
 COPY *.py ./
 
+# Set PYTHONPATH for proper imports
+ENV PYTHONPATH=/app
+
 EXPOSE 8000
-CMD ["python", "main/app.py"]
+CMD ["python", "-m", "main.app"]
