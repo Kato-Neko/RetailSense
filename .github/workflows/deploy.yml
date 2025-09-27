@@ -19,9 +19,6 @@ jobs:
     - name: Install Railway CLI
       run: npm install -g @railway/cli
     
-    - name: Login to Railway
-      run: railway login --token ${{ secrets.RAILWAY_TOKEN }}
-    
     - name: Set Railway Environment Variables
       run: |
         # Secrets (sensitive data)
@@ -42,6 +39,10 @@ jobs:
         railway variables set SUPABASE_DB_PORT="${{ vars.SUPABASE_DB_PORT }}"
         railway variables set SUPABASE_DB_USER="${{ vars.SUPABASE_DB_USER }}"
         railway variables set SUPABASE_URL="${{ vars.SUPABASE_URL }}"
+      env:
+        RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
     
     - name: Deploy to Railway
       run: railway up --detach
+      env:
+        RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
