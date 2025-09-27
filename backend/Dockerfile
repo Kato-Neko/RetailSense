@@ -40,4 +40,4 @@ COPY *.py ./
 ENV PYTHONPATH=/app
 
 EXPOSE $PORT
-CMD ["sh", "-c", "gunicorn --bind 0.0.0.0:${PORT:-8000} --workers 2 --threads 4 --timeout 300 main.app:app"]
+CMD ["sh", "-c", "gunicorn --bind 0.0.0.0:${PORT:-8000} --workers 1 --threads 2 --timeout 600 --max-requests 100 --max-requests-jitter 10 main.app:app"]
