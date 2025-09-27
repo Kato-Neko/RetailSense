@@ -39,7 +39,7 @@ apiClient.interceptors.request.use(
 export const authService = {
   login: async (email, password) => {
     try {
-      const response = await apiClient.post("/login", { email, password });
+      const response = await apiClient.post("/api/login", { email, password });
       return response.data;  // Ensure this returns the expected structure
     } catch (error) {
       // Handle different types of errors with better messages
@@ -61,7 +61,7 @@ export const authService = {
 
   register: async (username, email, password) => {
     try {
-      const response = await apiClient.post("/register", {
+      const response = await apiClient.post("/api/register", {
         username,
         email,
         password,
@@ -85,7 +85,7 @@ export const authService = {
 
   logout: async () => {
     try {
-      const response = await apiClient.post("/logout");
+      const response = await apiClient.post("/api/logout");
       return response.data;
     } catch (error) {
       throw error.response ? error.response.data : error;
@@ -94,7 +94,7 @@ export const authService = {
 
   getUserInfo: async () => {
     try {
-      const response = await apiClient.get("/user");
+      const response = await apiClient.get("/api/user");
       return response.data;
     } catch (error) {
       throw error.response ? error.response.data : error;
@@ -103,7 +103,7 @@ export const authService = {
 
   updateUsername: async (newUsername) => {
     try {
-      const response = await apiClient.put("/user/username", { username: newUsername });
+      const response = await apiClient.put("/api/user/username", { username: newUsername });
       return response.data;
     } catch (error) {
       throw error.response ? error.response.data : error;
@@ -112,7 +112,7 @@ export const authService = {
 
   updatePassword: async (currentPassword, newPassword) => {
     try {
-      const response = await apiClient.put("/user/password", {
+      const response = await apiClient.put("/api/user/password", {
         current_password: currentPassword,
         new_password: newPassword,
       });
@@ -124,7 +124,7 @@ export const authService = {
 
   forgotPassword: async (email) => {
     try {
-      const response = await apiClient.post("/forgot-password", { email });
+      const response = await apiClient.post("/api/forgot-password", { email });
       return response.data;
     } catch (error) {
       throw error.response ? error.response.data : error;
@@ -133,7 +133,7 @@ export const authService = {
 
   requestOtp: async (email) => {
     try {
-      const response = await apiClient.post("/request-otp", { email });
+      const response = await apiClient.post("/api/request-otp", { email });
       return response.data;
     } catch (error) {
       throw error.response ? error.response.data : error;
@@ -142,7 +142,7 @@ export const authService = {
 
   verifyOtp: async (email, otp, newPassword) => {
     try {
-      const response = await apiClient.post("/verify-otp", { email, otp, new_password: newPassword });
+      const response = await apiClient.post("/api/verify-otp", { email, otp, new_password: newPassword });
       return response.data;
     } catch (error) {
       throw error.response ? error.response.data : error;
@@ -151,7 +151,7 @@ export const authService = {
 
   verifyOtpOnly: async (email, otp) => {
     try {
-      const response = await apiClient.post("/verify-otp-only", { email, otp });
+      const response = await apiClient.post("/api/verify-otp-only", { email, otp });
       return response.data;
     } catch (error) {
       throw error.response ? error.response.data : error;
@@ -163,7 +163,7 @@ export const authService = {
 export const heatmapService = {
   createJob: async (formData) => {
     try {
-      const response = await apiClient.post("/heatmap_jobs", formData);
+      const response = await apiClient.post("/api/heatmap_jobs", formData);
       return response.data;
     } catch (error) {
       // Handle different types of errors with better messages
@@ -185,7 +185,7 @@ export const heatmapService = {
 
   getJobStatus: async (jobId) => {
     try {
-      const response = await apiClient.get(`/heatmap_jobs/${jobId}/status`);
+      const response = await apiClient.get(`/api/heatmap_jobs/${jobId}/status`);
       return response.data;
     } catch (error) {
       throw error.response ? error.response.data : error;
@@ -194,7 +194,7 @@ export const heatmapService = {
 
   getJobHistory: async () => {
     try {
-      const response = await apiClient.get("/heatmap_jobs/history");
+      const response = await apiClient.get("/api/heatmap_jobs/history");
       return response.data;
     } catch (error) {
       throw error.response ? error.response.data : error;
@@ -203,7 +203,7 @@ export const heatmapService = {
 
   getJobDetails: async (jobId) => {
     try {
-      const response = await apiClient.get(`/heatmap_jobs/history`);
+      const response = await apiClient.get(`/api/heatmap_jobs/history`);
       // Find the job in the returned history
       const job = response.data.find(j => j.job_id === jobId);
       if (!job) throw new Error('Job not found');
@@ -223,7 +223,7 @@ export const heatmapService = {
 
   deleteJob: async (jobId) => {
     try {
-      const response = await apiClient.delete(`/heatmap_jobs/${jobId}`);
+      const response = await apiClient.delete(`/api/heatmap_jobs/${jobId}`);
       return response.data;
     } catch (error) {
       throw error.response ? error.response.data : error;
@@ -232,7 +232,7 @@ export const heatmapService = {
 
   cancelJob: async (jobId) => {
     try {
-      const response = await apiClient.post(`/heatmap_jobs/${jobId}/cancel`);
+      const response = await apiClient.post(`/api/heatmap_jobs/${jobId}/cancel`);
       return response.data;
     } catch (error) {
       throw error.response ? error.response.data : error;
@@ -241,7 +241,7 @@ export const heatmapService = {
 
   exportHeatmapCsv: async (jobId, params) => {
     try {
-      const response = await apiClient.get(`/heatmap_jobs/${jobId}/export/csv`, {
+      const response = await apiClient.get(`/api/heatmap_jobs/${jobId}/export/csv`, {
         responseType: 'blob',
         headers: {
           'Accept': 'text/csv'
@@ -276,7 +276,7 @@ export const heatmapService = {
 
   exportHeatmapPdf: async (jobId, params) => {
     try {
-      const response = await apiClient.get(`/heatmap_jobs/${jobId}/export/pdf`, {
+      const response = await apiClient.get(`/api/heatmap_jobs/${jobId}/export/pdf`, {
         responseType: 'blob',
         headers: {
           'Accept': 'application/pdf'
@@ -297,7 +297,7 @@ export const heatmapService = {
 
   getHeatmapAnalysis: async (jobId) => {
     try {
-      const response = await apiClient.get(`/heatmap_jobs/${jobId}/analysis`);
+      const response = await apiClient.get(`/api/heatmap_jobs/${jobId}/analysis`);
       return response.data;
     } catch (error) {
       throw error.response ? error.response.data : error;
@@ -306,7 +306,7 @@ export const heatmapService = {
 
   getCustomHeatmapAnalysis: async (jobId, params) => {
     try {
-      const response = await apiClient.get(`/heatmap_jobs/${jobId}/custom_analysis`, {
+      const response = await apiClient.get(`/api/heatmap_jobs/${jobId}/custom_analysis`, {
         params: {
           start_time: params.start_time,
           end_time: params.end_time,
@@ -320,7 +320,7 @@ export const heatmapService = {
   },
 
   generateCustomHeatmap: async (jobId, payload) => {
-    const response = await apiClient.post(`/heatmap_jobs/${jobId}/custom_heatmap`, payload);
+    const response = await apiClient.post(`/api/heatmap_jobs/${jobId}/custom_heatmap`, payload);
     return response.data;
   },
 
@@ -330,7 +330,7 @@ export const heatmapService = {
   
   getDetections: async (jobId) => {
     try {
-      const response = await apiClient.get(`/heatmap_jobs/${jobId}/detections`);
+      const response = await apiClient.get(`/api/heatmap_jobs/${jobId}/detections`);
       return response.data;
     } catch (error) {
       throw error.response ? error.response.data : error;
@@ -340,7 +340,7 @@ export const heatmapService = {
   getJobPoints: async (jobId) => {
     // Fetch the 4 points (pointsData) for a given job from the backend
     try {
-      const response = await apiClient.get(`/heatmap_jobs/${jobId}/points`);
+      const response = await apiClient.get(`/api/heatmap_jobs/${jobId}/points`);
       return response.data.pointsData;
     } catch (error) {
       throw error.response ? error.response.data : error;
@@ -350,7 +350,7 @@ export const heatmapService = {
   getJobTimeRange: async (jobId) => {
     // Fetch the time range (start/end date and time) for a given job from the backend
     try {
-      const response = await apiClient.get(`/heatmap_jobs/${jobId}/time_range`);
+      const response = await apiClient.get(`/api/heatmap_jobs/${jobId}/time_range`);
       return response.data;
     } catch (error) {
       throw error.response ? error.response.data : error;
@@ -359,7 +359,7 @@ export const heatmapService = {
 
   getCustomHeatmapProgress: async (jobId) => {
     try {
-      const response = await apiClient.get(`/heatmap_jobs/${jobId}/custom_heatmap_progress`);
+      const response = await apiClient.get(`/api/heatmap_jobs/${jobId}/custom_heatmap_progress`);
       return response.data;
     } catch (error) {
       throw error.response ? error.response.data : error;
