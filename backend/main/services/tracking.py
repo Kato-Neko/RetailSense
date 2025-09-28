@@ -17,12 +17,17 @@ def _get_model():
     global _model
     if _model is None:
         from ultralytics import YOLO
+        import torch
+        
         # Load model with CPU optimizations
         # The model will be pre-downloaded during Docker build
         _model = YOLO('yolov8n.pt')
-        # Don't use half precision on CPU - it's not supported
-        # Instead, use float32 but with other optimizations
-        logger.info("YOLO model loaded for CPU inference")
+        
+        # Optimize model for CPU inference
+        _model.model.eval()  # Set to evaluation mode
+        torch.set_num_threads(1)  # Use single thread for better performance on small instances
+        
+        logger.info("YOLO model loaded and optimized for CPU inference")
     return _model
 
 
@@ -61,8 +66,8 @@ def detect_and_track(
     fps = int(cap.get(cv2.CAP_PROP_FPS))
     total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
 
-    # Resize frames for faster processing
-    max_width = 224
+    # Resize frames for faster processing - more aggressive resizing
+    max_width = 320  # Increased from 224 for better detection quality
     if original_width > max_width:
         scale_factor = max_width / original_width
         width = max_width
@@ -80,7 +85,7 @@ def detect_and_track(
     detections_for_heatmap: List[Dict[str, Any]] = []
     frame_count = 0
     processed_frames = 0  # Track actually processed frames
-    frame_skip = 5  # Process every 5th frame
+    frame_skip = 10  # Process every 10th frame (2x faster)
     
     # Calculate total frames that will be processed
     total_processed_frames = (total_frames + frame_skip - 1) // frame_skip
@@ -127,8 +132,9 @@ def detect_and_track(
             if not warmup_done:
                 logger.info("Warming up YOLO model with first frame...")
                 try:
-                    dummy_frame = cv2.resize(frame, (224, 224))
-                    model(dummy_frame, verbose=False, imgsz=416, conf=0.5, device='cpu')
+                    # Use smaller warmup frame for faster initialization
+                    dummy_frame = cv2.resize(frame, (320, 320))
+                    model(dummy_frame, verbose=False, imgsz=320, conf=0.4, device='cpu', half=False)
                     logger.info("Model warmup completed")
                     warmup_done = True
                 except Exception as e:
@@ -145,15 +151,16 @@ def detect_and_track(
             start_time = time.time()
             
             try:
-                # YOLO inference
+                # YOLO inference - optimized for speed
                 results = model(frame, 
                               classes=[0], 
                               verbose=False,
-                              imgsz=416,
-                              conf=0.5,
-                              iou=0.7,
-                              max_det=10,
-                              device='cpu')
+                              imgsz=320,  # Smaller input size for faster inference
+                              conf=0.4,   # Slightly lower confidence for better detection
+                              iou=0.5,    # Lower IoU for faster NMS
+                              max_det=5,  # Fewer max detections
+                              device='cpu',
+                              half=False) # Disable half precision on CPU
             except Exception as e:
                 logger.error(f"Error processing frame {frame_count} with YOLO: {e}")
                 frame_count += 1
