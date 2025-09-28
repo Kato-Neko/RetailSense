@@ -5,8 +5,8 @@ Flask entry point for the backend, using refactored modules.
 
 import os
 from flask import Flask, jsonify
-from flask_cors import CORS
-from flask_jwt_extended import JWTManager
+from flask_cors import CORS, cross_origin
+from flask_jwt_extended import JWTManager, jwt_required
 
 # Import from backend files
 from .api.auth import auth_bp 
@@ -57,6 +57,30 @@ app.register_blueprint(jobs_bp, url_prefix='/api')
 @app.route('/api/test')
 def test_route():
     return jsonify({"message": "API routing is working"})
+
+# Direct routes for backward compatibility (without /api prefix)
+@app.route('/heatmap_jobs/<job_id>/result/image', methods=['GET', 'OPTIONS'])
+@cross_origin()
+def direct_heatmap_image(job_id):
+    """Direct access to heatmap image without /api prefix"""
+    from .api.heatmap import get_heatmap_image_logic
+    return get_heatmap_image_logic(job_id)
+
+@app.route('/heatmap_jobs/<job_id>/detections', methods=['GET', 'OPTIONS'])
+@cross_origin()
+@jwt_required()
+def direct_heatmap_detections(job_id):
+    """Direct access to detections without /api prefix"""
+    from .api.heatmap import get_detections_logic
+    return get_detections_logic(job_id)
+
+@app.route('/heatmap_jobs/<job_id>/analysis', methods=['GET', 'OPTIONS'])
+@cross_origin()
+@jwt_required()
+def direct_heatmap_analysis(job_id):
+    """Direct access to analysis without /api prefix"""
+    from .api.heatmap import get_heatmap_analysis_logic
+    return get_heatmap_analysis_logic(job_id)
 
 ## no in-memory progress kept here; services.state manages progress
 

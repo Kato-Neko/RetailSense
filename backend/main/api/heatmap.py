@@ -22,6 +22,12 @@ def test_heatmap_cors():
     """Test endpoint to verify CORS is working for heatmap routes"""
     return jsonify({"message": "Heatmap CORS test successful", "status": "ok"})
 
+@heatmap_bp.route('/test', methods=['GET', 'OPTIONS'])
+@cross_origin()
+def test_direct_cors():
+    """Test endpoint for direct access without /api prefix"""
+    return jsonify({"message": "Direct heatmap CORS test successful", "status": "ok"})
+
 
 @heatmap_bp.route('/heatmap_jobs/<job_id>/preview/detections', methods=['GET'])
 @cross_origin()
@@ -60,19 +66,22 @@ def receive_live_detections(job_id):
         return jsonify({'error': str(e)}), 400
 
 
-@heatmap_bp.route('/heatmap_jobs/<job_id>/detections', methods=['GET', 'OPTIONS'])
-@cross_origin()
-@jwt_required()
-def get_detections_from_json(job_id):
+def get_detections_logic(job_id):
+    """Shared logic for getting detections"""
     detections, fps = load_detections(job_id)
     if detections is None:
         return jsonify({"error": "Detections file not found"}), 404
     return jsonify({"detections": detections, "fps": fps}), 200
 
-
-@heatmap_bp.route('/heatmap_jobs/<job_id>/result/image', methods=['GET', 'OPTIONS'])
+@heatmap_bp.route('/heatmap_jobs/<job_id>/detections', methods=['GET', 'OPTIONS'])
 @cross_origin()
-def get_heatmap_image(job_id):
+@jwt_required()
+def get_detections_from_json(job_id):
+    return get_detections_logic(job_id)
+
+
+def get_heatmap_image_logic(job_id):
+    """Shared logic for getting heatmap image"""
     # First check if job is completed
     conn = get_db_connection()
     cur = conn.cursor()
@@ -96,6 +105,11 @@ def get_heatmap_image(job_id):
     
     logger.info(f"Successfully downloaded heatmap image from Supabase: {supabase_path}")
     return Response(img_bytes, mimetype="image/jpeg")
+
+@heatmap_bp.route('/heatmap_jobs/<job_id>/result/image', methods=['GET', 'OPTIONS'])
+@cross_origin()
+def get_heatmap_image(job_id):
+    return get_heatmap_image_logic(job_id)
 
 
 @heatmap_bp.route('/heatmap_jobs/<job_id>/export/csv', methods=['GET'])
@@ -317,10 +331,8 @@ def get_custom_heatmap_progress(job_id):
     return jsonify({"progress": progress})
 
 
-@heatmap_bp.route('/heatmap_jobs/<job_id>/analysis', methods=['GET', 'OPTIONS'])
-@cross_origin()
-@jwt_required()
-def get_heatmap_analysis(job_id):
+def get_heatmap_analysis_logic(job_id):
+    """Shared logic for getting heatmap analysis"""
     conn = get_db_connection()
     cur = conn.cursor()
     cur.execute("SELECT * FROM jobs WHERE job_id = %s", (job_id,))
@@ -377,3 +389,9 @@ def get_heatmap_analysis(job_id):
     detections, fps = load_detections(job_id)
     analysis = analyze_heatmap(img_gray, (floorplan_height, floorplan_width), detections=detections, fps=fps)
     return jsonify(analysis)
+
+@heatmap_bp.route('/heatmap_jobs/<job_id>/analysis', methods=['GET', 'OPTIONS'])
+@cross_origin()
+@jwt_required()
+def get_heatmap_analysis(job_id):
+    return get_heatmap_analysis_logic(job_id)
