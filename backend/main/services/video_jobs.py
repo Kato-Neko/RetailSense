@@ -42,8 +42,8 @@ def update_job_progress(job_id: str, stage: str, progress: float):
         SET message = %s, updated_at = CURRENT_TIMESTAMP
         WHERE job_id = %s
     ''', (job['message'], job_id))
-    cur.close()
     conn.commit()
+    cur.close()
     conn.close()
 
 

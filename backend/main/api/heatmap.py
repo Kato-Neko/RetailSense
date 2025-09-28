@@ -302,7 +302,7 @@ def get_heatmap_analysis(job_id):
     if job_row[6] != 'completed':
         return jsonify({"error": "Job not completed"}), 404
 
-    from core.storage import download_image_from_supabase
+    from ..core.storage import download_image_from_supabase
     supabase_path = f"{job_id}/video_heatmap.jpg"
     img = download_image_from_supabase(supabase_path)
     if img is None:

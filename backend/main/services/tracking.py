@@ -78,7 +78,7 @@ def detect_and_track(
 
     detections_for_heatmap: List[Dict[str, Any]] = []
     frame_count = 0
-    frame_skip = 10  # Process every 10th frame for much faster processing
+    frame_skip = 5  # Process every 5th frame for better detection coverage
     
     # Report initial progress
     if progress_callback:
@@ -105,13 +105,13 @@ def detect_and_track(
             logger.info("Warming up YOLO model with first frame...")
             try:
                 dummy_frame = cv2.resize(frame, (224, 224))
-                model(dummy_frame, verbose=False, imgsz=320, conf=0.7, device='cpu')
+                model(dummy_frame, verbose=False, imgsz=416, conf=0.5, device='cpu')
                 logger.info("Model warmup completed")
             except Exception as e:
                 logger.warning(f"Model warmup failed: {e}")
             
-        # Skip frames for faster processing (process every 10th frame)
-        if frame_count % 10 != 0:
+        # Skip frames for faster processing (process every 5th frame)
+        if frame_count % 5 != 0:
             frame_count += 1
             # Still write the frame to output video
             if scale_factor != 1.0:
@@ -133,14 +133,14 @@ def detect_and_track(
         start_time = time.time()
         
         try:
-            # Optimize YOLO inference for CPU with very small input size
+            # Optimize YOLO inference for CPU with balanced parameters
             results = model(frame, 
                           classes=[0], 
                           verbose=False,
-                          imgsz=320,  # Very small input size for maximum speed
-                          conf=0.7,   # Higher confidence threshold to reduce detections
+                          imgsz=416,  # Balanced input size for detection accuracy
+                          conf=0.5,   # Lower confidence threshold to detect more people
                           iou=0.7,    # NMS IoU threshold
-                          max_det=3,  # Very few max detections for maximum speed
+                          max_det=10, # Allow more detections
                           device='cpu')  # Explicitly use CPU
         except Exception as e:
             logger.error(f"Error processing frame {frame_count} with YOLO: {e}")
@@ -151,13 +151,21 @@ def detect_and_track(
             logger.info(f"YOLO inference took {yolo_time:.2f} seconds for frame {frame_count + 1}")
 
         detections = []
+        total_detections = 0
         for r in results:
             boxes = r.boxes
             for box in boxes:
                 x1, y1, x2, y2 = map(int, box.xyxy[0])
                 conf = float(box.conf[0])
-                if conf > 0.5:  # Confidence threshold
+                total_detections += 1
+                if conf > 0.3:  # Lower confidence threshold to catch more detections
                     detections.append(([x1, y1, x2, y2], conf, 0))  # 0 is class_id for person
+        
+        # Debug logging for first few frames
+        if frame_count < 3:
+            logger.info(f"YOLO found {total_detections} total detections, {len(detections)} above confidence threshold in frame {frame_count + 1}")
+            for i, det in enumerate(detections):
+                logger.info(f"  Detection {i+1}: bbox={det[0]}, conf={det[1]:.3f}")
 
         try:
             tracks = tracker.update_tracks(detections, frame=frame)
