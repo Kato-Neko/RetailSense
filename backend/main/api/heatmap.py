@@ -5,7 +5,7 @@ import io
 import csv
 import cv2
 
-from ..core.config import RESULTS_FOLDER, UPLOAD_FOLDER
+from ..core.config import RESULTS_FOLDER, UPLOAD_FOLDER, logger
 from ..core.db import get_db_connection
 from ..core.storage import download_image_from_supabase, download_image_bytes_from_supabase
 from ..helpers.detections import load_detections
@@ -62,10 +62,28 @@ def get_detections_from_json(job_id):
 
 @heatmap_bp.route('/heatmap_jobs/<job_id>/result/image', methods=['GET'])
 def get_heatmap_image(job_id):
+    # First check if job is completed
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute("SELECT status FROM jobs WHERE job_id = %s", (job_id,))
+    job_status = cur.fetchone()
+    cur.close()
+    conn.close()
+    
+    if not job_status:
+        return jsonify({"error": "Job not found"}), 404
+    
+    if job_status[0] != 'completed':
+        return jsonify({"error": f"Job not completed yet. Status: {job_status[0]}"}), 400
+    
     supabase_path = f"{job_id}/video_heatmap.jpg"
+    logger.info(f"Attempting to download heatmap image from Supabase: {supabase_path}")
     img_bytes = download_image_bytes_from_supabase(supabase_path)
     if img_bytes is None:
+        logger.error(f"Heatmap image not found in Supabase: {supabase_path}")
         return jsonify({"error": "Result image file not found in Supabase"}), 404
+    
+    logger.info(f"Successfully downloaded heatmap image from Supabase: {supabase_path}")
     return Response(img_bytes, mimetype="image/jpeg")
 
 
@@ -311,11 +329,25 @@ def get_heatmap_analysis(job_id):
         img_gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
     else:
         img_gray = img
+    
+    # Try to load floorplan from local filesystem first, then from Supabase
     floorplan_filename = job_row[3]
     floorplan_path = os.path.join(UPLOAD_FOLDER, job_id, floorplan_filename)
     floorplan = cv2.imread(floorplan_path)
+    
     if floorplan is None:
-        return jsonify({"error": "Could not load floorplan"}), 500
+        # Try to load from Supabase
+        logger.info(f"Floorplan not found locally at {floorplan_path}, trying Supabase...")
+        try:
+            floorplan_supabase_path = f"{job_id}/{floorplan_filename}"
+            floorplan = download_image_from_supabase(floorplan_supabase_path)
+            if floorplan is None:
+                return jsonify({"error": "Could not load floorplan from local filesystem or Supabase"}), 500
+            logger.info(f"Successfully loaded floorplan from Supabase: {floorplan_supabase_path}")
+        except Exception as e:
+            logger.error(f"Error loading floorplan from Supabase: {e}")
+            return jsonify({"error": f"Could not load floorplan: {str(e)}"}), 500
+    
     detections, fps = load_detections(job_id)
     analysis = analyze_heatmap(img_gray, floorplan.shape[:2], detections=detections, fps=fps)
     return jsonify(analysis)
