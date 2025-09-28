@@ -124,13 +124,36 @@ def process_video_job(job_id: str):
         logger.info(f"  - Expected heatmap path: {output_heatmap_image_path}")
         logger.info(f"  - Expected video path: {output_video_path}")
         
-        logger.info(f"DEBUG: About to call blend_heatmap with {len(detections)} detections")
+        # Load user points for homography transformation
+        points_path = job['input_files']['points']
+        with open(points_path, 'r') as f:
+            points_data = json.load(f)
+        
+        # Convert points to the format expected by homography
+        # points_data should be normalized coordinates (0-1), convert to pixel coordinates
+        # Get video dimensions from the video file
+        cap = cv2.VideoCapture(video_path)
+        video_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+        video_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        cap.release()
+        
+        # Convert normalized points to pixel coordinates
+        homography_points = []
+        for point in points_data:
+            x = float(point['x']) * video_width
+            y = float(point['y']) * video_height
+            homography_points.append([x, y])
+        
+        logger.info(f"DEBUG: About to call blend_heatmap with {len(detections)} detections and {len(homography_points)} homography points")
+        logger.info(f"DEBUG: Homography points: {homography_points}")
+        
         blended_img = blend_heatmap(
             detections,
             floorplan_path,
             None,
             output_video_path,
             video_path,
+            points=homography_points,
             return_image=True
         )
         
@@ -247,12 +270,34 @@ def run_custom_heatmap_job(job_id: str, start_time: float, end_time: float, set_
     def progress_callback(progress: float):
         set_progress(progress)
 
+    # Load points for homography transformation
+    points_path = os.path.join(UPLOAD_FOLDER, job_id, f"points_{job_id}.json")
+    if os.path.exists(points_path):
+        with open(points_path, 'r') as f:
+            points_data = json.load(f)
+        
+        # Convert normalized points to pixel coordinates
+        video_path = os.path.join(UPLOAD_FOLDER, job_id, job_row[2])
+        cap = cv2.VideoCapture(video_path)
+        video_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+        video_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        cap.release()
+        
+        homography_points = []
+        for point in points_data:
+            x = float(point['x']) * video_width
+            y = float(point['y']) * video_height
+            homography_points.append([x, y])
+    else:
+        homography_points = None
+
     blended_img = blend_heatmap(
         filtered_detections,
         floorplan_path,
         None,
         os.path.join(RESULTS_FOLDER, job_id, f"video_{job_id}.mp4"),
         os.path.join(UPLOAD_FOLDER, job_id, job_row[2]),
+        points=homography_points,
         progress_callback=progress_callback,
         return_image=True
     )
