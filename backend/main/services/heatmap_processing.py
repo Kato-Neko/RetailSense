@@ -66,17 +66,21 @@ def blend_heatmap(detections, floorplan_path, output_heatmap_path, output_video_
         progress_callback: Optional callback function(progress) to report progress
         return_image: Whether to return the blended image
     """
-    print(f"DEBUG: blend_heatmap called with {len(detections)} detections")
-    print(f"DEBUG: First few detections: {detections[:3] if detections else 'None'}")
-    print(f"DEBUG: Received points for mapping: {points}")
-    
-    # Check if detections are in a different coordinate space
-    if detections:
-        first_bbox = detections[0]['bbox']
-        print(f"DEBUG: First bbox: {first_bbox}")
-        print(f"DEBUG: Bbox coordinates are much larger than video dimensions - possible coordinate system mismatch!")
-    
-    floorplan = cv2.imread(floorplan_path)
+    try:
+        print(f"DEBUG: blend_heatmap called with {len(detections)} detections")
+        print(f"DEBUG: First few detections: {detections[:3] if detections else 'None'}")
+        print(f"DEBUG: Received points for mapping: {points}")
+        
+        # Check if detections are in a different coordinate space
+        if detections:
+            first_bbox = detections[0]['bbox']
+            print(f"DEBUG: First bbox: {first_bbox}")
+            print(f"DEBUG: Bbox coordinates are much larger than video dimensions - possible coordinate system mismatch!")
+        
+        floorplan = cv2.imread(floorplan_path)
+    except Exception as e:
+        print(f"DEBUG: Error in blend_heatmap: {e}")
+        raise
     if floorplan is None:
         raise ValueError(f"Could not load floorplan image: {floorplan_path}")
 
@@ -134,10 +138,32 @@ def blend_heatmap(detections, floorplan_path, output_heatmap_path, output_video_
         center_y = (bbox[1] + bbox[3]) / 2
         
         # Use direct coordinate mapping (no homography)
-        mx = int(center_x * floorplan_width / video_width)
-        my = int(center_y * floorplan_height / video_height)
-        mx = max(0, min(mx, floorplan_width - 1))
-        my = max(0, min(my, floorplan_height - 1))
+        # Check if coordinates are way outside video bounds (coordinate system mismatch)
+        if center_x > video_width * 1.5 or center_y > video_height * 1.5:
+            print(f"DEBUG: Detection {i}: Coordinates way outside video bounds - possible coordinate system mismatch")
+            print(f"DEBUG:  -> Video: {video_width}x{video_height}, Detection: ({center_x:.1f}, {center_y:.1f})")
+            # Try to normalize coordinates if they're in a different coordinate space
+            if center_x > video_width * 2:
+                # Assume coordinates are in original video space, normalize them
+                center_x = center_x % video_width
+                center_y = center_y % video_height
+                print(f"DEBUG:  -> Normalized to: ({center_x:.1f}, {center_y:.1f})")
+        
+        # Alternative approach: if coordinates are still way out of bounds, use a different mapping
+        if center_x > video_width * 3 or center_y > video_height * 3:
+            print(f"DEBUG: Detection {i}: Coordinates still way out of bounds, using alternative mapping")
+            # Use a simple center-based approach
+            mx = floorplan_width // 2 + int((center_x - video_width) * 0.1)
+            my = floorplan_height // 2 + int((center_y - video_height) * 0.1)
+            mx = max(0, min(mx, floorplan_width - 1))
+            my = max(0, min(my, floorplan_height - 1))
+            print(f"DEBUG:  -> Alternative mapping: ({mx}, {my})")
+        else:
+            mx = int(center_x * floorplan_width / video_width)
+            my = int(center_y * floorplan_height / video_height)
+            mx = max(0, min(mx, floorplan_width - 1))
+            my = max(0, min(my, floorplan_height - 1))
+        
         cv2.circle(heatmap, (mx, my), 20, 1.0, -1)
         
         # Debug first few detections
