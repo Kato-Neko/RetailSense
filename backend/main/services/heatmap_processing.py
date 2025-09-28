@@ -70,3 +70,5 @@ def blend_heatmap(detections, floorplan_path, output_heatmap_path, output_video_
     out.release()
     if return_image:
         return blended
+    else:
+        return None

@@ -17,7 +17,15 @@ def _get_model():
     global _model
     if _model is None:
         from ultralytics import YOLO
+        # Load model with optimizations for CPU inference
         _model = YOLO('yolov8n.pt')
+        # Set model to half precision for faster inference
+        _model.half()
+        # Warm up the model with a dummy inference
+        import torch
+        dummy_input = torch.randn(1, 3, 640, 640).half()
+        _model.model(dummy_input)
+        logger.info("YOLO model loaded and warmed up")
     return _model
 
 
@@ -56,8 +64,8 @@ def detect_and_track(
     fps = int(cap.get(cv2.CAP_PROP_FPS))
     total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
 
-    # Resize frames for faster processing (max 720px width)
-    max_width = 720
+    # Resize frames for faster processing (max 480px width for much faster processing)
+    max_width = 480
     if original_width > max_width:
         scale_factor = max_width / original_width
         width = max_width
@@ -74,11 +82,12 @@ def detect_and_track(
 
     detections_for_heatmap: List[Dict[str, Any]] = []
     frame_count = 0
+    frame_skip = 3  # Process every 3rd frame for much faster processing
     
     # Report initial progress
     if progress_callback:
         progress_callback(0.0)
-        logger.info(f"Starting video processing: {total_frames} frames")
+        logger.info(f"Starting video processing: {total_frames} frames (processing every {frame_skip}rd frame)")
     
     logger.info(f"Video properties: {original_width}x{original_height}, {fps} fps, {total_frames} total frames")
     
@@ -95,6 +104,15 @@ def detect_and_track(
             logger.error(f"Frame {frame_count} is None, skipping")
             continue
             
+        # Skip frames for faster processing
+        if frame_count % frame_skip != 0:
+            frame_count += 1
+            # Still write the frame to output video
+            if scale_factor != 1.0:
+                frame = cv2.resize(frame, (width, height))
+            out.write(frame)
+            continue
+            
         timestamp = frame_count / fps  # seconds
 
         # Resize frame for processing
@@ -105,11 +123,26 @@ def detect_and_track(
         if frame_count < 3:
             logger.info(f"Processing frame {frame_count + 1}, frame shape: {frame.shape}")
         
+        import time
+        start_time = time.time()
+        
         try:
-            results = model(frame, classes=[0], verbose=False)  # class 0 is person, disable verbose
+            # Optimize YOLO inference with smaller input size and faster settings
+            results = model(frame, 
+                          classes=[0], 
+                          verbose=False,
+                          imgsz=640,  # Smaller input size for faster processing
+                          conf=0.5,   # Confidence threshold
+                          iou=0.7,    # NMS IoU threshold
+                          max_det=10, # Maximum detections per image
+                          device='cpu')  # Explicitly use CPU
         except Exception as e:
             logger.error(f"Error processing frame {frame_count} with YOLO: {e}")
             continue
+        
+        yolo_time = time.time() - start_time
+        if frame_count < 3:
+            logger.info(f"YOLO inference took {yolo_time:.2f} seconds for frame {frame_count + 1}")
 
         detections = []
         for r in results:

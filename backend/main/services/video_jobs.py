@@ -97,12 +97,23 @@ def process_video_job(job_id: str):
             return
 
         detections_data = {"fps": fps, "detections": detections}
-        upload_json_to_supabase(
-            detections_data,
-            f"{job_id}/detections.json"
-        )
+        try:
+            upload_json_to_supabase(
+                detections_data,
+                f"{job_id}/detections.json"
+            )
+            logger.info(f"Successfully uploaded detections.json to Supabase for job {job_id}")
+        except Exception as e:
+            logger.error(f"Error uploading detections.json to Supabase for job {job_id}: {e}")
+            raise
 
         output_heatmap_image_path = job['output_files_expected']['image']
+        
+        # Log the expected output paths
+        logger.info(f"Job {job_id} output paths:")
+        logger.info(f"  - Expected heatmap path: {output_heatmap_image_path}")
+        logger.info(f"  - Expected video path: {output_video_path}")
+        
         blended_img = blend_heatmap(
             detections,
             floorplan_path,
@@ -111,10 +122,20 @@ def process_video_job(job_id: str):
             video_path,
             return_image=True
         )
-        upload_image_to_supabase(
-            blended_img,
-            f"{job_id}/video_heatmap.jpg"
-        )
+        
+        if blended_img is None:
+            logger.error(f"blend_heatmap returned None for job {job_id}")
+            raise Exception("Failed to generate heatmap image")
+        
+        try:
+            upload_image_to_supabase(
+                blended_img,
+                f"{job_id}/video_heatmap.jpg"
+            )
+            logger.info(f"Successfully uploaded heatmap image to Supabase for job {job_id}")
+        except Exception as e:
+            logger.error(f"Error uploading heatmap image to Supabase for job {job_id}: {e}")
+            raise
 
         if job.get('cancelled'):
             job['status'] = 'cancelled'
@@ -125,16 +146,27 @@ def process_video_job(job_id: str):
         job['message'] = 'Processing completed successfully'
         job['status'] = 'completed'
 
+        # Log the paths being saved to database
+        logger.info(f"Job {job_id} completed. Saving paths to database:")
+        logger.info(f"  - output_heatmap_path: {output_heatmap_image_path}")
+        logger.info(f"  - output_video_path: {output_video_path}")
+
         conn = get_db_connection()
         cur = conn.cursor()
-        cur.execute('''
-            UPDATE jobs 
-            SET status = %s, message = %s, updated_at = CURRENT_TIMESTAMP, output_heatmap_path = %s, output_video_path = %s
-            WHERE job_id = %s
-        ''', (job['status'], job['message'], output_heatmap_image_path, output_video_path, job_id))
-        cur.close()
-        conn.commit()
-        conn.close()
+        try:
+            cur.execute('''
+                UPDATE jobs 
+                SET status = %s, message = %s, updated_at = CURRENT_TIMESTAMP, output_heatmap_path = %s, output_video_path = %s
+                WHERE job_id = %s
+            ''', (job['status'], job['message'], output_heatmap_image_path, output_video_path, job_id))
+            conn.commit()
+            logger.info(f"Successfully updated job {job_id} in database with output paths")
+        except Exception as e:
+            logger.error(f"Error updating job {job_id} in database: {e}")
+            conn.rollback()
+        finally:
+            cur.close()
+            conn.close()
 
     except Exception as e:
         job = jobs.get(job_id, {})
