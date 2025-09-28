@@ -60,7 +60,7 @@ def detect_and_track(
     fps = int(cap.get(cv2.CAP_PROP_FPS))
     total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
 
-    # Resize frames for faster processing (max 224px width for maximum speed)
+    # Resize frames for faster processing
     max_width = 224
     if original_width > max_width:
         scale_factor = max_width / original_width
@@ -78,19 +78,27 @@ def detect_and_track(
 
     detections_for_heatmap: List[Dict[str, Any]] = []
     frame_count = 0
-    frame_skip = 5  # Process every 5th frame for better detection coverage
+    processed_frames = 0  # Track actually processed frames
+    frame_skip = 5  # Process every 5th frame
+    
+    # Calculate total frames that will be processed
+    total_processed_frames = (total_frames + frame_skip - 1) // frame_skip
     
     # Report initial progress
     if progress_callback:
         progress_callback(0.0)
-        logger.info(f"Starting video processing: {total_frames} frames (processing every {frame_skip}th frame)")
+        logger.info(f"Starting video processing: {total_frames} total frames, will process {total_processed_frames} frames (every {frame_skip}th frame)")
     
     logger.info(f"Video properties: {original_width}x{original_height}, {fps} fps, {total_frames} total frames")
+    
+    # Warmup flag
+    warmup_done = False
     
     while cap.isOpened():
         if cancelled_flag is not None and cancelled_flag():
             logger.info("Processing cancelled by user")
             break
+            
         ret, frame = cap.read()
         if not ret:
             logger.info(f"End of video reached at frame {frame_count}")
@@ -98,137 +106,154 @@ def detect_and_track(
         
         if frame is None:
             logger.error(f"Frame {frame_count} is None, skipping")
-            continue
-        
-        # Warm up the model on the first frame to reduce subsequent inference times
-        if frame_count == 0:
-            logger.info("Warming up YOLO model with first frame...")
-            try:
-                dummy_frame = cv2.resize(frame, (224, 224))
-                model(dummy_frame, verbose=False, imgsz=416, conf=0.5, device='cpu')
-                logger.info("Model warmup completed")
-            except Exception as e:
-                logger.warning(f"Model warmup failed: {e}")
-            
-        # Skip frames for faster processing (process every 5th frame)
-        if frame_count % 5 != 0:
             frame_count += 1
-            # Still write the frame to output video
-            if scale_factor != 1.0:
-                frame = cv2.resize(frame, (width, height))
-            out.write(frame)
             continue
-            
-        timestamp = frame_count / fps  # seconds
-
-        # Resize frame for processing
+        
+        # Always write frame to output video (resized)
         if scale_factor != 1.0:
-            frame = cv2.resize(frame, (width, height))
-
-        # Log first few frames to debug
-        if frame_count < 3:
-            logger.info(f"Processing frame {frame_count + 1}, frame shape: {frame.shape}")
+            frame_resized = cv2.resize(frame, (width, height))
+        else:
+            frame_resized = frame.copy()
+        out.write(frame_resized)
         
-        import time
-        start_time = time.time()
+        # Determine if we should process this frame for detection
+        should_process = (frame_count % frame_skip == 0)
         
-        try:
-            # Optimize YOLO inference for CPU with balanced parameters
-            results = model(frame, 
-                          classes=[0], 
-                          verbose=False,
-                          imgsz=416,  # Balanced input size for detection accuracy
-                          conf=0.5,   # Lower confidence threshold to detect more people
-                          iou=0.7,    # NMS IoU threshold
-                          max_det=10, # Allow more detections
-                          device='cpu')  # Explicitly use CPU
-        except Exception as e:
-            logger.error(f"Error processing frame {frame_count} with YOLO: {e}")
-            continue
-        
-        yolo_time = time.time() - start_time
-        if frame_count < 3:
-            logger.info(f"YOLO inference took {yolo_time:.2f} seconds for frame {frame_count + 1}")
+        if should_process:
+            processed_frames += 1
+            
+            # Warm up the model on the first processed frame
+            if not warmup_done:
+                logger.info("Warming up YOLO model with first frame...")
+                try:
+                    dummy_frame = cv2.resize(frame, (224, 224))
+                    model(dummy_frame, verbose=False, imgsz=416, conf=0.5, device='cpu')
+                    logger.info("Model warmup completed")
+                    warmup_done = True
+                except Exception as e:
+                    logger.warning(f"Model warmup failed: {e}")
+                    warmup_done = True
+            
+            timestamp = frame_count / fps  # seconds
 
-        detections = []
-        total_detections = 0
-        for r in results:
-            boxes = r.boxes
-            for box in boxes:
-                x1, y1, x2, y2 = map(int, box.xyxy[0])
-                conf = float(box.conf[0])
-                total_detections += 1
-                if conf > 0.3:  # Lower confidence threshold to catch more detections
-                    detections.append(([x1, y1, x2, y2], conf, 0))  # 0 is class_id for person
-        
-        # Debug logging for first few frames
-        if frame_count < 3:
-            logger.info(f"YOLO found {total_detections} total detections, {len(detections)} above confidence threshold in frame {frame_count + 1}")
-            for i, det in enumerate(detections):
-                logger.info(f"  Detection {i+1}: bbox={det[0]}, conf={det[1]:.3f}")
-
-        try:
-            tracks = tracker.update_tracks(detections, frame=frame)
-        except Exception as e:
-            logger.error(f"Error updating tracks for frame {frame_count}: {e}")
-            tracks = []
-
-        for track in tracks:
-            if not track.is_confirmed():
+            # Log first few processed frames
+            if processed_frames <= 3:
+                logger.info(f"Processing frame {frame_count + 1} (processed frame {processed_frames}), shape: {frame.shape}")
+            
+            import time
+            start_time = time.time()
+            
+            try:
+                # YOLO inference
+                results = model(frame, 
+                              classes=[0], 
+                              verbose=False,
+                              imgsz=416,
+                              conf=0.5,
+                              iou=0.7,
+                              max_det=10,
+                              device='cpu')
+            except Exception as e:
+                logger.error(f"Error processing frame {frame_count} with YOLO: {e}")
+                frame_count += 1
                 continue
-                
-            track_id = track.track_id
-            ltrb = track.to_ltrb()
-            x1, y1, x2, y2 = map(int, ltrb)
+            
+            yolo_time = time.time() - start_time
+            if processed_frames <= 3:
+                logger.info(f"YOLO inference took {yolo_time:.2f} seconds for frame {frame_count + 1}")
 
-            # Scale coordinates back to original size for heatmap
-            if scale_factor != 1.0:
-                x1_orig = int(x1 / scale_factor)
-                y1_orig = int(y1 / scale_factor)
-                x2_orig = int(x2 / scale_factor)
-                y2_orig = int(y2 / scale_factor)
-            else:
-                x1_orig, y1_orig, x2_orig, y2_orig = x1, y1, x2, y2
+            # Process detections
+            detections = []
+            total_detections = 0
+            for r in results:
+                boxes = r.boxes
+                for box in boxes:
+                    x1, y1, x2, y2 = map(int, box.xyxy[0])
+                    conf = float(box.conf[0])
+                    total_detections += 1
+                    if conf > 0.3:
+                        detections.append(([x1, y1, x2, y2], conf, 0))
 
-            detections_for_heatmap.append({
-                'frame': frame_count,
-                'bbox': [x1_orig, y1_orig, x2_orig, y2_orig],
-                'track_id': track_id,
-                'timestamp': timestamp
-            })
+            # Debug logging for first few processed frames
+            if processed_frames <= 3:
+                logger.info(f"YOLO found {total_detections} total detections, {len(detections)} above threshold in processed frame {processed_frames}")
 
-            # Draw bounding box and ID with better contrast
-            cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
+            # Update tracks
+            try:
+                tracks = tracker.update_tracks(detections, frame=frame)
+            except Exception as e:
+                logger.error(f"Error updating tracks for frame {frame_count}: {e}")
+                tracks = []
 
-            # Add black background for text (ID)
-            text = f"ID: {track_id}"
-            (text_width, text_height), _ = cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, 0.9, 2)
-            cv2.rectangle(frame, (x1, y1-text_height-10), (x1+text_width, y1), (0, 0, 0), -1)
-            cv2.putText(frame, text, (x1, y1-5),
-                       cv2.FONT_HERSHEY_SIMPLEX, 0.9, (255, 255, 255), 2)
+            # Process tracks and draw
+            for track in tracks:
+                if not track.is_confirmed():
+                    continue
+                    
+                track_id = track.track_id
+                ltrb = track.to_ltrb()
+                x1, y1, x2, y2 = map(int, ltrb)
 
-            # Draw a small white dot at the center of the box
-            center_x = int((x1 + x2) / 2)
-            center_y = int((y1 + y2) / 2)
-            cv2.circle(frame, (center_x, center_y), 4, (255, 255, 255), -1)
+                # Scale coordinates back to original size for heatmap
+                if scale_factor != 1.0:
+                    x1_orig = int(x1 / scale_factor)
+                    y1_orig = int(y1 / scale_factor)
+                    x2_orig = int(x2 / scale_factor)
+                    y2_orig = int(y2 / scale_factor)
+                else:
+                    x1_orig, y1_orig, x2_orig, y2_orig = x1, y1, x2, y2
 
-        # Write frame
-        out.write(frame)
-        # Save preview every 10 frames
-        if preview_folder and frame_count % 10 == 0:
-            os.makedirs(preview_folder, exist_ok=True)
-            preview_path = os.path.join(preview_folder, 'preview_detections.jpg')
-            cv2.imwrite(preview_path, frame)
+                detections_for_heatmap.append({
+                    'frame': frame_count,
+                    'bbox': [x1_orig, y1_orig, x2_orig, y2_orig],
+                    'track_id': track_id,
+                    'timestamp': timestamp
+                })
 
-        # Update progress - report more frequently for better user experience
+                # Draw bounding box and ID
+                cv2.rectangle(frame_resized, (x1, y1), (x2, y2), (0, 255, 0), 2)
+                text = f"ID: {track_id}"
+                (text_width, text_height), _ = cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, 0.9, 2)
+                cv2.rectangle(frame_resized, (x1, y1-text_height-10), (x1+text_width, y1), (0, 0, 0), -1)
+                cv2.putText(frame_resized, text, (x1, y1-5),
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.9, (255, 255, 255), 2)
+
+                # Draw center dot
+                center_x = int((x1 + x2) / 2)
+                center_y = int((y1 + y2) / 2)
+                cv2.circle(frame_resized, (center_x, center_y), 4, (255, 255, 255), -1)
+
+            # Update the output video with the annotated frame
+            out.write(frame_resized)
+
+            # Save preview
+            if preview_folder and processed_frames % 2 == 0:  # Every 2nd processed frame
+                os.makedirs(preview_folder, exist_ok=True)
+                preview_path = os.path.join(preview_folder, 'preview_detections.jpg')
+                cv2.imwrite(preview_path, frame_resized)
+
+        # Increment frame counter
         frame_count += 1
         
-        # Always report progress for first few frames to debug
-        if progress_callback and (frame_count <= 3 or frame_count % 5 == 0 or frame_count == total_frames):
+        # Update progress based on total frames processed (not just detection frames)
+        if progress_callback:
+            # Progress based on total frames read, not just processed
             progress = frame_count / total_frames
-            progress_callback(progress)
-            logger.info(f"Processing frame {frame_count}/{total_frames} ({progress*100:.1f}%)")
+            
+            # Report progress more frequently at the beginning
+            should_report_progress = (
+                frame_count <= 5 or  # First 5 frames
+                frame_count % 10 == 0 or  # Every 10 frames
+                frame_count == total_frames or  # Last frame
+                should_process  # When we actually process a frame
+            )
+            
+            if should_report_progress:
+                progress_callback(progress)
+                logger.info(f"Progress: {frame_count}/{total_frames} frames read ({progress*100:.1f}%), {processed_frames} processed")
 
     cap.release()
     out.release()
+    
+    logger.info(f"Video processing complete. Total frames: {frame_count}, Processed frames: {processed_frames}")
     return output_path, detections_for_heatmap, fps

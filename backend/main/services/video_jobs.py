@@ -32,19 +32,26 @@ def update_job_progress(job_id: str, stage: str, progress: float):
     job = jobs[job_id]
     job['message'] = f'{stage} ({int(progress * 100)}%)'
     
-    # Add logging for debugging
+    # Enhanced logging for debugging
+    logger.info(f"PROGRESS CALLBACK: {progress*100:.1f}%")
     logger.info(f"Updating progress for job {job_id}: {job['message']}")
     
     conn = get_db_connection()
     cur = conn.cursor()
-    cur.execute('''
-        UPDATE jobs 
-        SET message = %s, updated_at = CURRENT_TIMESTAMP
-        WHERE job_id = %s
-    ''', (job['message'], job_id))
-    conn.commit()
-    cur.close()
-    conn.close()
+    try:
+        cur.execute('''
+            UPDATE jobs 
+            SET message = %s, updated_at = CURRENT_TIMESTAMP
+            WHERE job_id = %s
+        ''', (job['message'], job_id))
+        conn.commit()
+        logger.info(f"Successfully updated job {job_id} progress in database")
+    except Exception as e:
+        logger.error(f"Error updating job {job_id} progress in database: {e}")
+        conn.rollback()
+    finally:
+        cur.close()
+        conn.close()
 
 
 def process_video_job(job_id: str):
