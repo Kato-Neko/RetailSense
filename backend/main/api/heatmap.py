@@ -1,4 +1,5 @@
 from flask import Blueprint, request, jsonify, send_file, Response, send_from_directory
+from flask_cors import cross_origin
 from flask_jwt_extended import jwt_required
 import os
 import io
@@ -14,6 +15,12 @@ from ..services.video_jobs import run_custom_heatmap_job
 from ..services.state import get_custom_progress, set_custom_progress
 
 heatmap_bp = Blueprint('heatmap', __name__)
+
+@heatmap_bp.route('/heatmap_jobs/test', methods=['GET', 'OPTIONS'])
+@cross_origin()
+def test_heatmap_cors():
+    """Test endpoint to verify CORS is working for heatmap routes"""
+    return jsonify({"message": "Heatmap CORS test successful", "status": "ok"})
 
 
 @heatmap_bp.route('/heatmap_jobs/<job_id>/preview/detections', methods=['GET'])
@@ -61,6 +68,7 @@ def get_detections_from_json(job_id):
 
 
 @heatmap_bp.route('/heatmap_jobs/<job_id>/result/image', methods=['GET'])
+@cross_origin()
 def get_heatmap_image(job_id):
     # First check if job is completed
     conn = get_db_connection()
@@ -307,6 +315,7 @@ def get_custom_heatmap_progress(job_id):
 
 
 @heatmap_bp.route('/heatmap_jobs/<job_id>/analysis', methods=['GET'])
+@cross_origin()
 @jwt_required()
 def get_heatmap_analysis(job_id):
     conn = get_db_connection()

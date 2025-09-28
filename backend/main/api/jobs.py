@@ -237,7 +237,7 @@ def get_job_history():
 @jwt_required()
 def delete_heatmap_job(job_id):
     current_user = get_jwt_identity()
-    from core.config import logger
+    from ..core.config import logger
     logger.info(f"User {current_user} attempting to delete job {job_id}")
     try:
         conn = get_db_connection()
@@ -257,7 +257,7 @@ def delete_heatmap_job(job_id):
         for folder in [results_folder, uploads_folder]:
             if os.path.exists(folder):
                 shutil.rmtree(folder)
-        from core.config import supabase
+        from ..core.config import supabase
         bucket = "projectresults"
         try:
             files = supabase.storage.from_(bucket).list(path=job_id)
