@@ -46,7 +46,9 @@ def detect_and_track(
 
     cap = cv2.VideoCapture(video_path)
     if not cap.isOpened():
-        raise Exception("Error opening video file")
+        raise Exception(f"Error opening video file: {video_path}")
+    
+    logger.info(f"Successfully opened video file: {video_path}")
 
     # Get video properties
     original_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
@@ -76,14 +78,22 @@ def detect_and_track(
     # Report initial progress
     if progress_callback:
         progress_callback(0.0)
-        logger.debug(f"Starting video processing: {total_frames} frames")
+        logger.info(f"Starting video processing: {total_frames} frames")
+    
+    logger.info(f"Video properties: {original_width}x{original_height}, {fps} fps, {total_frames} total frames")
     
     while cap.isOpened():
         if cancelled_flag is not None and cancelled_flag():
+            logger.info("Processing cancelled by user")
             break
         ret, frame = cap.read()
         if not ret:
+            logger.info(f"End of video reached at frame {frame_count}")
             break
+        
+        if frame is None:
+            logger.error(f"Frame {frame_count} is None, skipping")
+            continue
             
         timestamp = frame_count / fps  # seconds
 
@@ -91,7 +101,15 @@ def detect_and_track(
         if scale_factor != 1.0:
             frame = cv2.resize(frame, (width, height))
 
-        results = model(frame, classes=[0], verbose=False)  # class 0 is person, disable verbose
+        # Log first few frames to debug
+        if frame_count < 3:
+            logger.info(f"Processing frame {frame_count + 1}, frame shape: {frame.shape}")
+        
+        try:
+            results = model(frame, classes=[0], verbose=False)  # class 0 is person, disable verbose
+        except Exception as e:
+            logger.error(f"Error processing frame {frame_count} with YOLO: {e}")
+            continue
 
         detections = []
         for r in results:
@@ -102,7 +120,11 @@ def detect_and_track(
                 if conf > 0.5:  # Confidence threshold
                     detections.append(([x1, y1, x2, y2], conf, 0))  # 0 is class_id for person
 
-        tracks = tracker.update_tracks(detections, frame=frame)
+        try:
+            tracks = tracker.update_tracks(detections, frame=frame)
+        except Exception as e:
+            logger.error(f"Error updating tracks for frame {frame_count}: {e}")
+            tracks = []
 
         for track in tracks:
             if not track.is_confirmed():
@@ -153,10 +175,12 @@ def detect_and_track(
 
         # Update progress - report more frequently for better user experience
         frame_count += 1
-        if progress_callback and (frame_count % 5 == 0 or frame_count == total_frames):
+        
+        # Always report progress for first few frames to debug
+        if progress_callback and (frame_count <= 3 or frame_count % 5 == 0 or frame_count == total_frames):
             progress = frame_count / total_frames
             progress_callback(progress)
-            logger.debug(f"Processing frame {frame_count}/{total_frames} ({progress*100:.1f}%)")
+            logger.info(f"Processing frame {frame_count}/{total_frames} ({progress*100:.1f}%)")
 
     cap.release()
     out.release()
