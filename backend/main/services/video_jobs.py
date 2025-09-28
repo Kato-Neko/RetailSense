@@ -104,6 +104,9 @@ def process_video_job(job_id: str):
             return
 
         detections_data = {"fps": fps, "detections": detections}
+        logger.info(f"DEBUG: Job {job_id} has {len(detections)} detections")
+        logger.info(f"DEBUG: First few detections: {detections[:3] if detections else 'None'}")
+        
         try:
             upload_json_to_supabase(
                 detections_data,
@@ -121,6 +124,7 @@ def process_video_job(job_id: str):
         logger.info(f"  - Expected heatmap path: {output_heatmap_image_path}")
         logger.info(f"  - Expected video path: {output_video_path}")
         
+        logger.info(f"DEBUG: About to call blend_heatmap with {len(detections)} detections")
         blended_img = blend_heatmap(
             detections,
             floorplan_path,
