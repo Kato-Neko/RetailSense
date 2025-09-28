@@ -9,7 +9,6 @@ from ..core.config import logger, UPLOAD_FOLDER, RESULTS_FOLDER
 from ..core.db import get_db_connection
 from ..core.storage import upload_json_to_supabase, upload_image_to_supabase
 from ..helpers.files import validate_video_file
-from ..helpers.memory import MemoryMonitor, cleanup_memory_if_needed, log_memory_usage
 from .tracking import detect_and_track
 from .heatmap_processing import blend_heatmap
 from .state import get_jobs_store
@@ -47,33 +46,28 @@ def update_job_progress(job_id: str, stage: str, progress: float):
 def process_video_job(job_id: str):
     jobs = get_jobs_store()
     try:
-        with MemoryMonitor("video_job_processing"):
-            job = jobs[job_id]
-            job['status'] = 'processing'
-            job['message'] = 'Starting video processing...'
-            job['cancelled'] = job.get('cancelled', False)
+        job = jobs[job_id]
+        job['status'] = 'processing'
+        job['message'] = 'Starting video processing...'
+        job['cancelled'] = job.get('cancelled', False)
 
-            # Check memory before starting
-            log_memory_usage("before video processing")
-            cleanup_memory_if_needed(50.0)  # Clean up at 50% memory usage
+        video_path = job['input_files']['video']
+        floorplan_path = job['input_files']['floorplan']
+        points_path = job['input_files']['points']
+        with open(points_path, 'r') as f:
+            _ = json.load(f)
+        cap = validate_video_file(video_path)
+        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        fps = int(cap.get(cv2.CAP_PROP_FPS))
+        duration = total_frames / fps if fps > 0 else 0
+        cap.release()
 
-            video_path = job['input_files']['video']
-            floorplan_path = job['input_files']['floorplan']
-            points_path = job['input_files']['points']
-            with open(points_path, 'r') as f:
-                _ = json.load(f)
-            cap = validate_video_file(video_path)
-            total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-            fps = int(cap.get(cv2.CAP_PROP_FPS))
-            duration = total_frames / fps if fps > 0 else 0
-            cap.release()
-
-            # Check video duration and reject if too long (reduced for memory constraints)
-            max_duration_minutes = 5  # 5 minutes max for Railway memory limits
-            if duration > max_duration_minutes * 60:
-                raise Exception(f"Video too long ({duration/60:.1f} minutes). Maximum allowed: {max_duration_minutes} minutes.")
-            
-            logger.info(f"Processing video: {total_frames} frames, {duration:.1f}s, {fps} fps")
+        # Check video duration and reject if too long
+        max_duration_minutes = 10  # 10 minutes max for Railway hobby plan
+        if duration > max_duration_minutes * 60:
+            raise Exception(f"Video too long ({duration/60:.1f} minutes). Maximum allowed: {max_duration_minutes} minutes.")
+        
+        logger.info(f"Processing video: {total_frames} frames, {duration:.1f}s, {fps} fps")
 
         if job.get('cancelled'):
             job['status'] = 'cancelled'
