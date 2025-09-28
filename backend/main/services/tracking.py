@@ -17,15 +17,11 @@ def _get_model():
     global _model
     if _model is None:
         from ultralytics import YOLO
-        # Load model with optimizations for CPU inference
+        # Load model with CPU optimizations
         _model = YOLO('yolov8n.pt')
-        # Set model to half precision for faster inference
-        _model.half()
-        # Warm up the model with a dummy inference
-        import torch
-        dummy_input = torch.randn(1, 3, 640, 640).half()
-        _model.model(dummy_input)
-        logger.info("YOLO model loaded and warmed up")
+        # Don't use half precision on CPU - it's not supported
+        # Instead, use float32 but with other optimizations
+        logger.info("YOLO model loaded for CPU inference")
     return _model
 
 
@@ -64,8 +60,8 @@ def detect_and_track(
     fps = int(cap.get(cv2.CAP_PROP_FPS))
     total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
 
-    # Resize frames for faster processing (max 480px width for much faster processing)
-    max_width = 480
+    # Resize frames for faster processing (max 320px width for maximum speed)
+    max_width = 320
     if original_width > max_width:
         scale_factor = max_width / original_width
         width = max_width
@@ -82,12 +78,12 @@ def detect_and_track(
 
     detections_for_heatmap: List[Dict[str, Any]] = []
     frame_count = 0
-    frame_skip = 3  # Process every 3rd frame for much faster processing
+    frame_skip = 5  # Process every 5th frame for much faster processing
     
     # Report initial progress
     if progress_callback:
         progress_callback(0.0)
-        logger.info(f"Starting video processing: {total_frames} frames (processing every {frame_skip}rd frame)")
+        logger.info(f"Starting video processing: {total_frames} frames (processing every {frame_skip}th frame)")
     
     logger.info(f"Video properties: {original_width}x{original_height}, {fps} fps, {total_frames} total frames")
     
@@ -127,14 +123,14 @@ def detect_and_track(
         start_time = time.time()
         
         try:
-            # Optimize YOLO inference with smaller input size and faster settings
+            # Optimize YOLO inference for CPU with smaller input size
             results = model(frame, 
                           classes=[0], 
                           verbose=False,
-                          imgsz=640,  # Smaller input size for faster processing
-                          conf=0.5,   # Confidence threshold
+                          imgsz=416,  # Even smaller input size for faster CPU processing
+                          conf=0.6,   # Slightly higher confidence threshold
                           iou=0.7,    # NMS IoU threshold
-                          max_det=10, # Maximum detections per image
+                          max_det=5,  # Fewer max detections for faster processing
                           device='cpu')  # Explicitly use CPU
         except Exception as e:
             logger.error(f"Error processing frame {frame_count} with YOLO: {e}")
