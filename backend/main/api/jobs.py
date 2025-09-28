@@ -1,4 +1,5 @@
 from flask import Blueprint, request, jsonify, send_from_directory
+from flask_cors import cross_origin
 from flask_jwt_extended import jwt_required, get_jwt_identity
 import os
 import uuid
@@ -17,6 +18,7 @@ jobs_bp = Blueprint('jobs', __name__)
 
 
 @jobs_bp.route('/heatmap_jobs', methods=['POST'])
+@cross_origin()
 @jwt_required()
 def create_heatmap_job():
     try:
@@ -196,6 +198,7 @@ def get_processed_video(job_id):
 
 
 @jobs_bp.route('/heatmap_jobs/history', methods=['GET'])
+@cross_origin()
 @jwt_required()
 def get_job_history():
     current_user = get_jwt_identity()

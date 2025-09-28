@@ -24,6 +24,7 @@ def test_heatmap_cors():
 
 
 @heatmap_bp.route('/heatmap_jobs/<job_id>/preview/detections', methods=['GET'])
+@cross_origin()
 def get_detection_preview(job_id):
     job_folder = os.path.join(RESULTS_FOLDER, job_id)
     preview_path = os.path.join(job_folder, 'preview_detections.jpg')
@@ -33,6 +34,7 @@ def get_detection_preview(job_id):
 
 
 @heatmap_bp.route('/heatmap_jobs/<job_id>/preview/heatmap', methods=['GET'])
+@cross_origin()
 def get_heatmap_preview(job_id):
     job_folder = os.path.join(RESULTS_FOLDER, job_id)
     preview_path = os.path.join(job_folder, 'preview_heatmap.jpg')
@@ -59,6 +61,7 @@ def receive_live_detections(job_id):
 
 
 @heatmap_bp.route('/heatmap_jobs/<job_id>/detections', methods=['GET'])
+@cross_origin()
 @jwt_required()
 def get_detections_from_json(job_id):
     detections, fps = load_detections(job_id)
