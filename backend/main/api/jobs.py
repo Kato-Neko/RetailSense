@@ -6,7 +6,7 @@ import datetime
 import shutil
 import cv2
 
-from ..core.config import UPLOAD_FOLDER, RESULTS_FOLDER, ALLOWED_EXTENSIONS_VIDEO, to_manila_iso
+from ..core.config import UPLOAD_FOLDER, RESULTS_FOLDER, ALLOWED_EXTENSIONS_VIDEO, to_manila_iso, logger
 from ..core.db import get_db_connection
 from ..services.video_jobs import process_video_job
 from ..services.state import get_jobs_store
@@ -131,7 +131,7 @@ def create_heatmap_job():
             cur.execute('''
                 INSERT INTO jobs (job_id, "user", input_video_name, input_floorplan_name, status, message, start_datetime, end_datetime, created_at, updated_at, output_heatmap_path, output_video_path)
                 VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)''',
-                (job_id, current_user, video_filename, floorplan_filename, 'pending', 'Job submitted, awaiting processing.', start_datetime, end_datetime, datetime.datetime.now(), datetime.datetime.now(), '', ''))
+                (job_id, current_user, video_filename, floorplan_filename, 'pending', 'Job submitted, awaiting processing.', start_datetime, end_datetime, datetime.datetime.now(), datetime.datetime.now(), None, None))
             conn.commit()
             cur.close()
         except Exception:
@@ -143,6 +143,7 @@ def create_heatmap_job():
         processing_thread = threading.Thread(target=process_video_job, args=(job_id,))
         processing_thread.daemon = True
         processing_thread.start()
+        logger.info(f"Started processing thread for job {job_id}")
 
         return jsonify({"job_id": job_id, "status": "pending", "message": "Job submitted for processing."}), 202
     except Exception as e:

@@ -154,6 +154,15 @@ def process_video_job(job_id: str):
         conn = get_db_connection()
         cur = conn.cursor()
         try:
+            # First, let's check if the job exists in the database
+            cur.execute("SELECT job_id, status FROM jobs WHERE job_id = %s", (job_id,))
+            existing_job = cur.fetchone()
+            if existing_job:
+                logger.info(f"Found existing job {job_id} with status: {existing_job[1]}")
+            else:
+                logger.error(f"Job {job_id} not found in database!")
+                return
+            
             cur.execute('''
                 UPDATE jobs 
                 SET status = %s, message = %s, updated_at = CURRENT_TIMESTAMP, output_heatmap_path = %s, output_video_path = %s
@@ -161,6 +170,15 @@ def process_video_job(job_id: str):
             ''', (job['status'], job['message'], output_heatmap_image_path, output_video_path, job_id))
             conn.commit()
             logger.info(f"Successfully updated job {job_id} in database with output paths")
+            
+            # Verify the update worked
+            cur.execute("SELECT output_heatmap_path, output_video_path FROM jobs WHERE job_id = %s", (job_id,))
+            updated_job = cur.fetchone()
+            if updated_job:
+                logger.info(f"Verified database update - heatmap_path: {updated_job[0]}, video_path: {updated_job[1]}")
+            else:
+                logger.error(f"Failed to verify database update for job {job_id}")
+                
         except Exception as e:
             logger.error(f"Error updating job {job_id} in database: {e}")
             conn.rollback()
