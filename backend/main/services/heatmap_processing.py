@@ -255,8 +255,15 @@ def blend_heatmap(detections, floorplan_path, output_heatmap_path, output_video_
     print(f"DEBUG: detections count: {len(detections)}")
     print(f"DEBUG: output_heatmap_path: {output_heatmap_path}")
     print(f"DEBUG: video_path: {video_path}")
+    
+    # Extract job ID from video path
+    import re
+    job_id_match = re.search(r'([a-f0-9-]{36})', video_path)
+    job_id = job_id_match.group(1) if job_id_match else "unknown"
+    print(f"DEBUG: Extracted job_id: {job_id}")
+    
     try:
-        create_progressive_heatmap_video_local(detections, floorplan, output_heatmap_path, video_path, points)
+        create_progressive_heatmap_video_local(detections, floorplan, job_id, video_path, points)
         print("DEBUG: Progressive heatmap video creation completed")
     except Exception as e:
         print(f"DEBUG: Progressive video error: {e}")
@@ -269,13 +276,13 @@ def blend_heatmap(detections, floorplan_path, output_heatmap_path, output_video_
         return None
 
 
-def create_progressive_heatmap_video_local(detections, floorplan, output_heatmap_path, video_path, points=None):
+def create_progressive_heatmap_video_local(detections, floorplan, job_id, video_path, points=None):
     """
     Create a progressive heatmap video and save locally.
     Follows same pattern as other files - save locally, upload through main pipeline.
     """
     print("DEBUG: ===== PROGRESSIVE VIDEO FUNCTION CALLED =====")
-    print(f"DEBUG: Function parameters - detections: {len(detections)}, output_heatmap_path: {output_heatmap_path}")
+    print(f"DEBUG: Function parameters - detections: {len(detections)}, job_id: {job_id}")
     try:
         # Get video dimensions
         cap = cv2.VideoCapture(video_path)
@@ -292,15 +299,11 @@ def create_progressive_heatmap_video_local(detections, floorplan, output_heatmap
         
         # Create progressive video path (same pattern as other files)
         import os
-        if output_heatmap_path:
-            # Use same directory as other output files
-            output_dir = os.path.dirname(output_heatmap_path)
-            progressive_video_path = os.path.join(output_dir, "progressive_heatmap.mp4")
-        else:
-            # Fallback to temp directory
-            import tempfile
-            temp_dir = tempfile.mkdtemp()
-            progressive_video_path = os.path.join(temp_dir, "progressive_heatmap.mp4")
+        # Create output directory using job_id
+        output_dir = f"/project_results/{job_id}"
+        os.makedirs(output_dir, exist_ok=True)
+        progressive_video_path = os.path.join(output_dir, f"progressive_heatmap_{job_id}.mp4")
+        print(f"DEBUG: Progressive video will be saved to: {progressive_video_path}")
         
         # Create video writer
         fourcc = cv2.VideoWriter_fourcc(*'mp4v')
