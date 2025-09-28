@@ -225,7 +225,7 @@ def run_custom_heatmap_job(job_id: str, start_time: float, end_time: float, set_
         set_progress(1.0)
         return
 
-    from core.storage import download_json_from_supabase
+    from ..core.storage import download_json_from_supabase
     det_data = download_json_from_supabase(f"{job_id}/detections.json")
     if det_data is None:
         set_progress(1.0)

@@ -80,6 +80,15 @@ def create_heatmap_job():
         floorplan_filename = f"floorplan_{job_id}.jpg"
         input_floorplan_path = os.path.join(job_upload_folder, floorplan_filename)
         cv2.imwrite(input_floorplan_path, frame)
+        
+        # Upload floorplan to Supabase for analysis
+        try:
+            from ..core.storage import upload_image_to_supabase
+            upload_image_to_supabase(frame, f"{job_id}/{floorplan_filename}")
+            logger.info(f"Successfully uploaded floorplan to Supabase: {job_id}/{floorplan_filename}")
+        except Exception as e:
+            logger.error(f"Failed to upload floorplan to Supabase: {e}")
+            # Continue without failing the job
 
         output_heatmap_image_path = os.path.join(job_results_folder, f"video_{job_id}_heatmap.jpg")
         output_processed_video_path = os.path.join(job_results_folder, f"video_{job_id}.mp4")

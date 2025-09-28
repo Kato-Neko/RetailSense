@@ -342,12 +342,26 @@ def get_heatmap_analysis(job_id):
             floorplan_supabase_path = f"{job_id}/{floorplan_filename}"
             floorplan = download_image_from_supabase(floorplan_supabase_path)
             if floorplan is None:
-                return jsonify({"error": "Could not load floorplan from local filesystem or Supabase"}), 500
-            logger.info(f"Successfully loaded floorplan from Supabase: {floorplan_supabase_path}")
+                # If floorplan is still not found, use a default size for analysis
+                logger.warning(f"Floorplan not found in Supabase either: {floorplan_supabase_path}. Using default dimensions.")
+                # Use the heatmap image dimensions as fallback
+                floorplan_height, floorplan_width = img_gray.shape[:2]
+                logger.info(f"Using heatmap dimensions as floorplan fallback: {floorplan_width}x{floorplan_height}")
+            else:
+                logger.info(f"Successfully loaded floorplan from Supabase: {floorplan_supabase_path}")
         except Exception as e:
             logger.error(f"Error loading floorplan from Supabase: {e}")
-            return jsonify({"error": f"Could not load floorplan: {str(e)}"}), 500
+            # Use heatmap dimensions as fallback
+            floorplan_height, floorplan_width = img_gray.shape[:2]
+            logger.info(f"Using heatmap dimensions as floorplan fallback: {floorplan_width}x{floorplan_height}")
+    
+    # If floorplan is still None, use heatmap dimensions
+    if floorplan is None:
+        floorplan_height, floorplan_width = img_gray.shape[:2]
+        logger.info(f"Using heatmap dimensions as floorplan fallback: {floorplan_width}x{floorplan_height}")
+    else:
+        floorplan_height, floorplan_width = floorplan.shape[:2]
     
     detections, fps = load_detections(job_id)
-    analysis = analyze_heatmap(img_gray, floorplan.shape[:2], detections=detections, fps=fps)
+    analysis = analyze_heatmap(img_gray, (floorplan_height, floorplan_width), detections=detections, fps=fps)
     return jsonify(analysis)
