@@ -281,8 +281,12 @@ def blend_heatmap(detections, floorplan_path, output_heatmap_path, output_video_
     cap.release()
     out.release()
     
-    # Create progressive heatmap video
-    create_progressive_heatmap_video(detections, floorplan, output_heatmap_path, video_path, points)
+    # Create progressive heatmap video (with error handling)
+    try:
+        create_progressive_heatmap_video(detections, floorplan, output_heatmap_path, video_path, points)
+    except Exception as e:
+        print(f"DEBUG: Error creating progressive heatmap video: {e}")
+        print("DEBUG: Continuing without progressive video...")
     
     if return_image:
         return blended
@@ -302,6 +306,9 @@ def create_progressive_heatmap_video(detections, floorplan, output_heatmap_path,
         points: List of 4 corner points for homography mapping
     """
     print("DEBUG: Creating progressive heatmap video...")
+    print(f"DEBUG: output_heatmap_path: {output_heatmap_path}")
+    print(f"DEBUG: video_path: {video_path}")
+    print(f"DEBUG: detections count: {len(detections)}")
     
     # Get video dimensions
     cap = cv2.VideoCapture(video_path)
@@ -318,12 +325,18 @@ def create_progressive_heatmap_video(detections, floorplan, output_heatmap_path,
     floorplan_height, floorplan_width = floorplan.shape[:2]
     
     # Create progressive heatmap video path (local download)
-    progressive_video_path = output_heatmap_path.replace('.jpg', '_progressive.mp4')
-    # For testing: save to a local downloads folder
     import os
     downloads_dir = os.path.join(os.path.expanduser("~"), "Downloads")
     if not os.path.exists(downloads_dir):
         os.makedirs(downloads_dir)
+    
+    # Use fallback path if output_heatmap_path is None
+    if output_heatmap_path:
+        progressive_video_path = output_heatmap_path.replace('.jpg', '_progressive.mp4')
+    else:
+        progressive_video_path = os.path.join(downloads_dir, "retailsense_heatmap_progressive.mp4")
+    
+    # For testing: always save to Downloads folder
     downloads_path = os.path.join(downloads_dir, "retailsense_heatmap_progressive.mp4")
     progressive_video_path = downloads_path
     
