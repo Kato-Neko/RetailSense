@@ -250,12 +250,18 @@ def blend_heatmap(detections, floorplan_path, output_heatmap_path, output_video_
     out.release()
     
     # Create progressive heatmap video (save locally, upload later through main pipeline)
+    print("DEBUG: ===== ENTERING PROGRESSIVE VIDEO SECTION =====")
     print("DEBUG: Creating progressive heatmap video...")
+    print(f"DEBUG: detections count: {len(detections)}")
+    print(f"DEBUG: output_heatmap_path: {output_heatmap_path}")
+    print(f"DEBUG: video_path: {video_path}")
     try:
         create_progressive_heatmap_video_local(detections, floorplan, output_heatmap_path, video_path, points)
         print("DEBUG: Progressive heatmap video creation completed")
     except Exception as e:
         print(f"DEBUG: Progressive video error: {e}")
+        import traceback
+        print(f"DEBUG: Progressive video traceback: {traceback.format_exc()}")
     
     if return_image:
         return blended
@@ -268,6 +274,8 @@ def create_progressive_heatmap_video_local(detections, floorplan, output_heatmap
     Create a progressive heatmap video and save locally.
     Follows same pattern as other files - save locally, upload through main pipeline.
     """
+    print("DEBUG: ===== PROGRESSIVE VIDEO FUNCTION CALLED =====")
+    print(f"DEBUG: Function parameters - detections: {len(detections)}, output_heatmap_path: {output_heatmap_path}")
     try:
         # Get video dimensions
         cap = cv2.VideoCapture(video_path)
