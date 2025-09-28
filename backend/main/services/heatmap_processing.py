@@ -88,6 +88,14 @@ def blend_heatmap(detections, floorplan_path, output_heatmap_path, output_video_
     print(f"DEBUG: Video dimensions: {video_width}x{video_height}")
     print(f"DEBUG: Floorplan dimensions: {floorplan_width}x{floorplan_height}")
     
+    # Debug: Check first few detection coordinates
+    if detections:
+        print(f"DEBUG: First detection bbox: {detections[0]['bbox']}")
+        center_x = (detections[0]['bbox'][0] + detections[0]['bbox'][2]) / 2
+        center_y = (detections[0]['bbox'][1] + detections[0]['bbox'][3]) / 2
+        print(f"DEBUG: First detection center: ({center_x:.1f}, {center_y:.1f})")
+        print(f"DEBUG: Detection center as % of video: ({center_x/video_width*100:.1f}%, {center_y/video_height*100:.1f}%)")
+    
     # --- Direct coordinate mapping ---
     # Use static points directly without homography transformation
     print(f"DEBUG: Using direct coordinate mapping (no homography)")
@@ -119,7 +127,12 @@ def blend_heatmap(detections, floorplan_path, output_heatmap_path, output_video_
         mx = max(0, min(mx, floorplan_width - 1))
         my = max(0, min(my, floorplan_height - 1))
         cv2.circle(heatmap, (mx, my), 20, 1.0, -1)
-        print(f"DEBUG: Detection {i}: video=({center_x:.1f}, {center_y:.1f}) -> floorplan=({mx}, {my}) [DIRECT MAPPING]")
+        
+        # Debug first few detections
+        if i < 3:
+            print(f"DEBUG: Detection {i}: video=({center_x:.1f}, {center_y:.1f}) -> floorplan=({mx}, {my}) [DIRECT MAPPING]")
+            print(f"DEBUG:  -> Raw mapping: ({center_x * floorplan_width / video_width:.1f}, {center_y * floorplan_height / video_height:.1f})")
+            print(f"DEBUG:  -> As % of floorplan: ({mx/floorplan_width*100:.1f}%, {my/floorplan_height*100:.1f}%)")
         
         # COMMENTED OUT: Homography transformation code (kept for future use)
         # pt = np.array([[center_x, center_y]], dtype=np.float32)
