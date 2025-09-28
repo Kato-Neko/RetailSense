@@ -60,8 +60,8 @@ def detect_and_track(
     fps = int(cap.get(cv2.CAP_PROP_FPS))
     total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
 
-    # Resize frames for faster processing (max 320px width for maximum speed)
-    max_width = 320
+    # Resize frames for faster processing (max 224px width for maximum speed)
+    max_width = 224
     if original_width > max_width:
         scale_factor = max_width / original_width
         width = max_width
@@ -78,7 +78,17 @@ def detect_and_track(
 
     detections_for_heatmap: List[Dict[str, Any]] = []
     frame_count = 0
-    frame_skip = 5  # Process every 5th frame for much faster processing
+    frame_skip = 10  # Process every 10th frame for much faster processing
+    
+    # Warm up the model with a dummy frame to reduce first inference time
+    logger.info("Warming up YOLO model...")
+    dummy_frame = cv2.resize(frame, (224, 224)) if frame is not None else None
+    if dummy_frame is not None:
+        try:
+            model(dummy_frame, verbose=False, imgsz=320, conf=0.7, device='cpu')
+            logger.info("Model warmup completed")
+        except Exception as e:
+            logger.warning(f"Model warmup failed: {e}")
     
     # Report initial progress
     if progress_callback:
@@ -100,8 +110,8 @@ def detect_and_track(
             logger.error(f"Frame {frame_count} is None, skipping")
             continue
             
-        # Skip frames for faster processing
-        if frame_count % frame_skip != 0:
+        # Skip frames for faster processing (process every 10th frame)
+        if frame_count % 10 != 0:
             frame_count += 1
             # Still write the frame to output video
             if scale_factor != 1.0:
@@ -123,14 +133,14 @@ def detect_and_track(
         start_time = time.time()
         
         try:
-            # Optimize YOLO inference for CPU with smaller input size
+            # Optimize YOLO inference for CPU with very small input size
             results = model(frame, 
                           classes=[0], 
                           verbose=False,
-                          imgsz=416,  # Even smaller input size for faster CPU processing
-                          conf=0.6,   # Slightly higher confidence threshold
+                          imgsz=320,  # Very small input size for maximum speed
+                          conf=0.7,   # Higher confidence threshold to reduce detections
                           iou=0.7,    # NMS IoU threshold
-                          max_det=5,  # Fewer max detections for faster processing
+                          max_det=3,  # Very few max detections for maximum speed
                           device='cpu')  # Explicitly use CPU
         except Exception as e:
             logger.error(f"Error processing frame {frame_count} with YOLO: {e}")
