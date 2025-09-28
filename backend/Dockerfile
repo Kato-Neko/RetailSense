@@ -3,9 +3,12 @@ FROM python:3.11-slim as builder
 
 WORKDIR /app
 
-# Install build dependencies
+# Install build dependencies including OpenCV requirements
 RUN apt-get update && apt-get install -y \
     build-essential \
+    libgl1-mesa-dev \
+    libglib2.0-0 \
+    libgomp1 \
     && rm -rf /var/lib/apt/lists/*
 
 # Install PyTorch CPU-only first (much smaller)
