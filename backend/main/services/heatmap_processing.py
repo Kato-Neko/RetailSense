@@ -282,8 +282,10 @@ def blend_heatmap(detections, floorplan_path, output_heatmap_path, output_video_
     out.release()
     
     # Create progressive heatmap video (with error handling)
+    print("DEBUG: About to create progressive heatmap video...")
     try:
         create_progressive_heatmap_video(detections, floorplan, output_heatmap_path, video_path, points)
+        print("DEBUG: Progressive heatmap video creation completed successfully")
     except Exception as e:
         print(f"DEBUG: Error creating progressive heatmap video: {e}")
         print("DEBUG: Continuing without progressive video...")
@@ -305,10 +307,12 @@ def create_progressive_heatmap_video(detections, floorplan, output_heatmap_path,
         video_path: Path to the original video
         points: List of 4 corner points for homography mapping
     """
+    print("DEBUG: ===== PROGRESSIVE VIDEO FUNCTION CALLED =====")
     print("DEBUG: Creating progressive heatmap video...")
     print(f"DEBUG: output_heatmap_path: {output_heatmap_path}")
     print(f"DEBUG: video_path: {video_path}")
     print(f"DEBUG: detections count: {len(detections)}")
+    print(f"DEBUG: floorplan shape: {floorplan.shape if floorplan is not None else 'None'}")
     
     # Get video dimensions
     cap = cv2.VideoCapture(video_path)
