@@ -280,7 +280,125 @@ def blend_heatmap(detections, floorplan_path, output_heatmap_path, output_video_
     # Release resources
     cap.release()
     out.release()
+    
+    # Create progressive heatmap video
+    create_progressive_heatmap_video(detections, floorplan, output_heatmap_path, video_path, points)
+    
     if return_image:
         return blended
     else:
         return None
+
+
+def create_progressive_heatmap_video(detections, floorplan, output_heatmap_path, video_path, points=None):
+    """
+    Create a video showing the heatmap gradually building up over time.
+    
+    Args:
+        detections: List of detections from object tracking
+        floorplan: The floorplan image
+        output_heatmap_path: Path to save the progressive heatmap video
+        video_path: Path to the original video
+        points: List of 4 corner points for homography mapping
+    """
+    print("DEBUG: Creating progressive heatmap video...")
+    
+    # Get video dimensions
+    cap = cv2.VideoCapture(video_path)
+    if not cap.isOpened():
+        print("ERROR: Could not open video for progressive heatmap")
+        return
+    
+    video_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+    video_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    fps = cap.get(cv2.CAP_PROP_FPS)
+    cap.release()
+    
+    # Get floorplan dimensions
+    floorplan_height, floorplan_width = floorplan.shape[:2]
+    
+    # Create progressive heatmap video path (local download)
+    progressive_video_path = output_heatmap_path.replace('.jpg', '_progressive.mp4')
+    # For testing: save to a local downloads folder
+    import os
+    downloads_dir = os.path.join(os.path.expanduser("~"), "Downloads")
+    if not os.path.exists(downloads_dir):
+        os.makedirs(downloads_dir)
+    downloads_path = os.path.join(downloads_dir, "retailsense_heatmap_progressive.mp4")
+    progressive_video_path = downloads_path
+    
+    # Create video writer
+    fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+    out = cv2.VideoWriter(progressive_video_path, fourcc, fps, (floorplan_width, floorplan_height))
+    
+    # Create heatmap canvas
+    heatmap = np.zeros(floorplan.shape[:2], dtype=np.float32)
+    
+    # Group detections by frame
+    frame_detections = {}
+    for detection in detections:
+        frame_num = detection['frame']
+        if frame_num not in frame_detections:
+            frame_detections[frame_num] = []
+        frame_detections[frame_num].append(detection)
+    
+    # Process each frame
+    total_frames = max(frame_detections.keys()) if frame_detections else 0
+    for frame_num in range(total_frames + 1):
+        # Add detections for this frame
+        if frame_num in frame_detections:
+            for detection in frame_detections[frame_num]:
+                bbox = detection['bbox']
+                center_x = (bbox[0] + bbox[2]) / 2
+                center_y = (bbox[1] + bbox[3]) / 2
+                
+                # Apply coordinate normalization (same as main function)
+                if center_x > video_width * 1.5 or center_y > video_height * 1.5:
+                    if center_x > video_width * 2:
+                        center_x = center_x % video_width
+                        center_y = center_y % video_height
+                
+                # Map to floorplan coordinates
+                mx = int(center_x * floorplan_width / video_width)
+                my = int(center_y * floorplan_height / video_height)
+                mx = max(0, min(mx, floorplan_width - 1))
+                my = max(0, min(my, floorplan_height - 1))
+                
+                # Add to heatmap
+                cv2.circle(heatmap, (mx, my), 20, 1.0, -1)
+        
+        # Create frame with current heatmap
+        if np.count_nonzero(heatmap) > 0:
+            # Apply gamma correction
+            heatmap_frame = np.power(heatmap, 0.4)
+            heatmap_norm = cv2.normalize(heatmap_frame, None, 0, 1, cv2.NORM_MINMAX)
+            heatmap_img = cv2.normalize(heatmap_frame, None, 0, 255, cv2.NORM_MINMAX)
+            
+            # Apply Gaussian blur
+            heatmap_img = gaussian_filter(heatmap_img, sigma=10)
+            
+            # Convert to color heatmap
+            heatmap_colored = cv2.applyColorMap(heatmap_img.astype(np.uint8), cv2.COLORMAP_JET)
+            
+            # Blend with floorplan
+            alpha_mask = heatmap_norm[..., None] * 0.5
+            blended = (floorplan * (1 - alpha_mask) + heatmap_colored * alpha_mask).astype(np.uint8)
+        else:
+            blended = floorplan.copy()
+        
+        # Add frame number and detection count
+        frame_text = f"Frame: {frame_num}"
+        detections_text = f"Detections: {len(frame_detections.get(frame_num, []))}"
+        total_text = f"Total: {np.count_nonzero(heatmap)}"
+        
+        cv2.putText(blended, frame_text, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
+        cv2.putText(blended, detections_text, (10, 70), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
+        cv2.putText(blended, total_text, (10, 110), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
+        
+        # Write frame
+        out.write(blended)
+    
+    # Release resources
+    out.release()
+    print(f"DEBUG: Progressive heatmap video saved locally to: {progressive_video_path}")
+    print(f"DEBUG: File saved to Downloads folder for testing - NOT uploaded to Supabase")
