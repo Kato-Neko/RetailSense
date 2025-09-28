@@ -4,52 +4,52 @@ import numpy as np
 from scipy.ndimage import gaussian_filter
 
 
-def test_homography_transformation(points, video_path, floorplan_path):
-    """Test function to debug homography transformation"""
-    print("=== HOMOGRAPHY TRANSFORMATION TEST ===")
-    
-    # Load floorplan
-    floorplan = cv2.imread(floorplan_path)
-    if floorplan is None:
-        print(f"ERROR: Could not load floorplan: {floorplan_path}")
-        return
-    
-    # Get video dimensions
-    cap = cv2.VideoCapture(video_path)
-    if not cap.isOpened():
-        print(f"ERROR: Could not open video: {video_path}")
-        return
-    
-    video_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-    video_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-    cap.release()
-    
-    floorplan_height, floorplan_width = floorplan.shape[:2]
-    
-    print(f"Video dimensions: {video_width}x{video_height}")
-    print(f"Floorplan dimensions: {floorplan_width}x{floorplan_height}")
-    print(f"Input points: {points}")
-    
-    if points is not None and len(points) == 4:
-        # Calculate homography matrix
-        src_pts = np.array(points, dtype=np.float32)
-        dst_pts = np.array([[0, 0], [floorplan_width-1, 0], [floorplan_width-1, floorplan_height-1], [0, floorplan_height-1]], dtype=np.float32)
-        H, _ = cv2.findHomography(src_pts, dst_pts)
-        print(f"Homography matrix:\n{H}")
-        
-        # Test transformation of corner points
-        for i, (src_pt, dst_pt) in enumerate(zip(src_pts, dst_pts)):
-            print(f"Corner {i}: src=({src_pt[0]:.1f}, {src_pt[1]:.1f}) -> expected_dst=({dst_pt[0]:.1f}, {dst_pt[1]:.1f})")
-            
-            # Test actual transformation
-            pt = np.array([[src_pt[0], src_pt[1]]], dtype=np.float32)
-            pt = np.array([pt])
-            mapped_pt = cv2.perspectiveTransform(pt, H)[0][0]
-            print(f"  -> actual_dst=({mapped_pt[0]:.1f}, {mapped_pt[1]:.1f})")
-    else:
-        print("ERROR: Invalid points provided for homography test")
-    
-    print("=== END TEST ===")
+# def test_homography_transformation(points, video_path, floorplan_path):
+#     """Test function to debug homography transformation"""
+#     print("=== HOMOGRAPHY TRANSFORMATION TEST ===")
+#     
+#     # Load floorplan
+#     floorplan = cv2.imread(floorplan_path)
+#     if floorplan is None:
+#         print(f"ERROR: Could not load floorplan: {floorplan_path}")
+#         return
+#     
+#     # Get video dimensions
+#     cap = cv2.VideoCapture(video_path)
+#     if not cap.isOpened():
+#         print(f"ERROR: Could not open video: {video_path}")
+#         return
+#     
+#     video_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+#     video_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+#     cap.release()
+#     
+#     floorplan_height, floorplan_width = floorplan.shape[:2]
+#     
+#     print(f"Video dimensions: {video_width}x{video_height}")
+#     print(f"Floorplan dimensions: {floorplan_width}x{floorplan_height}")
+#     print(f"Input points: {points}")
+#     
+#     if points is not None and len(points) == 4:
+#         # Calculate homography matrix
+#         src_pts = np.array(points, dtype=np.float32)
+#         dst_pts = np.array([[0, 0], [floorplan_width-1, 0], [floorplan_width-1, floorplan_height-1], [0, floorplan_height-1]], dtype=np.float32)
+#         H, _ = cv2.findHomography(src_pts, dst_pts)
+#         print(f"Homography matrix:\n{H}")
+#         
+#         # Test transformation of corner points
+#         for i, (src_pt, dst_pt) in enumerate(zip(src_pts, dst_pts)):
+#             print(f"Corner {i}: src=({src_pt[0]:.1f}, {src_pt[1]:.1f}) -> expected_dst=({dst_pt[0]:.1f}, {dst_pt[1]:.1f})")
+#             
+#             # Test actual transformation
+#             pt = np.array([[src_pt[0], src_pt[1]]], dtype=np.float32)
+#             pt = np.array([pt])
+#             mapped_pt = cv2.perspectiveTransform(pt, H)[0][0]
+#             print(f"  -> actual_dst=({mapped_pt[0]:.1f}, {mapped_pt[1]:.1f})")
+#     else:
+#         print("ERROR: Invalid points provided for homography test")
+#     
+#     print("=== END TEST ===")
 
 
 def blend_heatmap(detections, floorplan_path, output_heatmap_path, output_video_path, video_path, points=None, progress_callback=None, return_image=False):
@@ -88,21 +88,20 @@ def blend_heatmap(detections, floorplan_path, output_heatmap_path, output_video_
     print(f"DEBUG: Video dimensions: {video_width}x{video_height}")
     print(f"DEBUG: Floorplan dimensions: {floorplan_width}x{floorplan_height}")
     
-    # --- Homography mapping setup ---
-    # Always use static points from floorplan_points.txt
-    static_points = [
-        [768, 204],   # top_left
-        [690, 200],   # top_right  
-        [655, 305],   # bottom_right
-        [793, 309]    # bottom_left
-    ]
-    src_pts = np.array(static_points, dtype=np.float32)
-    print(f"DEBUG: Using static points: {src_pts}")
+    # --- Direct coordinate mapping ---
+    # Use static points directly without homography transformation
+    print(f"DEBUG: Using direct coordinate mapping (no homography)")
     
-    # dst_pts: corners of the floorplan image
-    dst_pts = np.array([[0, 0], [floorplan_width-1, 0], [floorplan_width-1, floorplan_height-1], [0, floorplan_height-1]], dtype=np.float32)
-    H, _ = cv2.findHomography(src_pts, dst_pts)
-    print(f"DEBUG: Homography matrix:\n{H}")
+    # COMMENTED OUT: Homography transformation code (kept for future use)
+    # static_points = [
+    #     [768, 204],   # top_left
+    #     [690, 200],   # top_right  
+    #     [655, 305],   # bottom_right
+    #     [793, 309]    # bottom_left
+    # ]
+    # src_pts = np.array(static_points, dtype=np.float32)
+    # dst_pts = np.array([[0, 0], [floorplan_width-1, 0], [floorplan_width-1, floorplan_height-1], [0, floorplan_height-1]], dtype=np.float32)
+    # H, _ = cv2.findHomography(src_pts, dst_pts)
 
     heatmap = np.zeros(floorplan.shape[:2], dtype=np.float32)
     total_detections = len(detections)
@@ -114,18 +113,24 @@ def blend_heatmap(detections, floorplan_path, output_heatmap_path, output_video_
         center_x = (bbox[0] + bbox[2]) / 2
         center_y = (bbox[1] + bbox[3]) / 2
         
-        # Use homography transformation (always have points now)
-        pt = np.array([[center_x, center_y]], dtype=np.float32)
-        pt = np.array([pt])  # shape (1, 1, 2)
-        mapped_pt = cv2.perspectiveTransform(pt, H)[0][0]
-        mx, my = int(mapped_pt[0]), int(mapped_pt[1])
+        # Use direct coordinate mapping (no homography)
+        mx = int(center_x * floorplan_width / video_width)
+        my = int(center_y * floorplan_height / video_height)
+        mx = max(0, min(mx, floorplan_width - 1))
+        my = max(0, min(my, floorplan_height - 1))
+        cv2.circle(heatmap, (mx, my), 20, 1.0, -1)
+        print(f"DEBUG: Detection {i}: video=({center_x:.1f}, {center_y:.1f}) -> floorplan=({mx}, {my}) [DIRECT MAPPING]")
         
-        # Ensure coordinates are within bounds
-        if 0 <= mx < floorplan_width and 0 <= my < floorplan_height:
-            cv2.circle(heatmap, (mx, my), 20, 1.0, -1)
-            print(f"DEBUG: Detection {i}: video=({center_x:.1f}, {center_y:.1f}) -> floorplan=({mx}, {my})")
-        else:
-            print(f"DEBUG: Detection {i}: video=({center_x:.1f}, {center_y:.1f}) -> floorplan=({mx}, {my}) [OUT OF BOUNDS]")
+        # COMMENTED OUT: Homography transformation code (kept for future use)
+        # pt = np.array([[center_x, center_y]], dtype=np.float32)
+        # pt = np.array([pt])  # shape (1, 1, 2)
+        # mapped_pt = cv2.perspectiveTransform(pt, H)[0][0]
+        # mx, my = int(mapped_pt[0]), int(mapped_pt[1])
+        # if 0 <= mx < floorplan_width and 0 <= my < floorplan_height:
+        #     cv2.circle(heatmap, (mx, my), 20, 1.0, -1)
+        #     print(f"DEBUG: Detection {i}: video=({center_x:.1f}, {center_y:.1f}) -> floorplan=({mx}, {my})")
+        # else:
+        #     print(f"DEBUG: Detection {i}: video=({center_x:.1f}, {center_y:.1f}) -> floorplan=({mx}, {my}) [OUT OF BOUNDS]")
         
         if progress_callback and total_detections > 0:
             progress = 0.5 * (i + 1) / total_detections
