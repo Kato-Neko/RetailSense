@@ -80,16 +80,6 @@ def detect_and_track(
     frame_count = 0
     frame_skip = 10  # Process every 10th frame for much faster processing
     
-    # Warm up the model with a dummy frame to reduce first inference time
-    logger.info("Warming up YOLO model...")
-    dummy_frame = cv2.resize(frame, (224, 224)) if frame is not None else None
-    if dummy_frame is not None:
-        try:
-            model(dummy_frame, verbose=False, imgsz=320, conf=0.7, device='cpu')
-            logger.info("Model warmup completed")
-        except Exception as e:
-            logger.warning(f"Model warmup failed: {e}")
-    
     # Report initial progress
     if progress_callback:
         progress_callback(0.0)
@@ -109,6 +99,16 @@ def detect_and_track(
         if frame is None:
             logger.error(f"Frame {frame_count} is None, skipping")
             continue
+        
+        # Warm up the model on the first frame to reduce subsequent inference times
+        if frame_count == 0:
+            logger.info("Warming up YOLO model with first frame...")
+            try:
+                dummy_frame = cv2.resize(frame, (224, 224))
+                model(dummy_frame, verbose=False, imgsz=320, conf=0.7, device='cpu')
+                logger.info("Model warmup completed")
+            except Exception as e:
+                logger.warning(f"Model warmup failed: {e}")
             
         # Skip frames for faster processing (process every 10th frame)
         if frame_count % 10 != 0:
