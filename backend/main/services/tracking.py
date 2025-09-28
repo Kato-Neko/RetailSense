@@ -18,6 +18,7 @@ def _get_model():
     if _model is None:
         from ultralytics import YOLO
         # Load model with CPU optimizations
+        # The model will be pre-downloaded during Docker build
         _model = YOLO('yolov8n.pt')
         # Don't use half precision on CPU - it's not supported
         # Instead, use float32 but with other optimizations

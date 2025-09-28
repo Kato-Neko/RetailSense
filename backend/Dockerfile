@@ -15,6 +15,9 @@ RUN pip install --no-cache-dir --user torch==2.1.0+cpu torchvision==0.16.0+cpu -
 COPY requirements.txt .
 RUN pip install --no-cache-dir --user -r requirements.txt
 
+# Pre-download YOLO model to avoid slow downloads at runtime
+RUN python -c "from ultralytics import YOLO; YOLO('yolov8n.pt')"
+
 # Runtime stage
 FROM python:3.11-slim
 
