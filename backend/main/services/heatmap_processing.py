@@ -70,6 +70,12 @@ def blend_heatmap(detections, floorplan_path, output_heatmap_path, output_video_
     print(f"DEBUG: First few detections: {detections[:3] if detections else 'None'}")
     print(f"DEBUG: Received points for mapping: {points}")
     
+    # Check if detections are in a different coordinate space
+    if detections:
+        first_bbox = detections[0]['bbox']
+        print(f"DEBUG: First bbox: {first_bbox}")
+        print(f"DEBUG: Bbox coordinates are much larger than video dimensions - possible coordinate system mismatch!")
+    
     floorplan = cv2.imread(floorplan_path)
     if floorplan is None:
         raise ValueError(f"Could not load floorplan image: {floorplan_path}")
@@ -95,6 +101,12 @@ def blend_heatmap(detections, floorplan_path, output_heatmap_path, output_video_
         center_y = (detections[0]['bbox'][1] + detections[0]['bbox'][3]) / 2
         print(f"DEBUG: First detection center: ({center_x:.1f}, {center_y:.1f})")
         print(f"DEBUG: Detection center as % of video: ({center_x/video_width*100:.1f}%, {center_y/video_height*100:.1f}%)")
+        
+        # Check if coordinates are way outside video bounds
+        if center_x > video_width * 2 or center_y > video_height * 2:
+            print(f"DEBUG: WARNING - Detection coordinates are much larger than video dimensions!")
+            print(f"DEBUG: This suggests the detections might be in a different coordinate space")
+            print(f"DEBUG: Video: {video_width}x{video_height}, Detection center: ({center_x:.1f}, {center_y:.1f})")
     
     # --- Direct coordinate mapping ---
     # Use static points directly without homography transformation
