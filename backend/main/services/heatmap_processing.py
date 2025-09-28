@@ -281,9 +281,9 @@ def blend_heatmap(detections, floorplan_path, output_heatmap_path, output_video_
     cap.release()
     out.release()
     
-    # Create progressive heatmap video and upload to Supabase
+    # Create progressive heatmap video (save locally, upload later through main pipeline)
     try:
-        create_progressive_heatmap_video_supabase(detections, floorplan, output_heatmap_path, video_path, points)
+        create_progressive_heatmap_video_local(detections, floorplan, output_heatmap_path, video_path, points)
     except Exception as e:
         print(f"DEBUG: Progressive video error: {e}")
     
@@ -293,10 +293,10 @@ def blend_heatmap(detections, floorplan_path, output_heatmap_path, output_video_
         return None
 
 
-def create_progressive_heatmap_video_supabase(detections, floorplan, output_heatmap_path, video_path, points=None):
+def create_progressive_heatmap_video_local(detections, floorplan, output_heatmap_path, video_path, points=None):
     """
-    Create a progressive heatmap video and upload to Supabase.
-    Minimal logging to prevent server crashes.
+    Create a progressive heatmap video and save locally.
+    Follows same pattern as other files - save locally, upload through main pipeline.
     """
     try:
         # Get video dimensions
@@ -312,15 +312,21 @@ def create_progressive_heatmap_video_supabase(detections, floorplan, output_heat
         # Get floorplan dimensions
         floorplan_height, floorplan_width = floorplan.shape[:2]
         
-        # Create temporary video file
-        import tempfile
+        # Create progressive video path (same pattern as other files)
         import os
-        temp_dir = tempfile.mkdtemp()
-        temp_video_path = os.path.join(temp_dir, "progressive_heatmap.mp4")
+        if output_heatmap_path:
+            # Use same directory as other output files
+            output_dir = os.path.dirname(output_heatmap_path)
+            progressive_video_path = os.path.join(output_dir, "progressive_heatmap.mp4")
+        else:
+            # Fallback to temp directory
+            import tempfile
+            temp_dir = tempfile.mkdtemp()
+            progressive_video_path = os.path.join(temp_dir, "progressive_heatmap.mp4")
         
         # Create video writer
         fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-        out = cv2.VideoWriter(temp_video_path, fourcc, fps, (floorplan_width, floorplan_height))
+        out = cv2.VideoWriter(progressive_video_path, fourcc, fps, (floorplan_width, floorplan_height))
         
         # Create heatmap canvas
         heatmap = np.zeros(floorplan.shape[:2], dtype=np.float32)
@@ -392,31 +398,7 @@ def create_progressive_heatmap_video_supabase(detections, floorplan, output_heat
         # Release resources
         out.release()
         
-        # Upload to Supabase
-        from main.core.config import supabase_client
-        if supabase_client and os.path.exists(temp_video_path):
-            # Generate job ID from output_heatmap_path
-            job_id = "unknown"
-            if output_heatmap_path:
-                # Extract job ID from path like "/project_results/job-id/video_heatmap.jpg"
-                path_parts = output_heatmap_path.split('/')
-                if len(path_parts) > 2:
-                    job_id = path_parts[2]
-            
-            # Upload progressive video
-            progressive_video_name = f"progressive_heatmap_{job_id}.mp4"
-            with open(temp_video_path, 'rb') as f:
-                supabase_client.storage.from_("projectresults").upload(
-                    f"{job_id}/{progressive_video_name}",
-                    f.read(),
-                    file_options={"content-type": "video/mp4"}
-                )
-            
-            print(f"DEBUG: Progressive heatmap video uploaded: {progressive_video_name}")
-        
-        # Clean up temporary file
-        os.remove(temp_video_path)
-        os.rmdir(temp_dir)
+        print(f"DEBUG: Progressive heatmap video saved locally: {progressive_video_path}")
         
     except Exception as e:
         print(f"DEBUG: Progressive video creation failed: {e}")
