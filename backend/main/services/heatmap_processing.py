@@ -89,18 +89,20 @@ def blend_heatmap(detections, floorplan_path, output_heatmap_path, output_video_
     print(f"DEBUG: Floorplan dimensions: {floorplan_width}x{floorplan_height}")
     
     # --- Homography mapping setup ---
-    if points is not None and len(points) == 4:
-        # Use provided points for homography transformation
-        # points should be: [top_left, top_right, bottom_right, bottom_left]
-        src_pts = np.array(points, dtype=np.float32)
-        # dst_pts: corners of the floorplan image
-        dst_pts = np.array([[0, 0], [floorplan_width-1, 0], [floorplan_width-1, floorplan_height-1], [0, floorplan_height-1]], dtype=np.float32)
-        H, _ = cv2.findHomography(src_pts, dst_pts)
-        print(f"DEBUG: Homography matrix:\n{H}")
-        use_homography = True
-    else:
-        print("WARNING: No points provided, using simple scaling transformation")
-        use_homography = False
+    # Always use static points from floorplan_points.txt
+    static_points = [
+        [768, 204],   # top_left
+        [690, 200],   # top_right  
+        [655, 305],   # bottom_right
+        [793, 309]    # bottom_left
+    ]
+    src_pts = np.array(static_points, dtype=np.float32)
+    print(f"DEBUG: Using static points: {src_pts}")
+    
+    # dst_pts: corners of the floorplan image
+    dst_pts = np.array([[0, 0], [floorplan_width-1, 0], [floorplan_width-1, floorplan_height-1], [0, floorplan_height-1]], dtype=np.float32)
+    H, _ = cv2.findHomography(src_pts, dst_pts)
+    print(f"DEBUG: Homography matrix:\n{H}")
 
     heatmap = np.zeros(floorplan.shape[:2], dtype=np.float32)
     total_detections = len(detections)
@@ -112,27 +114,18 @@ def blend_heatmap(detections, floorplan_path, output_heatmap_path, output_video_
         center_x = (bbox[0] + bbox[2]) / 2
         center_y = (bbox[1] + bbox[3]) / 2
         
-        if use_homography:
-            # Use homography transformation
-            pt = np.array([[center_x, center_y]], dtype=np.float32)
-            pt = np.array([pt])  # shape (1, 1, 2)
-            mapped_pt = cv2.perspectiveTransform(pt, H)[0][0]
-            mx, my = int(mapped_pt[0]), int(mapped_pt[1])
-            
-            # Ensure coordinates are within bounds
-            if 0 <= mx < floorplan_width and 0 <= my < floorplan_height:
-                cv2.circle(heatmap, (mx, my), 20, 1.0, -1)
-                print(f"DEBUG: Detection {i}: video=({center_x:.1f}, {center_y:.1f}) -> floorplan=({mx}, {my})")
-            else:
-                print(f"DEBUG: Detection {i}: video=({center_x:.1f}, {center_y:.1f}) -> floorplan=({mx}, {my}) [OUT OF BOUNDS]")
-        else:
-            # Fallback to simple scaling
-            mx = int(center_x * floorplan_width / video_width)
-            my = int(center_y * floorplan_height / video_height)
-            mx = max(0, min(mx, floorplan_width - 1))
-            my = max(0, min(my, floorplan_height - 1))
+        # Use homography transformation (always have points now)
+        pt = np.array([[center_x, center_y]], dtype=np.float32)
+        pt = np.array([pt])  # shape (1, 1, 2)
+        mapped_pt = cv2.perspectiveTransform(pt, H)[0][0]
+        mx, my = int(mapped_pt[0]), int(mapped_pt[1])
+        
+        # Ensure coordinates are within bounds
+        if 0 <= mx < floorplan_width and 0 <= my < floorplan_height:
             cv2.circle(heatmap, (mx, my), 20, 1.0, -1)
-            print(f"DEBUG: Detection {i}: video=({center_x:.1f}, {center_y:.1f}) -> floorplan=({mx}, {my}) [SCALING]")
+            print(f"DEBUG: Detection {i}: video=({center_x:.1f}, {center_y:.1f}) -> floorplan=({mx}, {my})")
+        else:
+            print(f"DEBUG: Detection {i}: video=({center_x:.1f}, {center_y:.1f}) -> floorplan=({mx}, {my}) [OUT OF BOUNDS]")
         
         if progress_callback and total_detections > 0:
             progress = 0.5 * (i + 1) / total_detections
