@@ -281,14 +281,11 @@ def blend_heatmap(detections, floorplan_path, output_heatmap_path, output_video_
     cap.release()
     out.release()
     
-    # Create progressive heatmap video (with error handling)
-    print("DEBUG: About to create progressive heatmap video...")
+    # Create progressive heatmap video and upload to Supabase
     try:
-        create_progressive_heatmap_video(detections, floorplan, output_heatmap_path, video_path, points)
-        print("DEBUG: Progressive heatmap video creation completed successfully")
+        create_progressive_heatmap_video_supabase(detections, floorplan, output_heatmap_path, video_path, points)
     except Exception as e:
-        print(f"DEBUG: Error creating progressive heatmap video: {e}")
-        print("DEBUG: Continuing without progressive video...")
+        print(f"DEBUG: Progressive video error: {e}")
     
     if return_image:
         return blended
@@ -296,126 +293,130 @@ def blend_heatmap(detections, floorplan_path, output_heatmap_path, output_video_
         return None
 
 
-def create_progressive_heatmap_video(detections, floorplan, output_heatmap_path, video_path, points=None):
+def create_progressive_heatmap_video_supabase(detections, floorplan, output_heatmap_path, video_path, points=None):
     """
-    Create a video showing the heatmap gradually building up over time.
-    
-    Args:
-        detections: List of detections from object tracking
-        floorplan: The floorplan image
-        output_heatmap_path: Path to save the progressive heatmap video
-        video_path: Path to the original video
-        points: List of 4 corner points for homography mapping
+    Create a progressive heatmap video and upload to Supabase.
+    Minimal logging to prevent server crashes.
     """
-    print("DEBUG: ===== PROGRESSIVE VIDEO FUNCTION CALLED =====")
-    print("DEBUG: Creating progressive heatmap video...")
-    print(f"DEBUG: output_heatmap_path: {output_heatmap_path}")
-    print(f"DEBUG: video_path: {video_path}")
-    print(f"DEBUG: detections count: {len(detections)}")
-    print(f"DEBUG: floorplan shape: {floorplan.shape if floorplan is not None else 'None'}")
-    
-    # Get video dimensions
-    cap = cv2.VideoCapture(video_path)
-    if not cap.isOpened():
-        print("ERROR: Could not open video for progressive heatmap")
-        return
-    
-    video_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-    video_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-    fps = cap.get(cv2.CAP_PROP_FPS)
-    cap.release()
-    
-    # Get floorplan dimensions
-    floorplan_height, floorplan_width = floorplan.shape[:2]
-    
-    # Create progressive heatmap video path (local download)
-    import os
-    downloads_dir = os.path.join(os.path.expanduser("~"), "Downloads")
-    if not os.path.exists(downloads_dir):
-        os.makedirs(downloads_dir)
-    
-    # Use fallback path if output_heatmap_path is None
-    if output_heatmap_path:
-        progressive_video_path = output_heatmap_path.replace('.jpg', '_progressive.mp4')
-    else:
-        progressive_video_path = os.path.join(downloads_dir, "retailsense_heatmap_progressive.mp4")
-    
-    # For testing: always save to Downloads folder
-    downloads_path = os.path.join(downloads_dir, "retailsense_heatmap_progressive.mp4")
-    progressive_video_path = downloads_path
-    
-    # Create video writer
-    fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-    out = cv2.VideoWriter(progressive_video_path, fourcc, fps, (floorplan_width, floorplan_height))
-    
-    # Create heatmap canvas
-    heatmap = np.zeros(floorplan.shape[:2], dtype=np.float32)
-    
-    # Group detections by frame
-    frame_detections = {}
-    for detection in detections:
-        frame_num = detection['frame']
-        if frame_num not in frame_detections:
-            frame_detections[frame_num] = []
-        frame_detections[frame_num].append(detection)
-    
-    # Process each frame
-    total_frames = max(frame_detections.keys()) if frame_detections else 0
-    for frame_num in range(total_frames + 1):
-        # Add detections for this frame
-        if frame_num in frame_detections:
-            for detection in frame_detections[frame_num]:
-                bbox = detection['bbox']
-                center_x = (bbox[0] + bbox[2]) / 2
-                center_y = (bbox[1] + bbox[3]) / 2
-                
-                # Apply coordinate normalization (same as main function)
-                if center_x > video_width * 1.5 or center_y > video_height * 1.5:
-                    if center_x > video_width * 2:
-                        center_x = center_x % video_width
-                        center_y = center_y % video_height
-                
-                # Map to floorplan coordinates
-                mx = int(center_x * floorplan_width / video_width)
-                my = int(center_y * floorplan_height / video_height)
-                mx = max(0, min(mx, floorplan_width - 1))
-                my = max(0, min(my, floorplan_height - 1))
-                
-                # Add to heatmap
-                cv2.circle(heatmap, (mx, my), 20, 1.0, -1)
+    try:
+        # Get video dimensions
+        cap = cv2.VideoCapture(video_path)
+        if not cap.isOpened():
+            return
         
-        # Create frame with current heatmap
-        if np.count_nonzero(heatmap) > 0:
-            # Apply gamma correction
-            heatmap_frame = np.power(heatmap, 0.4)
-            heatmap_norm = cv2.normalize(heatmap_frame, None, 0, 1, cv2.NORM_MINMAX)
-            heatmap_img = cv2.normalize(heatmap_frame, None, 0, 255, cv2.NORM_MINMAX)
+        video_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+        video_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        fps = cap.get(cv2.CAP_PROP_FPS)
+        cap.release()
+        
+        # Get floorplan dimensions
+        floorplan_height, floorplan_width = floorplan.shape[:2]
+        
+        # Create temporary video file
+        import tempfile
+        import os
+        temp_dir = tempfile.mkdtemp()
+        temp_video_path = os.path.join(temp_dir, "progressive_heatmap.mp4")
+        
+        # Create video writer
+        fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+        out = cv2.VideoWriter(temp_video_path, fourcc, fps, (floorplan_width, floorplan_height))
+        
+        # Create heatmap canvas
+        heatmap = np.zeros(floorplan.shape[:2], dtype=np.float32)
+        
+        # Group detections by frame
+        frame_detections = {}
+        for detection in detections:
+            frame_num = detection['frame']
+            if frame_num not in frame_detections:
+                frame_detections[frame_num] = []
+            frame_detections[frame_num].append(detection)
+        
+        # Process each frame
+        total_frames = max(frame_detections.keys()) if frame_detections else 0
+        for frame_num in range(total_frames + 1):
+            # Add detections for this frame
+            if frame_num in frame_detections:
+                for detection in frame_detections[frame_num]:
+                    bbox = detection['bbox']
+                    center_x = (bbox[0] + bbox[2]) / 2
+                    center_y = (bbox[1] + bbox[3]) / 2
+                    
+                    # Apply coordinate normalization
+                    if center_x > video_width * 1.5 or center_y > video_height * 1.5:
+                        if center_x > video_width * 2:
+                            center_x = center_x % video_width
+                            center_y = center_y % video_height
+                    
+                    # Map to floorplan coordinates
+                    mx = int(center_x * floorplan_width / video_width)
+                    my = int(center_y * floorplan_height / video_height)
+                    mx = max(0, min(mx, floorplan_width - 1))
+                    my = max(0, min(my, floorplan_height - 1))
+                    
+                    # Add to heatmap
+                    cv2.circle(heatmap, (mx, my), 20, 1.0, -1)
             
-            # Apply Gaussian blur
-            heatmap_img = gaussian_filter(heatmap_img, sigma=10)
+            # Create frame with current heatmap
+            if np.count_nonzero(heatmap) > 0:
+                # Apply gamma correction
+                heatmap_frame = np.power(heatmap, 0.4)
+                heatmap_norm = cv2.normalize(heatmap_frame, None, 0, 1, cv2.NORM_MINMAX)
+                heatmap_img = cv2.normalize(heatmap_frame, None, 0, 255, cv2.NORM_MINMAX)
+                
+                # Apply Gaussian blur
+                heatmap_img = gaussian_filter(heatmap_img, sigma=10)
+                
+                # Convert to color heatmap
+                heatmap_colored = cv2.applyColorMap(heatmap_img.astype(np.uint8), cv2.COLORMAP_JET)
+                
+                # Blend with floorplan
+                alpha_mask = heatmap_norm[..., None] * 0.5
+                blended = (floorplan * (1 - alpha_mask) + heatmap_colored * alpha_mask).astype(np.uint8)
+            else:
+                blended = floorplan.copy()
             
-            # Convert to color heatmap
-            heatmap_colored = cv2.applyColorMap(heatmap_img.astype(np.uint8), cv2.COLORMAP_JET)
+            # Add frame info
+            frame_text = f"Frame: {frame_num}"
+            detections_text = f"Detections: {len(frame_detections.get(frame_num, []))}"
+            total_text = f"Total: {np.count_nonzero(heatmap)}"
             
-            # Blend with floorplan
-            alpha_mask = heatmap_norm[..., None] * 0.5
-            blended = (floorplan * (1 - alpha_mask) + heatmap_colored * alpha_mask).astype(np.uint8)
-        else:
-            blended = floorplan.copy()
+            cv2.putText(blended, frame_text, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
+            cv2.putText(blended, detections_text, (10, 70), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
+            cv2.putText(blended, total_text, (10, 110), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
+            
+            # Write frame
+            out.write(blended)
         
-        # Add frame number and detection count
-        frame_text = f"Frame: {frame_num}"
-        detections_text = f"Detections: {len(frame_detections.get(frame_num, []))}"
-        total_text = f"Total: {np.count_nonzero(heatmap)}"
+        # Release resources
+        out.release()
         
-        cv2.putText(blended, frame_text, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
-        cv2.putText(blended, detections_text, (10, 70), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
-        cv2.putText(blended, total_text, (10, 110), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
+        # Upload to Supabase
+        from main.core.config import supabase_client
+        if supabase_client and os.path.exists(temp_video_path):
+            # Generate job ID from output_heatmap_path
+            job_id = "unknown"
+            if output_heatmap_path:
+                # Extract job ID from path like "/project_results/job-id/video_heatmap.jpg"
+                path_parts = output_heatmap_path.split('/')
+                if len(path_parts) > 2:
+                    job_id = path_parts[2]
+            
+            # Upload progressive video
+            progressive_video_name = f"progressive_heatmap_{job_id}.mp4"
+            with open(temp_video_path, 'rb') as f:
+                supabase_client.storage.from_("projectresults").upload(
+                    f"{job_id}/{progressive_video_name}",
+                    f.read(),
+                    file_options={"content-type": "video/mp4"}
+                )
+            
+            print(f"DEBUG: Progressive heatmap video uploaded: {progressive_video_name}")
         
-        # Write frame
-        out.write(blended)
-    
-    # Release resources
-    out.release()
-    print(f"DEBUG: Progressive heatmap video saved locally to: {progressive_video_path}")
-    print(f"DEBUG: File saved to Downloads folder for testing - NOT uploaded to Supabase")
+        # Clean up temporary file
+        os.remove(temp_video_path)
+        os.rmdir(temp_dir)
+        
+    except Exception as e:
+        print(f"DEBUG: Progressive video creation failed: {e}")
