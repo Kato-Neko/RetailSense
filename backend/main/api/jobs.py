@@ -17,7 +17,7 @@ from werkzeug.utils import secure_filename
 jobs_bp = Blueprint('jobs', __name__)
 
 
-@jobs_bp.route('/heatmap_jobs', methods=['POST'])
+@jobs_bp.route('/heatmap_jobs', methods=['POST', 'OPTIONS'])
 @cross_origin()
 @jwt_required()
 def create_heatmap_job():
@@ -197,7 +197,7 @@ def get_processed_video(job_id):
     return send_from_directory(os.path.dirname(output_video_path), os.path.basename(output_video_path), as_attachment=True)
 
 
-@jobs_bp.route('/heatmap_jobs/history', methods=['GET'])
+@jobs_bp.route('/heatmap_jobs/history', methods=['GET', 'OPTIONS'])
 @cross_origin()
 @jwt_required()
 def get_job_history():

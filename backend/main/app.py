@@ -51,9 +51,7 @@ attach_jobs_store(jobs)
 # Register the authentication blueprint
 app.register_blueprint(auth_bp)
 app.register_blueprint(heatmap_bp, url_prefix='/api')
-app.register_blueprint(heatmap_bp, name='heatmap_direct')  # Also register without prefix for direct access 
 app.register_blueprint(jobs_bp, url_prefix='/api')
-app.register_blueprint(jobs_bp, name='jobs_direct')  # Also register without prefix for direct access
 
 # Add a simple test route to verify routing is working
 @app.route('/api/test')

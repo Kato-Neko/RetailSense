@@ -60,7 +60,7 @@ def receive_live_detections(job_id):
         return jsonify({'error': str(e)}), 400
 
 
-@heatmap_bp.route('/heatmap_jobs/<job_id>/detections', methods=['GET'])
+@heatmap_bp.route('/heatmap_jobs/<job_id>/detections', methods=['GET', 'OPTIONS'])
 @cross_origin()
 @jwt_required()
 def get_detections_from_json(job_id):
@@ -70,7 +70,7 @@ def get_detections_from_json(job_id):
     return jsonify({"detections": detections, "fps": fps}), 200
 
 
-@heatmap_bp.route('/heatmap_jobs/<job_id>/result/image', methods=['GET'])
+@heatmap_bp.route('/heatmap_jobs/<job_id>/result/image', methods=['GET', 'OPTIONS'])
 @cross_origin()
 def get_heatmap_image(job_id):
     # First check if job is completed
@@ -317,7 +317,7 @@ def get_custom_heatmap_progress(job_id):
     return jsonify({"progress": progress})
 
 
-@heatmap_bp.route('/heatmap_jobs/<job_id>/analysis', methods=['GET'])
+@heatmap_bp.route('/heatmap_jobs/<job_id>/analysis', methods=['GET', 'OPTIONS'])
 @cross_origin()
 @jwt_required()
 def get_heatmap_analysis(job_id):
