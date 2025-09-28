@@ -72,7 +72,11 @@ def detect_and_track(
 
     detections_for_heatmap: List[Dict[str, Any]] = []
     frame_count = 0
-    frame_skip = 2  # Process every 2nd frame for faster processing
+    
+    # Report initial progress
+    if progress_callback:
+        progress_callback(0.0)
+        logger.debug(f"Starting video processing: {total_frames} frames")
     
     while cap.isOpened():
         if cancelled_flag is not None and cancelled_flag():
@@ -81,12 +85,7 @@ def detect_and_track(
         if not ret:
             break
             
-        # Skip frames for faster processing
-        if frame_count % frame_skip != 0:
-            frame_count += 1
-            continue
-            
-        timestamp = frame_count / fps
+        timestamp = frame_count / fps  # seconds
 
         # Resize frame for processing
         if scale_factor != 1.0:
@@ -100,55 +99,64 @@ def detect_and_track(
             for box in boxes:
                 x1, y1, x2, y2 = map(int, box.xyxy[0])
                 conf = float(box.conf[0])
-                if conf > 0.5:
-                    detections.append(([x1, y1, x2, y2], conf, 0))
+                if conf > 0.5:  # Confidence threshold
+                    detections.append(([x1, y1, x2, y2], conf, 0))  # 0 is class_id for person
 
         tracks = tracker.update_tracks(detections, frame=frame)
 
         for track in tracks:
             if not track.is_confirmed():
                 continue
+                
             track_id = track.track_id
             ltrb = track.to_ltrb()
             x1, y1, x2, y2 = map(int, ltrb)
 
             # Scale coordinates back to original size for heatmap
             if scale_factor != 1.0:
-                x1 = int(x1 / scale_factor)
-                y1 = int(y1 / scale_factor)
-                x2 = int(x2 / scale_factor)
-                y2 = int(y2 / scale_factor)
+                x1_orig = int(x1 / scale_factor)
+                y1_orig = int(y1 / scale_factor)
+                x2_orig = int(x2 / scale_factor)
+                y2_orig = int(y2 / scale_factor)
+            else:
+                x1_orig, y1_orig, x2_orig, y2_orig = x1, y1, x2, y2
 
             detections_for_heatmap.append({
                 'frame': frame_count,
-                'bbox': [x1, y1, x2, y2],
+                'bbox': [x1_orig, y1_orig, x2_orig, y2_orig],
                 'track_id': track_id,
                 'timestamp': timestamp
             })
 
-            # Scale back for display
-            if scale_factor != 1.0:
-                x1, y1, x2, y2 = map(int, [x1 * scale_factor, y1 * scale_factor, x2 * scale_factor, y2 * scale_factor])
-
+            # Draw bounding box and ID with better contrast
             cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
+
+            # Add black background for text (ID)
             text = f"ID: {track_id}"
             (text_width, text_height), _ = cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, 0.9, 2)
-            cv2.rectangle(frame, (x1, y1 - text_height - 10), (x1 + text_width, y1), (0, 0, 0), -1)
-            cv2.putText(frame, text, (x1, y1 - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (255, 255, 255), 2)
+            cv2.rectangle(frame, (x1, y1-text_height-10), (x1+text_width, y1), (0, 0, 0), -1)
+            cv2.putText(frame, text, (x1, y1-5),
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.9, (255, 255, 255), 2)
+
+            # Draw a small white dot at the center of the box
             center_x = int((x1 + x2) / 2)
             center_y = int((y1 + y2) / 2)
             cv2.circle(frame, (center_x, center_y), 4, (255, 255, 255), -1)
 
+        # Write frame
         out.write(frame)
+        # Save preview every 10 frames
         if preview_folder and frame_count % 10 == 0:
             os.makedirs(preview_folder, exist_ok=True)
             preview_path = os.path.join(preview_folder, 'preview_detections.jpg')
             cv2.imwrite(preview_path, frame)
 
+        # Update progress - report more frequently for better user experience
         frame_count += 1
-        if progress_callback and frame_count % 10 == 0:
+        if progress_callback and (frame_count % 5 == 0 or frame_count == total_frames):
             progress = frame_count / total_frames
             progress_callback(progress)
+            logger.debug(f"Processing frame {frame_count}/{total_frames} ({progress*100:.1f}%)")
 
     cap.release()
     out.release()

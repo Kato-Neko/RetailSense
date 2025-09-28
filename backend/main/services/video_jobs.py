@@ -31,6 +31,10 @@ def update_job_progress(job_id: str, stage: str, progress: float):
     jobs = get_jobs_store()
     job = jobs[job_id]
     job['message'] = f'{stage} ({int(progress * 100)}%)'
+    
+    # Add logging for debugging
+    logger.info(f"Updating progress for job {job_id}: {job['message']}")
+    
     conn = get_db_connection()
     cur = conn.cursor()
     cur.execute('''
@@ -76,6 +80,8 @@ def process_video_job(job_id: str):
             return
 
         job['message'] = 'Running YOLO detection (0%)'
+        update_job_status_in_db(job_id, job)  # Update database with initial progress
+        
         output_video_path, detections, fps = detect_and_track(
             video_path,
             job['output_files_expected']['video'],
