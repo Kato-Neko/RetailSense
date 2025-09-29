@@ -2,6 +2,7 @@ import os
 import cv2
 import numpy as np
 from scipy.ndimage import gaussian_filter
+from ..core.config import logger
 
 
 # def test_homography_transformation(points, video_path, floorplan_path):
@@ -66,15 +67,15 @@ def blend_heatmap(detections, floorplan_path, output_heatmap_path, output_video_
         progress_callback: Optional callback function(progress) to report progress
         return_image: Whether to return the blended image
     """
-    print("DEBUG: ===== BLEND_HEATMAP FUNCTION STARTED =====")
-    print(f"DEBUG: Parameters - detections: {len(detections)}, floorplan_path: {floorplan_path}")
-    print(f"DEBUG: Parameters - output_heatmap_path: {output_heatmap_path}, video_path: {video_path}")
+    logger.info("DEBUG: ===== BLEND_HEATMAP FUNCTION STARTED =====")
+    logger.info(f"DEBUG: Parameters - detections: {len(detections)}, floorplan_path: {floorplan_path}")
+    logger.info(f"DEBUG: Parameters - output_heatmap_path: {output_heatmap_path}, video_path: {video_path}")
     
     try:
         floorplan = cv2.imread(floorplan_path)
-        print("DEBUG: Floorplan loaded successfully")
+        logger.info("DEBUG: Floorplan loaded successfully")
     except Exception as e:
-        print(f"DEBUG: Error in blend_heatmap: {e}")
+        logger.error(f"DEBUG: Error in blend_heatmap: {e}")
         raise
     if floorplan is None:
         raise ValueError(f"Could not load floorplan image: {floorplan_path}")
@@ -254,29 +255,29 @@ def blend_heatmap(detections, floorplan_path, output_heatmap_path, output_video_
     cap.release()
     out.release()
     
-    print("DEBUG: ===== REACHED END OF MAIN HEATMAP PROCESSING =====")
-    print("DEBUG: About to start progressive video creation...")
+    logger.info("DEBUG: ===== REACHED END OF MAIN HEATMAP PROCESSING =====")
+    logger.info("DEBUG: About to start progressive video creation...")
     
     # Create progressive heatmap video (save locally, upload later through main pipeline)
-    print("DEBUG: ===== ENTERING PROGRESSIVE VIDEO SECTION =====")
-    print("DEBUG: Creating progressive heatmap video...")
-    print(f"DEBUG: detections count: {len(detections)}")
-    print(f"DEBUG: output_heatmap_path: {output_heatmap_path}")
-    print(f"DEBUG: video_path: {video_path}")
+    logger.info("DEBUG: ===== ENTERING PROGRESSIVE VIDEO SECTION =====")
+    logger.info("DEBUG: Creating progressive heatmap video...")
+    logger.info(f"DEBUG: detections count: {len(detections)}")
+    logger.info(f"DEBUG: output_heatmap_path: {output_heatmap_path}")
+    logger.info(f"DEBUG: video_path: {video_path}")
     
     # Extract job ID from video path
     import re
     job_id_match = re.search(r'([a-f0-9-]{36})', video_path)
     job_id = job_id_match.group(1) if job_id_match else "unknown"
-    print(f"DEBUG: Extracted job_id: {job_id}")
+    logger.info(f"DEBUG: Extracted job_id: {job_id}")
     
     try:
         create_progressive_heatmap_video_local(detections, floorplan, job_id, video_path, points)
-        print("DEBUG: Progressive heatmap video creation completed")
+        logger.info("DEBUG: Progressive heatmap video creation completed")
     except Exception as e:
-        print(f"DEBUG: Progressive video error: {e}")
+        logger.error(f"DEBUG: Progressive video error: {e}")
         import traceback
-        print(f"DEBUG: Progressive video traceback: {traceback.format_exc()}")
+        logger.error(f"DEBUG: Progressive video traceback: {traceback.format_exc()}")
     
     if return_image:
         return blended
@@ -289,12 +290,13 @@ def create_progressive_heatmap_video_local(detections, floorplan, job_id, video_
     Create a progressive heatmap video and save locally.
     Follows same pattern as other files - save locally, upload through main pipeline.
     """
-    print("DEBUG: ===== PROGRESSIVE VIDEO FUNCTION CALLED =====")
-    print(f"DEBUG: Function parameters - detections: {len(detections)}, job_id: {job_id}")
+    logger.info("DEBUG: ===== PROGRESSIVE VIDEO FUNCTION CALLED =====")
+    logger.info(f"DEBUG: Function parameters - detections: {len(detections)}, job_id: {job_id}")
     try:
         # Get video dimensions
         cap = cv2.VideoCapture(video_path)
         if not cap.isOpened():
+            logger.warning(f"DEBUG: Could not open video at path: {video_path}")
             return
         
         video_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
@@ -311,7 +313,7 @@ def create_progressive_heatmap_video_local(detections, floorplan, job_id, video_
         output_dir = f"/project_results/{job_id}"
         os.makedirs(output_dir, exist_ok=True)
         progressive_video_path = os.path.join(output_dir, f"progressive_heatmap_{job_id}.mp4")
-        print(f"DEBUG: Progressive video will be saved to: {progressive_video_path}")
+        logger.info(f"DEBUG: Progressive video will be saved to: {progressive_video_path}")
         
         # Create video writer
         fourcc = cv2.VideoWriter_fourcc(*'mp4v')

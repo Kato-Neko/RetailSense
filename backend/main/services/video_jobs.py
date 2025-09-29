@@ -171,6 +171,23 @@ def process_video_job(job_id: str):
             logger.error(f"Error uploading heatmap image to Supabase for job {job_id}: {e}")
             raise
 
+        # Attempt to upload progressive heatmap video if it exists
+        try:
+            progressive_local_path = os.path.join(RESULTS_FOLDER, job_id, f"progressive_heatmap_{job_id}.mp4")
+            if os.path.exists(progressive_local_path):
+                from ..core.storage import upload_to_supabase_and_remove_local
+                supabase_progressive_path = f"{job_id}/progressive_heatmap.mp4"
+                upload_to_supabase_and_remove_local(
+                    progressive_local_path,
+                    supabase_progressive_path,
+                    content_type="video/mp4"
+                )
+                logger.info(f"Uploaded progressive heatmap video to Supabase for job {job_id}")
+            else:
+                logger.info(f"Progressive video not found at {progressive_local_path}; skipping upload")
+        except Exception as e:
+            logger.warning(f"Failed uploading progressive video for job {job_id}: {e}")
+
         if job.get('cancelled'):
             job['status'] = 'cancelled'
             job['message'] = 'Job was cancelled by user.'
