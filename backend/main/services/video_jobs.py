@@ -32,9 +32,7 @@ def update_job_progress(job_id: str, stage: str, progress: float):
     job = jobs[job_id]
     job['message'] = f'{stage} ({int(progress * 100)}%)'
     
-    # Enhanced logging for debugging
-    logger.info(f"PROGRESS CALLBACK: {progress*100:.1f}%")
-    logger.info(f"Updating progress for job {job_id}: {job['message']}")
+    # Minimal logging: progress updates are silent to avoid log flooding
     
     conn = get_db_connection()
     cur = conn.cursor()
