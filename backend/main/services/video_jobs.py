@@ -43,7 +43,7 @@ def update_job_progress(job_id: str, stage: str, progress: float):
             WHERE job_id = %s
         ''', (job['message'], job_id))
         conn.commit()
-        logger.info(f"Successfully updated job {job_id} progress in database")
+        # Minimal logging: suppress success spam for progress updates
     except Exception as e:
         logger.error(f"Error updating job {job_id} progress in database: {e}")
         conn.rollback()
