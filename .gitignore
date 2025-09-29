@@ -2,6 +2,7 @@
 /frontend/node_modules/
 /project_results/
 /project_uploads/
+/testing/
 *.db
 
 # ML Models (large files)
