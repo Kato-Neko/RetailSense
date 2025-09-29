@@ -66,8 +66,13 @@ def blend_heatmap(detections, floorplan_path, output_heatmap_path, output_video_
         progress_callback: Optional callback function(progress) to report progress
         return_image: Whether to return the blended image
     """
+    print("DEBUG: ===== BLEND_HEATMAP FUNCTION STARTED =====")
+    print(f"DEBUG: Parameters - detections: {len(detections)}, floorplan_path: {floorplan_path}")
+    print(f"DEBUG: Parameters - output_heatmap_path: {output_heatmap_path}, video_path: {video_path}")
+    
     try:
         floorplan = cv2.imread(floorplan_path)
+        print("DEBUG: Floorplan loaded successfully")
     except Exception as e:
         print(f"DEBUG: Error in blend_heatmap: {e}")
         raise
@@ -248,6 +253,9 @@ def blend_heatmap(detections, floorplan_path, output_heatmap_path, output_video_
     # Release resources
     cap.release()
     out.release()
+    
+    print("DEBUG: ===== REACHED END OF MAIN HEATMAP PROCESSING =====")
+    print("DEBUG: About to start progressive video creation...")
     
     # Create progressive heatmap video (save locally, upload later through main pipeline)
     print("DEBUG: ===== ENTERING PROGRESSIVE VIDEO SECTION =====")
