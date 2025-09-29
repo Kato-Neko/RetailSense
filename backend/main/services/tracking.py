@@ -107,7 +107,7 @@ def detect_and_track(
             
         ret, frame = cap.read()
         if not ret:
-            logger.info(f"End of video reached at frame {frame_count}")
+            # Minimal logging: suppress per-run end-of-video frame log
             break
         
         if frame is None:
@@ -258,10 +258,10 @@ def detect_and_track(
             
             if should_report_progress:
                 progress_callback(progress)
-                logger.info(f"Progress: {frame_count}/{total_frames} frames read ({progress*100:.1f}%), {processed_frames} processed")
+                # Minimal logging: suppress frequent progress logs
 
     cap.release()
     out.release()
     
-    logger.info(f"Video processing complete. Total frames: {frame_count}, Processed frames: {processed_frames}")
+    logger.info(f"Video processing completed: {frame_count} frames read, {processed_frames} processed")
     return output_path, detections_for_heatmap, fps

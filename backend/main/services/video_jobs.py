@@ -32,9 +32,7 @@ def update_job_progress(job_id: str, stage: str, progress: float):
     job = jobs[job_id]
     job['message'] = f'{stage} ({int(progress * 100)}%)'
     
-    # Enhanced logging for debugging
-    logger.info(f"PROGRESS CALLBACK: {progress*100:.1f}%")
-    logger.info(f"Updating progress for job {job_id}: {job['message']}")
+    # Minimal logging: progress updates are silent to avoid log flooding
     
     conn = get_db_connection()
     cur = conn.cursor()
@@ -45,7 +43,7 @@ def update_job_progress(job_id: str, stage: str, progress: float):
             WHERE job_id = %s
         ''', (job['message'], job_id))
         conn.commit()
-        logger.info(f"Successfully updated job {job_id} progress in database")
+        # Minimal logging: suppress success spam for progress updates
     except Exception as e:
         logger.error(f"Error updating job {job_id} progress in database: {e}")
         conn.rollback()
@@ -170,6 +168,23 @@ def process_video_job(job_id: str):
         except Exception as e:
             logger.error(f"Error uploading heatmap image to Supabase for job {job_id}: {e}")
             raise
+
+        # Attempt to upload progressive heatmap video if it exists
+        try:
+            progressive_local_path = os.path.join(RESULTS_FOLDER, job_id, f"progressive_heatmap_{job_id}.mp4")
+            if os.path.exists(progressive_local_path):
+                from ..core.storage import upload_to_supabase_and_remove_local
+                supabase_progressive_path = f"{job_id}/progressive_heatmap.mp4"
+                upload_to_supabase_and_remove_local(
+                    progressive_local_path,
+                    supabase_progressive_path,
+                    content_type="video/mp4"
+                )
+                logger.info(f"Uploaded progressive heatmap video to Supabase for job {job_id}")
+            else:
+                logger.info(f"Progressive video not found at {progressive_local_path}; skipping upload")
+        except Exception as e:
+            logger.warning(f"Failed uploading progressive video for job {job_id}: {e}")
 
         if job.get('cancelled'):
             job['status'] = 'cancelled'
