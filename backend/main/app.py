@@ -10,11 +10,11 @@ from flask_jwt_extended import JWTManager
 
 # Import from backend files
 from .api.auth import auth_bp 
-from .services import attach_jobs_store
 from .api.heatmap import heatmap_bp
 from .api.jobs import jobs_bp
 from .core.config import logger
-from .core.db import get_db_connection
+from .services.job_manager import job_manager
+from .core.database_manager import db_manager
 
 app = Flask(__name__)
 app.secret_key = os.getenv('FLASK_SECRET_KEY', 'supersecretkey')
@@ -27,7 +27,7 @@ CORS(app, resources={r"/api/*": {"origins": allowed_origins}})
 
 
 jobs = {}
-attach_jobs_store(jobs)
+job_manager.attach_jobs_store(jobs)
 
 
 # Register the authentication blueprint
@@ -96,24 +96,8 @@ app.register_blueprint(jobs_bp)
 # On backend startup, clean up orphaned jobs left as 'pending' or 'processing' if not running in memory
 
 def cleanup_orphaned_jobs():
-    conn = get_db_connection()
-    cur = conn.cursor()
-    # Find jobs that are not completed/cancelled/errored
-    cur.execute(
-        "SELECT job_id FROM jobs WHERE status IN ('pending', 'processing')"
-    )
-    orphaned = cur.fetchall()
-    for row in orphaned:
-        job_id = row[0]  # psycopg2 returns tuples, not dicts
-        # If job is not in memory (not running), mark as error
-        if job_id not in jobs:
-            cur.execute(
-                "UPDATE jobs SET status = %s, message = %s, updated_at = CURRENT_TIMESTAMP WHERE job_id = %s",
-                ('error', 'Job was interrupted by server shutdown.', job_id)
-            )
-    cur.close()
-    conn.commit()
-    conn.close()
+    """Clean up orphaned jobs on startup."""
+    job_manager.cleanup_orphaned_jobs()
 
 
 if __name__ == '__main__':

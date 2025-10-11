@@ -11,7 +11,10 @@ import pytz
 from dateutil import parser
 
 # Load environment variables from .env file
-load_dotenv()
+# Look for .env file in the main directory
+main_dir = os.path.dirname(os.path.dirname(__file__))
+env_path = os.path.join(main_dir, '.env')
+load_dotenv(env_path)
 
 # Configure logging
 log_level = os.getenv('LOG_LEVEL', 'INFO').upper()

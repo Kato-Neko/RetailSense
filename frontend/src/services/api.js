@@ -40,7 +40,7 @@ export const authService = {
       const response = await apiClient.post("/login", { email, password });
       return response.data;  // Ensure this returns the expected structure
     } catch (error) {
-      throw error.response ? error.response.data : error;
+      throw error.response ? error.response.data : { error: error.message || "Login failed" };
     }
   },
 
@@ -53,7 +53,7 @@ export const authService = {
       });
       return response.data;
     } catch (error) {
-      throw error.response ? error.response.data : error;
+      throw error.response ? error.response.data : { error: error.message || "Registration failed" };
     }
   },
 
