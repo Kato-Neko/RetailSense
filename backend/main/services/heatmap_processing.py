@@ -329,11 +329,10 @@ def create_progressive_heatmap_video_local(detections, floorplan, job_id, video_
                 cy = max(0, min(video_height - 1, cy % max(1, video_height)))
             detections_by_frame.setdefault(fidx, []).append((cx, cy))
 
-        # Progressive accumulation with decay
+        # Progressive accumulation with decay - matching static heatmap parameters
         heat_accum = np.zeros((video_height, video_width), dtype=np.float32)
-        kernel_radius = max(3, int(min(video_width, video_height) * 0.008))
-        point_intensity = 0.8
-        alpha = 0.45
+        circle_radius = 15  # Match static heatmap
+        alpha = 0.7  # Match static heatmap
         decay = 0.98  # Slight decay to prevent infinite accumulation
         frame_index = 0
 
@@ -345,21 +344,20 @@ def create_progressive_heatmap_video_local(detections, floorplan, job_id, video_
             # Apply decay to existing heat
             heat_accum *= decay
 
-            # Add new detections for this frame
+            # Add new detections for this frame using same circle approach as static
             for (cx, cy) in detections_by_frame.get(frame_index, []):
-                x0 = max(0, cx - kernel_radius)
-                x1b = min(video_width, cx + kernel_radius + 1)
-                y0 = max(0, cy - kernel_radius)
-                y1b = min(video_height, cy + kernel_radius + 1)
-                heat_accum[y0:y1b, x0:x1b] += point_intensity
+                cv2.circle(heat_accum, (cx, cy), circle_radius, 1.0, -1)
 
-            heat_smoothed = gaussian_filter(heat_accum, sigma=kernel_radius / 2.0)
+            # Apply same processing as static heatmap
+            heatmap_processed = np.power(heat_accum, 0.6)  # Match static heatmap power
+            heat_smoothed = gaussian_filter(heatmap_processed, sigma=10)  # Match static heatmap blur
+            
             if heat_smoothed.max() > 0:
                 heat_norm = (heat_smoothed / heat_smoothed.max() * 255.0).astype(np.uint8)
             else:
                 heat_norm = heat_smoothed.astype(np.uint8)
 
-            heat_color = cv2.applyColorMap(heat_norm, cv2.COLORMAP_JET)
+            heat_color = cv2.applyColorMap(heat_norm, cv2.COLORMAP_TURBO)  # Match static heatmap colormap
             overlay = cv2.addWeighted(frame, 1.0, heat_color, alpha, 0)
             out.write(overlay)
             frame_index += 1
