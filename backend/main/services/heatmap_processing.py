@@ -329,20 +329,16 @@ def create_progressive_heatmap_video_local(detections, floorplan, job_id, video_
                 cy = max(0, min(video_height - 1, cy % max(1, video_height)))
             detections_by_frame.setdefault(fidx, []).append((cx, cy))
 
-        # Progressive accumulation with decay - matching static heatmap parameters
+        # Progressive accumulation - matching static heatmap parameters
         heat_accum = np.zeros((video_height, video_width), dtype=np.float32)
         circle_radius = 15  # Match static heatmap
         alpha = 0.7  # Match static heatmap
-        decay = 0.98  # Slight decay to prevent infinite accumulation
         frame_index = 0
 
         while True:
             ret, frame = cap.read()
             if not ret:
                 break
-
-            # Apply decay to existing heat
-            heat_accum *= decay
 
             # Add new detections for this frame using same circle approach as static
             for (cx, cy) in detections_by_frame.get(frame_index, []):
