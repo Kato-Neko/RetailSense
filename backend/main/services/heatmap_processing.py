@@ -122,10 +122,8 @@ def blend_heatmap(detections, floorplan_path, output_heatmap_path, output_video_
         # Get bounding box center in video coordinates
         center_x = (bbox[0] + bbox[2]) / 2
         center_y = (bbox[1] + bbox[3]) / 2
-
-        # Apply horizontal offset (5% of width) and clamp, then map (no homography)
-        x_offset = int(video_width * 0.05)
-        center_x = max(0, min(video_width - 1, center_x + x_offset))
+        
+        # Use direct coordinate mapping (no homography)
         # Check if coordinates are way outside video bounds (coordinate system mismatch)
         if center_x > video_width * 1.5 or center_y > video_height * 1.5:
             # Try to normalize coordinates if they're in a different coordinate space
@@ -146,7 +144,7 @@ def blend_heatmap(detections, floorplan_path, output_heatmap_path, output_video_
             mx = max(0, min(mx, floorplan_width - 1))
             my = max(0, min(my, floorplan_height - 1))
         
-        cv2.circle(heatmap, (mx, my), 10, 1.0, -1)
+        cv2.circle(heatmap, (mx, my), 20, 1.0, -1)
         
         # COMMENTED OUT: Homography transformation code (kept for future use)
         # pt = np.array([[center_x, center_y]], dtype=np.float32)
@@ -169,14 +167,14 @@ def blend_heatmap(detections, floorplan_path, output_heatmap_path, output_video_
     heatmap = np.power(heatmap, 0.6)
     heatmap_norm = cv2.normalize(heatmap, None, 0, 1, cv2.NORM_MINMAX)
     heatmap_img = cv2.normalize(heatmap, None, 0, 255, cv2.NORM_MINMAX)
-    heatmap_img = gaussian_filter(heatmap_img, sigma=12)
+    heatmap_img = gaussian_filter(heatmap_img, sigma=10)
     heatmap_colored = cv2.applyColorMap(heatmap_img.astype(np.uint8), cv2.COLORMAP_TURBO)
 
     print(f"DEBUG: Heatmap norm max: {heatmap_norm.max()}")
     print(f"DEBUG: Heatmap colored shape: {heatmap_colored.shape}")
 
     alpha_mask = heatmap_norm[..., None]
-    alpha_mask = alpha_mask * 0.5
+    alpha_mask = alpha_mask * 0.7
     blended = (floorplan * (1 - alpha_mask) + heatmap_colored * alpha_mask).astype(np.uint8)
     
     print(f"DEBUG: Blended image shape: {blended.shape}")
