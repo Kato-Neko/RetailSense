@@ -144,7 +144,7 @@ def blend_heatmap(detections, floorplan_path, output_heatmap_path, output_video_
             mx = max(0, min(mx, floorplan_width - 1))
             my = max(0, min(my, floorplan_height - 1))
         
-        cv2.circle(heatmap, (mx, my), 20, 1.0, -1)
+        cv2.circle(heatmap, (mx, my), 15, 1.0, -1)
         
         # COMMENTED OUT: Homography transformation code (kept for future use)
         # pt = np.array([[center_x, center_y]], dtype=np.float32)
@@ -331,8 +331,8 @@ def create_progressive_heatmap_video_local(detections, floorplan, job_id, video_
 
         # Progressive accumulation
         heat_accum = np.zeros((video_height, video_width), dtype=np.float32)
-        kernel_radius = max(3, int(min(video_width, video_height) * 0.01))
-        point_intensity = 1.0
+        kernel_radius = max(3, int(min(video_width, video_height) * 0.008))
+        point_intensity = 0.8
         alpha = 0.45
         frame_index = 0
 
