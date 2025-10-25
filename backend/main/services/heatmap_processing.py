@@ -81,12 +81,21 @@ def blend_heatmap(detections, floorplan_path, output_heatmap_path, output_video_
         raise ValueError(f"Could not load floorplan image: {floorplan_path}")
 
     # Get video dimensions
+    if not os.path.exists(video_path):
+        logger.error(f"Video file does not exist at path: {video_path}")
+        raise ValueError(f"Video file not found: {video_path}")
+        
     cap = cv2.VideoCapture(video_path)
     if not cap.isOpened():
-        raise ValueError("Could not open video for verification")
+        logger.error(f"Could not open video file for verification: {video_path}")
+        logger.error("This may be due to file permissions, corruption, or incorrect codec support")
+        raise ValueError(f"Could not open video for verification: {video_path}")
     
     video_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
     video_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    if video_width <= 0 or video_height <= 0:
+        logger.error(f"Invalid video dimensions: {video_width}x{video_height}")
+        raise ValueError(f"Invalid video dimensions from {video_path}")
     cap.release()
     
     floorplan_height, floorplan_width = floorplan.shape[:2]

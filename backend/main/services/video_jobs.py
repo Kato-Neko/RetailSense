@@ -335,7 +335,18 @@ def run_custom_heatmap_job(job_id: str, start_time: float, end_time: float, set_
         
         # Convert normalized points to pixel coordinates
         video_path = os.path.join(UPLOAD_FOLDER, job_id, job_row[2])
+        logger.info(f"Using video path: {video_path}")
+        if not os.path.exists(video_path):
+            logger.error(f"Video file not found at {video_path}")
+            set_progress(1.0)
+            return
+            
         cap = cv2.VideoCapture(video_path)
+        if not cap.isOpened():
+            logger.error(f"Could not open video file: {video_path}")
+            set_progress(1.0)
+            return
+            
         video_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
         video_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
         cap.release()
