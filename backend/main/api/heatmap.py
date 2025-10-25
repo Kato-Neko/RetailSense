@@ -253,9 +253,13 @@ def export_heatmap_pdf(job_id):
         if not analysis:
             return jsonify({'error': 'Analysis not found'}), 404
 
-        from reportlab.platypus import Image, Paragraph, Spacer, SimpleDocTemplate
-        from reportlab.lib.pagesizes import letter
-        from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+        try:
+            from reportlab.platypus import Image, Paragraph, Spacer, SimpleDocTemplate
+            from reportlab.lib.pagesizes import letter
+            from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+        except ImportError as e:
+            logger.error(f"ReportLab import error: {str(e)}")
+            return jsonify({'error': 'PDF generation library not available'}), 500
 
         buffer = io.BytesIO()
         doc = SimpleDocTemplate(buffer, pagesize=letter)
@@ -296,7 +300,10 @@ def export_heatmap_pdf(job_id):
         buffer.seek(0)
         return send_file(buffer, mimetype='application/pdf', as_attachment=True, download_name=f'heatmap_{job_id}_report.pdf')
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        logger.error(f"PDF export error for job {job_id}: {str(e)}")
+        import traceback
+        logger.error(f"PDF export traceback: {traceback.format_exc()}")
+        return jsonify({'error': f'PDF generation failed: {str(e)}'}), 500
 
 
 @heatmap_bp.route('/heatmap_jobs/<job_id>/custom_heatmap', methods=['POST'])
