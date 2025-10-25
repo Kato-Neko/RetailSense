@@ -53,9 +53,69 @@ from ..core.config import logger
 #     print("=== END TEST ===")
 
 
+def create_custom_heatmap(detections, floorplan_path, dimensions=(1920, 1080), points=None):
+    """
+    Create a custom heatmap from filtered detections and floorplan.
+    Simpler version that doesn't need video processing.
+    
+    Args:
+        detections: List of filtered detections
+        floorplan_path: Path to floorplan image
+        dimensions: Tuple of (width, height) for coordinate space, defaults to HD
+        points: Optional homography points
+    Returns:
+        numpy array of the blended heatmap image
+    """
+    logger.info("===== CREATE_CUSTOM_HEATMAP STARTED =====")
+    logger.info(f"Creating custom heatmap with {len(detections)} detections")
+    
+    try:
+        floorplan = cv2.imread(floorplan_path)
+        logger.info("Floorplan loaded successfully")
+    except Exception as e:
+        logger.error(f"Error loading floorplan: {e}")
+        raise
+    if floorplan is None:
+        raise ValueError(f"Could not load floorplan image: {floorplan_path}")
+
+    video_width, video_height = dimensions
+    floorplan_height, floorplan_width = floorplan.shape[:2]
+    
+    # Create base heatmap
+    heatmap = np.zeros(floorplan.shape[:2], dtype=np.float32)
+    
+    # Plot detections
+    for det in detections:
+        bbox = det['bbox']
+        center_x = (bbox[0] + bbox[2]) / 2
+        center_y = (bbox[1] + bbox[3]) / 2
+        
+        # Map coordinates to floorplan space
+        mx = int(center_x * floorplan_width / video_width)
+        my = int(center_y * floorplan_height / video_height)
+        mx = max(0, min(mx, floorplan_width - 1))
+        my = max(0, min(my, floorplan_height - 1))
+        
+        cv2.circle(heatmap, (mx, my), 15, 1.0, -1)
+    
+    # Process heatmap
+    heatmap = np.power(heatmap, 0.6)
+    heatmap_norm = cv2.normalize(heatmap, None, 0, 1, cv2.NORM_MINMAX)
+    heatmap_img = cv2.normalize(heatmap, None, 0, 255, cv2.NORM_MINMAX)
+    heatmap_img = gaussian_filter(heatmap_img, sigma=10)
+    heatmap_colored = cv2.applyColorMap(heatmap_img.astype(np.uint8), cv2.COLORMAP_TURBO)
+
+    # Blend with floorplan
+    alpha_mask = heatmap_norm[..., None] * 0.7
+    blended = (floorplan * (1 - alpha_mask) + heatmap_colored * alpha_mask).astype(np.uint8)
+    
+    return blended
+
+
 def blend_heatmap(detections, floorplan_path, output_heatmap_path, output_video_path, video_path, points=None, progress_callback=None, return_image=False):
     """
     Generate and blend heatmap from detections using homography transformation.
+    Also creates annotated video output.
     
     Args:
         detections: List of detections from object tracking
@@ -80,23 +140,34 @@ def blend_heatmap(detections, floorplan_path, output_heatmap_path, output_video_
     if floorplan is None:
         raise ValueError(f"Could not load floorplan image: {floorplan_path}")
 
-    # Get video dimensions
-    if not os.path.exists(video_path):
-        logger.error(f"Video file does not exist at path: {video_path}")
-        raise ValueError(f"Video file not found: {video_path}")
+    # Get video dimensions only if we need to process video
+    if video_path:
+        if not os.path.exists(video_path):
+            logger.error(f"Video file does not exist at path: {video_path}")
+            raise ValueError(f"Video file not found: {video_path}")
+            
+        cap = cv2.VideoCapture(video_path)
+        if not cap.isOpened():
+            logger.error(f"Could not open video file for verification: {video_path}")
+            logger.error("This may be due to file permissions, corruption, or incorrect codec support")
+            raise ValueError(f"Could not open video for verification: {video_path}")
         
-    cap = cv2.VideoCapture(video_path)
-    if not cap.isOpened():
-        logger.error(f"Could not open video file for verification: {video_path}")
-        logger.error("This may be due to file permissions, corruption, or incorrect codec support")
-        raise ValueError(f"Could not open video for verification: {video_path}")
-    
-    video_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-    video_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-    if video_width <= 0 or video_height <= 0:
-        logger.error(f"Invalid video dimensions: {video_width}x{video_height}")
-        raise ValueError(f"Invalid video dimensions from {video_path}")
-    cap.release()
+        video_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+        video_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        if video_width <= 0 or video_height <= 0:
+            logger.error(f"Invalid video dimensions: {video_width}x{video_height}")
+            raise ValueError(f"Invalid video dimensions from {video_path}")
+        cap.release()
+    else:
+        # For heatmap-only processing, use dimensions from first detection or default HD
+        if detections and 'bbox' in detections[0]:
+            bbox = detections[0]['bbox']
+            video_width = max(bbox[0], bbox[2]) * 2
+            video_height = max(bbox[1], bbox[3]) * 2
+        else:
+            video_width = 1920
+            video_height = 1080
+        logger.info(f"Using dimensions for heatmap: {video_width}x{video_height}")
     
     floorplan_height, floorplan_width = floorplan.shape[:2]
     

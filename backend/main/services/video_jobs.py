@@ -333,23 +333,18 @@ def run_custom_heatmap_job(job_id: str, start_time: float, end_time: float, set_
         with open(points_path, 'r') as f:
             points_data = json.load(f)
         
-        # Convert normalized points to pixel coordinates
-        video_path = os.path.join(UPLOAD_FOLDER, job_id, job_row[2])
-        logger.info(f"Using video path: {video_path}")
-        if not os.path.exists(video_path):
-            logger.error(f"Video file not found at {video_path}")
-            set_progress(1.0)
-            return
+        # Get video dimensions from first detection bbox if available
+        if filtered_detections and 'bbox' in filtered_detections[0]:
+            bbox = filtered_detections[0]['bbox']
+            # Assuming bbox coordinates are in video space
+            video_width = max(bbox[0], bbox[2]) * 2  # Estimate from coordinates
+            video_height = max(bbox[1], bbox[3]) * 2
+        else:
+            # Fallback to standard HD dimensions if no detections
+            video_width = 1920
+            video_height = 1080
             
-        cap = cv2.VideoCapture(video_path)
-        if not cap.isOpened():
-            logger.error(f"Could not open video file: {video_path}")
-            set_progress(1.0)
-            return
-            
-        video_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-        video_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-        cap.release()
+        logger.info(f"Using dimensions for homography: {video_width}x{video_height}")
         
         homography_points = []
         for point in points_data:
@@ -359,15 +354,20 @@ def run_custom_heatmap_job(job_id: str, start_time: float, end_time: float, set_
     else:
         homography_points = None
 
-    blended_img = blend_heatmap(
+    from ..services.heatmap_processing import create_custom_heatmap
+    
+    # Get video dimensions from first detection or use HD default
+    if filtered_detections and 'bbox' in filtered_detections[0]:
+        bbox = filtered_detections[0]['bbox']
+        dimensions = (max(bbox[0], bbox[2]) * 2, max(bbox[1], bbox[3]) * 2)
+    else:
+        dimensions = (1920, 1080)
+
+    blended_img = create_custom_heatmap(
         filtered_detections,
         temp_floorplan_path,
-        None,
-        os.path.join(RESULTS_FOLDER, job_id, f"video_{job_id}.mp4"),
-        os.path.join(UPLOAD_FOLDER, job_id, job_row[2]),
-        points=homography_points,
-        progress_callback=progress_callback,
-        return_image=True
+        dimensions=dimensions,
+        points=homography_points
     )
     upload_image_to_supabase(
         blended_img,
