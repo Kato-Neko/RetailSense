@@ -82,6 +82,22 @@ def direct_heatmap_analysis(job_id):
     from .api.heatmap import get_heatmap_analysis_logic
     return get_heatmap_analysis_logic(job_id)
 
+@app.route('/heatmap_jobs/<job_id>/export/pdf', methods=['GET', 'OPTIONS'])
+@cross_origin()
+@jwt_required()
+def direct_export_pdf(job_id):
+    """Direct access to PDF export without /api prefix"""
+    from .api.heatmap import export_heatmap_pdf
+    return export_heatmap_pdf(job_id)
+
+@app.route('/heatmap_jobs/<job_id>/export/csv', methods=['GET', 'OPTIONS'])
+@cross_origin()
+@jwt_required()
+def direct_export_csv(job_id):
+    """Direct access to CSV export without /api prefix"""
+    from .api.heatmap import export_heatmap_csv
+    return export_heatmap_csv(job_id)
+
 ## no in-memory progress kept here; services.state manages progress
 
 
