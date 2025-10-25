@@ -280,7 +280,23 @@ def run_custom_heatmap_job(job_id: str, start_time: float, end_time: float, set_
         if 'timestamp' in det and start_time <= det['timestamp'] <= end_time
     ]
 
-    floorplan_path = os.path.join(UPLOAD_FOLDER, job_id, job_row[3])
+    # Download floorplan from Supabase to local temp file
+    from ..core.storage import download_image_from_supabase
+    import cv2
+    floorplan_filename = job_row[3]
+    floorplan_supabase_path = f"{job_id}/{floorplan_filename}"
+    
+    logger.info(f"Downloading floorplan from Supabase: {floorplan_supabase_path}")
+    floorplan_img = download_image_from_supabase(floorplan_supabase_path)
+    if floorplan_img is None:
+        logger.error(f"Failed to download floorplan from Supabase: {floorplan_supabase_path}")
+        set_progress(1.0)
+        return
+    
+    # Save floorplan to local temp file for blend_heatmap
+    temp_floorplan_path = os.path.join(UPLOAD_FOLDER, job_id, f"temp_{floorplan_filename}")
+    cv2.imwrite(temp_floorplan_path, floorplan_img)
+    logger.info(f"Saved floorplan to temp file: {temp_floorplan_path}")
 
     def progress_callback(progress: float):
         set_progress(progress)
@@ -308,7 +324,7 @@ def run_custom_heatmap_job(job_id: str, start_time: float, end_time: float, set_
 
     blended_img = blend_heatmap(
         filtered_detections,
-        floorplan_path,
+        temp_floorplan_path,
         None,
         os.path.join(RESULTS_FOLDER, job_id, f"video_{job_id}.mp4"),
         os.path.join(UPLOAD_FOLDER, job_id, job_row[2]),
@@ -320,4 +336,12 @@ def run_custom_heatmap_job(job_id: str, start_time: float, end_time: float, set_
         blended_img,
         f"{job_id}/custom_heatmap_{float(start_time):.1f}_{float(end_time):.1f}.jpg"
     )
+    
+    # Clean up temp floorplan file
+    try:
+        os.remove(temp_floorplan_path)
+        logger.info(f"Cleaned up temp floorplan file: {temp_floorplan_path}")
+    except Exception as e:
+        logger.warning(f"Failed to clean up temp floorplan file: {e}")
+    
     set_progress(1.0)
