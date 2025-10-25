@@ -207,6 +207,8 @@ def export_heatmap_csv(job_id):
 
 
 @heatmap_bp.route('/heatmap_jobs/<job_id>/export/pdf', methods=['GET'])
+@cross_origin()
+@jwt_required()
 def export_heatmap_pdf(job_id):
     try:
         start_datetime = request.args.get('start_datetime', 'Full video duration')
