@@ -292,11 +292,37 @@ def run_custom_heatmap_job(job_id: str, start_time: float, end_time: float, set_
         logger.error(f"Failed to download floorplan from Supabase: {floorplan_supabase_path}")
         set_progress(1.0)
         return
-    
+
     # Save floorplan to local temp file for blend_heatmap
-    temp_floorplan_path = os.path.join(UPLOAD_FOLDER, job_id, f"temp_{floorplan_filename}")
-    cv2.imwrite(temp_floorplan_path, floorplan_img)
-    logger.info(f"Saved floorplan to temp file: {temp_floorplan_path}")
+    temp_dir = os.path.join(UPLOAD_FOLDER, job_id)
+    os.makedirs(temp_dir, exist_ok=True)
+    temp_floorplan_path = os.path.join(temp_dir, f"temp_{floorplan_filename}")
+
+    try:
+        write_success = cv2.imwrite(temp_floorplan_path, floorplan_img)
+        if not write_success:
+            # Fallback: try writing raw bytes from storage (safer if encoding mismatch)
+            try:
+                from ..core.storage import download_image_bytes_from_supabase
+                raw_bytes = download_image_bytes_from_supabase(floorplan_supabase_path)
+                if raw_bytes:
+                    with open(temp_floorplan_path, 'wb') as bf:
+                        bf.write(raw_bytes)
+                    logger.info(f"Wrote floorplan temp file via raw bytes fallback: {temp_floorplan_path}")
+                else:
+                    logger.error(f"Fallback raw bytes download failed for: {floorplan_supabase_path}")
+                    set_progress(1.0)
+                    return
+            except Exception as e:
+                logger.error(f"Fallback write of floorplan failed: {e}")
+                set_progress(1.0)
+                return
+        else:
+            logger.info(f"Saved floorplan to temp file: {temp_floorplan_path}")
+    except Exception as e:
+        logger.error(f"Error saving floorplan to temp file: {e}")
+        set_progress(1.0)
+        return
 
     def progress_callback(progress: float):
         set_progress(progress)
