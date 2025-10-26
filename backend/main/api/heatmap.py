@@ -218,28 +218,27 @@ def export_heatmap_csv(job_id):
             ])
         output.seek(0)
         
-        # Create a copy of the CSV content
-        csv_content = output.getvalue()
+        # Save to a temporary file
+        temp_csv = os.path.join(os.path.dirname(__file__), f'temp_{job_id}.csv')
+        with open(temp_csv, 'w', newline='', encoding='utf-8') as f:
+            f.write(output.getvalue())
         output.close()
         
-        # Create a new buffer with the content
-        mem = io.BytesIO()
-        mem.write(csv_content.encode('utf-8'))
-        mem.seek(0)
-        
         response = send_file(
-            mem,
+            temp_csv,
             mimetype='text/csv',
             as_attachment=True,
             download_name=f'heatmap_{job_id}.csv'
         )
-        response.headers.update({
-            'Access-Control-Allow-Origin': '*',
-            'Access-Control-Allow-Methods': 'GET, OPTIONS',
-            'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-            'Content-Type': 'text/csv',
-            'Content-Disposition': f'attachment; filename=heatmap_{job_id}.csv'
-        })
+        
+        @response.call_on_close
+        def cleanup():
+            try:
+                if os.path.exists(temp_csv):
+                    os.remove(temp_csv)
+            except:
+                pass
+        
         return response
     except Exception as e:
         return jsonify({"error": f"Error generating CSV export: {str(e)}"}), 500
@@ -341,32 +340,48 @@ def export_heatmap_pdf(job_id):
         for ph in analysis['peak_hours']:
             elements.append(Paragraph(f"• {ph['start_minute']}-{ph['end_minute']} minutes: {ph['count']} detections", styles['Normal']))
 
-        doc.build(elements)
-        buffer.seek(0)
-        
-        # Create a copy of the buffer content
-        pdf_content = buffer.getvalue()
-        buffer.close()
-        
-        # Create a new buffer with the content
-        mem = io.BytesIO()
-        mem.write(pdf_content)
-        mem.seek(0)
-        
-        response = send_file(
-            mem,
-            mimetype='application/pdf',
-            as_attachment=True,
-            download_name=f'heatmap_{job_id}_report.pdf'
-        )
-        response.headers.update({
-            'Access-Control-Allow-Origin': '*',
-            'Access-Control-Allow-Methods': 'GET, OPTIONS',
-            'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-            'Content-Type': 'application/pdf',
-            'Content-Disposition': f'attachment; filename=heatmap_{job_id}_report.pdf'
-        })
-        return response
+        try:
+            doc.build(elements)
+            buffer.seek(0)
+            
+            # Save PDF to a temporary file to ensure it's valid
+            temp_pdf = os.path.join(os.path.dirname(__file__), f'temp_{job_id}.pdf')
+            with open(temp_pdf, 'wb') as f:
+                f.write(buffer.getvalue())
+            buffer.close()
+            
+            # Send the file and then delete it
+            response = send_file(
+                temp_pdf,
+                mimetype='application/pdf',
+                as_attachment=True,
+                download_name=f'heatmap_{job_id}_report.pdf'
+            )
+            
+            response.headers.update({
+                'Access-Control-Allow-Origin': '*',
+                'Access-Control-Allow-Methods': 'GET, OPTIONS',
+                'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+                'Content-Type': 'application/pdf',
+                'Content-Disposition': f'attachment; filename=heatmap_{job_id}_report.pdf'
+            })
+            
+            # Schedule file deletion after response is sent
+            @response.call_on_close
+            def cleanup():
+                try:
+                    if os.path.exists(temp_pdf):
+                        os.remove(temp_pdf)
+                except:
+                    pass
+                    
+            return response
+            
+        except Exception as e:
+            logger.error(f"Error in PDF generation: {str(e)}")
+            if buffer:
+                buffer.close()
+            return jsonify({"error": "Failed to generate PDF"}), 500
     except Exception as e:
         logger.error(f"PDF export error for job {job_id}: {str(e)}")
         import traceback
@@ -422,23 +437,26 @@ def get_custom_heatmap_image(job_id):
             "path": supabase_path
         }), 404
     
-    # Create a new buffer with the image content
-    mem = io.BytesIO(img_bytes)
-    mem.seek(0)
+    # Save the image to a temporary file
+    temp_jpg = os.path.join(os.path.dirname(__file__), f'temp_{job_id}.jpg')
+    with open(temp_jpg, 'wb') as f:
+        f.write(img_bytes)
     
     response = send_file(
-        mem,
+        temp_jpg,
         mimetype="image/jpeg",
         as_attachment=True,
         download_name=f"heatmap_{job_id}.jpg"
     )
-    response.headers.update({
-        'Access-Control-Allow-Origin': '*',
-        'Access-Control-Allow-Methods': 'GET, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-        'Content-Type': 'image/jpeg',
-        'Content-Disposition': f'attachment; filename=heatmap_{job_id}.jpg'
-    })
+    
+    @response.call_on_close
+    def cleanup():
+        try:
+            if os.path.exists(temp_jpg):
+                os.remove(temp_jpg)
+        except:
+            pass
+    
     return response
 
 
