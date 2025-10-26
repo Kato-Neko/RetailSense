@@ -160,6 +160,7 @@ def export_heatmap_csv(job_id):
             from ..core.storage import list_files_in_supabase
             files = list_files_in_supabase(f"{job_id}")
             logger.info(f"Found files for CSV export: {files}")
+            logger.info(f"Looking for timestamp={timestamp}, uuid={unique_id}, start_time={start_time}, end_time={end_time}")
             
             if timestamp and unique_id:
                 # Try exact match first
@@ -168,6 +169,7 @@ def export_heatmap_csv(job_id):
             else:
                 # Try to find most recent matching custom heatmap
                 prefix = f"{job_id}/custom_heatmap_{float(start_time):.1f}_{float(end_time):.1f}_"
+                logger.info(f"Searching for files with prefix: {prefix}")
                 matching_files = [f for f in files if f.startswith(prefix)]
                 logger.info(f"Matching custom heatmaps found: {matching_files}")
                 
@@ -175,8 +177,13 @@ def export_heatmap_csv(job_id):
                     supabase_path = sorted(matching_files)[-1]  # Get most recent
                     logger.info(f"Using most recent custom heatmap: {supabase_path}")
                 else:
-                    logger.error(f"No custom heatmap found matching time range {start_time:.1f}-{end_time:.1f}")
-                    return jsonify({"error": f"No custom heatmap found for the specified time range. Please generate a custom heatmap first."}), 404
+                    logger.error(f"No custom heatmap found matching time range {start_time:.1f}-{end_time:.1f}, available files: {files[:10]}")
+                    # Return helpful error with available files
+                    return jsonify({
+                        "error": f"No custom heatmap found for time range {start_time:.1f}-{end_time:.1f}", 
+                        "available_files": files[:10],
+                        "searched_prefix": prefix
+                    }), 404
         else:
             # Standard heatmap path when no time range is specified
             supabase_path = f"{job_id}/video_heatmap.jpg"
