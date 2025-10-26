@@ -112,9 +112,13 @@ def get_heatmap_image(job_id):
     return get_heatmap_image_logic(job_id)
 
 
-@heatmap_bp.route('/heatmap_jobs/<job_id>/export/csv', methods=['GET'])
+@heatmap_bp.route('/heatmap_jobs/<job_id>/export/csv', methods=['GET', 'OPTIONS'])
+@cross_origin()
 @jwt_required()
 def export_heatmap_csv(job_id):
+    if request.method == 'OPTIONS':
+        return '', 204
+        
     try:
         conn = get_db_connection()
         cur = conn.cursor()
@@ -213,11 +217,17 @@ def export_heatmap_csv(job_id):
                 det.get('timestamp', 'N/A')
             ])
         output.seek(0)
-        return Response(
+        response = Response(
             output,
             mimetype='text/csv',
-            headers={'Content-Disposition': f'attachment; filename=heatmap_{job_id}.csv'}
+            headers={
+                'Content-Disposition': f'attachment; filename=heatmap_{job_id}.csv',
+                'Access-Control-Allow-Origin': '*',
+                'Access-Control-Allow-Methods': 'GET, OPTIONS',
+                'Access-Control-Allow-Headers': 'Content-Type, Authorization'
+            }
         )
+        return response
     except Exception as e:
         return jsonify({"error": f"Error generating CSV export: {str(e)}"}), 500
 
@@ -319,7 +329,16 @@ def export_heatmap_pdf(job_id):
 
         doc.build(elements)
         buffer.seek(0)
-        return send_file(buffer, mimetype='application/pdf', as_attachment=True, download_name=f'heatmap_{job_id}_report.pdf')
+        response = send_file(
+            buffer,
+            mimetype='application/pdf',
+            as_attachment=True,
+            download_name=f'heatmap_{job_id}_report.pdf'
+        )
+        response.headers['Access-Control-Allow-Origin'] = '*'
+        response.headers['Access-Control-Allow-Methods'] = 'GET, OPTIONS'
+        response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization'
+        return response
     except Exception as e:
         logger.error(f"PDF export error for job {job_id}: {str(e)}")
         import traceback
@@ -348,20 +367,32 @@ def generate_custom_heatmap(job_id):
 @cross_origin()
 def get_custom_heatmap_image(job_id):
     if request.method == 'OPTIONS':
-        return '', 204
+        response = Response(status=200)
+        response.headers.update({
+            'Access-Control-Allow-Origin': '*',
+            'Access-Control-Allow-Methods': 'GET, OPTIONS',
+            'Access-Control-Allow-Headers': 'Content-Type, Authorization'
+        })
+        return response
         
     start = request.args.get('start')
     end = request.args.get('end')
-    timestamp = request.args.get('timestamp')
-    unique_id = request.args.get('uuid')
     
-    supabase_path = f"{job_id}/custom_heatmap_{float(start):.1f}_{float(end):.1f}_{timestamp}_{unique_id}.jpg"
+    # Try to load the file with just start/end times first
+    supabase_path = f"{job_id}/custom_heatmap_{float(start):.1f}_{float(end):.1f}.jpg"
     img_bytes = download_image_bytes_from_supabase(supabase_path)
     
     if img_bytes is None:
-        return jsonify({"error": "Custom heatmap not found in Supabase"}), 404
+        return jsonify({
+            "error": "Custom heatmap not found in Supabase",
+            "path": supabase_path
+        }), 404
     
-    return Response(img_bytes, mimetype="image/jpeg")
+    response = Response(img_bytes, mimetype="image/jpeg")
+    response.headers['Access-Control-Allow-Origin'] = '*'
+    response.headers['Access-Control-Allow-Methods'] = 'GET, OPTIONS'
+    response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization'
+    return response
 
 
 @heatmap_bp.route('/heatmap_jobs/<job_id>/custom_heatmap_progress')
