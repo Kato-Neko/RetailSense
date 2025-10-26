@@ -175,8 +175,8 @@ def export_heatmap_csv(job_id):
                     supabase_path = sorted(matching_files)[-1]  # Get most recent
                     logger.info(f"Using most recent custom heatmap: {supabase_path}")
                 else:
-                    supabase_path = f"{job_id}/video_heatmap.jpg"
-                    logger.info(f"No custom heatmap found, using default: {supabase_path}")
+                    logger.error(f"No custom heatmap found matching time range {start_time:.1f}-{end_time:.1f}")
+                    return jsonify({"error": f"No custom heatmap found for the specified time range. Please generate a custom heatmap first."}), 404
         else:
             # Standard heatmap path when no time range is specified
             supabase_path = f"{job_id}/video_heatmap.jpg"
@@ -314,8 +314,8 @@ def export_heatmap_pdf(job_id):
                     supabase_path = sorted(matching_files)[-1]  # Get most recent
                     logger.info(f"Using most recent custom heatmap: {supabase_path}")
                 else:
-                    supabase_path = f"{job_id}/video_heatmap.jpg"
-                    logger.info(f"No custom heatmap found, using default: {supabase_path}")
+                    logger.error(f"No custom heatmap found matching time range {start_time:.1f}-{end_time:.1f}")
+                    return jsonify({"error": f"No custom heatmap found for the specified time range. Please generate a custom heatmap first."}), 404
         else:
             # Standard heatmap path when no time range is specified
             supabase_path = f"{job_id}/video_heatmap.jpg"
@@ -440,6 +440,7 @@ def get_custom_analysis(job_id):
 
         # If we have timestamp and uuid, use them for specific image
         if timestamp and unique_id:
+            # Match the exact naming convention from video_jobs.py (line 378)
             supabase_path = f"{job_id}/custom_heatmap_{float(start):.1f}_{float(end):.1f}_{timestamp}_{unique_id}.jpg"
             logger.info(f"Looking for specific file: {supabase_path}")
         else:
@@ -448,6 +449,7 @@ def get_custom_analysis(job_id):
             files = list_files_in_supabase(f"{job_id}")
             logger.info(f"Found files in Supabase for {job_id}: {files}")
             
+            # Match the exact naming convention with .1f precision
             prefix = f"{job_id}/custom_heatmap_{float(start):.1f}_{float(end):.1f}_"
             logger.info(f"Looking for files matching prefix: {prefix}")
             
