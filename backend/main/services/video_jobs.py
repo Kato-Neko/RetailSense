@@ -257,28 +257,50 @@ def _update_db_error(job_id: str, job: Dict[str, Any]):
 
 
 def run_custom_heatmap_job(job_id: str, start_time: float, end_time: float, set_progress: Callable[[float], None]):
-    conn = get_db_connection()
-    cur = conn.cursor()
-    cur.execute("SELECT * FROM jobs WHERE job_id = %s", (job_id,))
-    job_row = cur.fetchone()
-    cur.close()
-    conn.close()
-    if not job_row or job_row[6] != 'completed':
+    try:
+        logger.info(f"Starting custom heatmap generation for job {job_id}, time range: {start_time}-{end_time}")
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute("SELECT * FROM jobs WHERE job_id = %s", (job_id,))
+        job_row = cur.fetchone()
+        cur.close()
+        conn.close()
+        if not job_row or job_row[6] != 'completed':
+            logger.error(f"Job {job_id} not found or not completed")
+            set_progress(1.0)
+            return
+    except Exception as e:
+        logger.error(f"Error initializing custom heatmap job: {e}")
+        import traceback
+        logger.error(f"Traceback: {traceback.format_exc()}")
         set_progress(1.0)
         return
 
-    from ..core.storage import download_json_from_supabase
-    det_data = download_json_from_supabase(f"{job_id}/detections.json")
-    if det_data is None:
+    try:
+        from ..core.storage import download_json_from_supabase
+        det_data = download_json_from_supabase(f"{job_id}/detections.json")
+        if det_data is None:
+            logger.error(f"Failed to download detections.json for job {job_id}")
+            set_progress(1.0)
+            return
+        detections = det_data.get("detections", [])
+        fps = det_data.get("fps")
+        logger.info(f"Downloaded {len(detections)} total detections")
+
+        filtered_detections = [
+            det for det in detections
+            if 'timestamp' in det and start_time <= det['timestamp'] <= end_time
+        ]
+        logger.info(f"Filtered to {len(filtered_detections)} detections in range {start_time}-{end_time}")
+        
+        if not filtered_detections:
+            logger.warning(f"No detections found in time range {start_time}-{end_time}")
+    except Exception as e:
+        logger.error(f"Error processing detections: {e}")
+        import traceback
+        logger.error(f"Traceback: {traceback.format_exc()}")
         set_progress(1.0)
         return
-    detections = det_data.get("detections", [])
-    fps = det_data.get("fps")
-
-    filtered_detections = [
-        det for det in detections
-        if 'timestamp' in det and start_time <= det['timestamp'] <= end_time
-    ]
 
     # Download floorplan from Supabase to local temp file
     from ..core.storage import download_image_from_supabase
@@ -363,29 +385,40 @@ def run_custom_heatmap_job(job_id: str, start_time: float, end_time: float, set_
     else:
         dimensions = (1920, 1080)
 
-    blended_img = create_custom_heatmap(
-        filtered_detections,
-        temp_floorplan_path,
-        dimensions=dimensions,
-        points=homography_points
-    )
-    # Generate unique identifiers for the filename
-    import time
-    import uuid
-    timestamp = int(time.time())
-    unique_id = str(uuid.uuid4())[:8]
-    
-    filename = f"{job_id}/custom_heatmap_{float(start_time):.1f}_{float(end_time):.1f}_{timestamp}_{unique_id}.jpg"
-    upload_image_to_supabase(blended_img, filename)
-    
-    # Store the identifiers in the jobs state for frontend to retrieve
-    from ..services.state import get_jobs_store
-    jobs = get_jobs_store()
-    if job_id in jobs:
-        jobs[job_id]['custom_heatmap_meta'] = {
-            'timestamp': timestamp,
-            'uuid': unique_id
-        }
+    try:
+        logger.info(f"Creating custom heatmap with {len(filtered_detections)} detections")
+        blended_img = create_custom_heatmap(
+            filtered_detections,
+            temp_floorplan_path,
+            dimensions=dimensions,
+            points=homography_points
+        )
+        logger.info(f"Custom heatmap generated successfully")
+        
+        # Generate unique identifiers for the filename
+        import time
+        import uuid
+        timestamp = int(time.time())
+        unique_id = str(uuid.uuid4())[:8]
+        
+        filename = f"{job_id}/custom_heatmap_{float(start_time):.1f}_{float(end_time):.1f}_{timestamp}_{unique_id}.jpg"
+        logger.info(f"Uploading custom heatmap to Supabase: {filename}")
+        upload_image_to_supabase(blended_img, filename)
+        logger.info(f"Successfully uploaded custom heatmap to Supabase")
+        
+        # Store the identifiers in the jobs state for frontend to retrieve
+        from ..services.state import get_jobs_store
+        jobs = get_jobs_store()
+        if job_id in jobs:
+            jobs[job_id]['custom_heatmap_meta'] = {
+                'timestamp': timestamp,
+                'uuid': unique_id
+            }
+            logger.info(f"Stored metadata: timestamp={timestamp}, uuid={unique_id}")
+    except Exception as e:
+        logger.error(f"Error creating/uploading custom heatmap: {e}")
+        import traceback
+        logger.error(f"Traceback: {traceback.format_exc()}")
     
     # Clean up temp floorplan file
     try:
