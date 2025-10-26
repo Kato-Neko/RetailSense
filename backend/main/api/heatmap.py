@@ -217,16 +217,29 @@ def export_heatmap_csv(job_id):
                 det.get('timestamp', 'N/A')
             ])
         output.seek(0)
-        response = Response(
-            output,
+        
+        # Create a copy of the CSV content
+        csv_content = output.getvalue()
+        output.close()
+        
+        # Create a new buffer with the content
+        mem = io.BytesIO()
+        mem.write(csv_content.encode('utf-8'))
+        mem.seek(0)
+        
+        response = send_file(
+            mem,
             mimetype='text/csv',
-            headers={
-                'Content-Disposition': f'attachment; filename=heatmap_{job_id}.csv',
-                'Access-Control-Allow-Origin': '*',
-                'Access-Control-Allow-Methods': 'GET, OPTIONS',
-                'Access-Control-Allow-Headers': 'Content-Type, Authorization'
-            }
+            as_attachment=True,
+            download_name=f'heatmap_{job_id}.csv'
         )
+        response.headers.update({
+            'Access-Control-Allow-Origin': '*',
+            'Access-Control-Allow-Methods': 'GET, OPTIONS',
+            'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+            'Content-Type': 'text/csv',
+            'Content-Disposition': f'attachment; filename=heatmap_{job_id}.csv'
+        })
         return response
     except Exception as e:
         return jsonify({"error": f"Error generating CSV export: {str(e)}"}), 500
@@ -330,15 +343,29 @@ def export_heatmap_pdf(job_id):
 
         doc.build(elements)
         buffer.seek(0)
+        
+        # Create a copy of the buffer content
+        pdf_content = buffer.getvalue()
+        buffer.close()
+        
+        # Create a new buffer with the content
+        mem = io.BytesIO()
+        mem.write(pdf_content)
+        mem.seek(0)
+        
         response = send_file(
-            buffer,
+            mem,
             mimetype='application/pdf',
             as_attachment=True,
             download_name=f'heatmap_{job_id}_report.pdf'
         )
-        response.headers['Access-Control-Allow-Origin'] = '*'
-        response.headers['Access-Control-Allow-Methods'] = 'GET, OPTIONS'
-        response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization'
+        response.headers.update({
+            'Access-Control-Allow-Origin': '*',
+            'Access-Control-Allow-Methods': 'GET, OPTIONS',
+            'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+            'Content-Type': 'application/pdf',
+            'Content-Disposition': f'attachment; filename=heatmap_{job_id}_report.pdf'
+        })
         return response
     except Exception as e:
         logger.error(f"PDF export error for job {job_id}: {str(e)}")
@@ -395,10 +422,23 @@ def get_custom_heatmap_image(job_id):
             "path": supabase_path
         }), 404
     
-    response = Response(img_bytes, mimetype="image/jpeg")
-    response.headers['Access-Control-Allow-Origin'] = '*'
-    response.headers['Access-Control-Allow-Methods'] = 'GET, OPTIONS'
-    response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization'
+    # Create a new buffer with the image content
+    mem = io.BytesIO(img_bytes)
+    mem.seek(0)
+    
+    response = send_file(
+        mem,
+        mimetype="image/jpeg",
+        as_attachment=True,
+        download_name=f"heatmap_{job_id}.jpg"
+    )
+    response.headers.update({
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'GET, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+        'Content-Type': 'image/jpeg',
+        'Content-Disposition': f'attachment; filename=heatmap_{job_id}.jpg'
+    })
     return response
 
 
