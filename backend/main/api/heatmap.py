@@ -408,15 +408,35 @@ def get_custom_analysis(job_id):
         # If we have timestamp and uuid, use them for specific image
         if timestamp and unique_id:
             supabase_path = f"{job_id}/custom_heatmap_{float(start):.1f}_{float(end):.1f}_{timestamp}_{unique_id}.jpg"
+            logger.info(f"Looking for specific file: {supabase_path}")
         else:
-            # Try to find most recent matching custom heatmap
-            from ..core.storage import list_files_in_supabase
-            files = list_files_in_supabase(f"{job_id}")
-            matching_files = [f for f in files if f.startswith(f"{job_id}/custom_heatmap_{float(start):.1f}_{float(end):.1f}_")]
-            if matching_files:
-                supabase_path = sorted(matching_files)[-1]  # Get most recent
-            else:
-                return jsonify({"error": "No matching custom heatmap found"}), 404
+            # Try direct path first
+            supabase_path = f"{job_id}/custom_heatmap_{float(start):.1f}_{float(end):.1f}.jpg"
+            try:
+                from ..core.storage import check_file_exists_in_supabase
+                if check_file_exists_in_supabase(supabase_path):
+                    logger.info(f"Found custom heatmap at: {supabase_path}")
+                else:
+                    # Try listing as fallback
+                    from ..core.storage import list_files_in_supabase
+                    files = list_files_in_supabase(f"{job_id}")
+                    logger.info(f"Found files in Supabase for {job_id}: {files}")
+                    
+                    prefix = f"{job_id}/custom_heatmap_{float(start):.1f}_{float(end):.1f}_"
+                    logger.info(f"Looking for files matching prefix: {prefix}")
+                    
+                    matching_files = [f for f in files if f.startswith(prefix)]
+                    logger.info(f"Matching files found: {matching_files}")
+                    
+                    if matching_files:
+                        supabase_path = sorted(matching_files)[-1]  # Get most recent
+                        logger.info(f"Selected most recent file: {supabase_path}")
+                    else:
+                        logger.error(f"No matching custom heatmap found for prefix: {prefix}")
+                        return jsonify({"error": "No matching custom heatmap found"}), 404
+            except Exception as e:
+                logger.error(f"Error checking for custom heatmap: {e}")
+                return jsonify({"error": "Failed to check for custom heatmap"}), 500
 
         # Get the heatmap image
         try:

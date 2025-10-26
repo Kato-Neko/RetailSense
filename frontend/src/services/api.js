@@ -310,7 +310,9 @@ export const heatmapService = {
         params: {
           start_time: params.start_time,
           end_time: params.end_time,
-          area: params.area
+          area: params.area,
+          timestamp: params.timestamp,
+          uuid: params.uuid
         }
       });
       return response.data;

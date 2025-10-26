@@ -107,11 +107,28 @@ def download_image_from_supabase(supabase_path):
         return None
 
 
+def check_file_exists_in_supabase(supabase_path):
+    bucket = "projectresults"
+    try:
+        logger.info(f"Checking if file exists in Supabase: {bucket}/{supabase_path}")
+        # Try to get the file's metadata - this is faster than listing
+        info = supabase.storage.from_(bucket).get_public_url(supabase_path)
+        if info:
+            logger.info(f"File exists in Supabase: {bucket}/{supabase_path}")
+            return True
+        return False
+    except Exception as e:
+        logger.error(f"Error checking file existence in Supabase: {e}")
+        return False
+
 def list_files_in_supabase(prefix=""):
     bucket = "projectresults"
     try:
+        logger.info(f"Listing files in Supabase bucket {bucket} with prefix: {prefix}")
         files = supabase.storage.from_(bucket).list(prefix)
-        return [f['name'] for f in files]
+        file_names = [f['name'] for f in files]
+        logger.info(f"Found {len(file_names)} files: {file_names}")
+        return file_names
     except Exception as e:
         logger.error(f"Failed to list files in Supabase at {bucket}/{prefix}: {e}")
         return []

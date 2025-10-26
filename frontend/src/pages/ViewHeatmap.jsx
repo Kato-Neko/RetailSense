@@ -188,6 +188,8 @@ export default function ViewHeatmap() {
                 start_time: startTimeInSeconds,
                 end_time: endTimeInSeconds,
                 area: 'all',
+                timestamp: heatmapMeta?.timestamp,
+                uuid: heatmapMeta?.uuid
               });
               setAnalysis(customAnalysis);
               toast.success('Custom heatmap generated successfully!');
