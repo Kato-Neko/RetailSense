@@ -153,19 +153,35 @@ def export_heatmap_csv(job_id):
                 det for det in detections
                 if 'timestamp' in det and start_time <= det['timestamp'] <= end_time
             ]
-            # Get the stored custom heatmap path
-            cur = conn.cursor()
-            try:
-                cur.execute("SELECT custom_heatmap_path FROM jobs WHERE job_id = %s", (job_id,))
-                result = cur.fetchone()
-                if result and result[0]:
-                    supabase_path = result[0]
+            # Try to find the custom heatmap
+            timestamp = request.args.get('timestamp')
+            unique_id = request.args.get('uuid')
+            
+            from ..core.storage import list_files_in_supabase
+            files = list_files_in_supabase(f"{job_id}")
+            logger.info(f"Found files for CSV export: {files}")
+            
+            if timestamp and unique_id:
+                # Try exact match first
+                supabase_path = f"{job_id}/custom_heatmap_{float(start_time):.1f}_{float(end_time):.1f}_{timestamp}_{unique_id}.jpg"
+                logger.info(f"Looking for specific custom heatmap: {supabase_path}")
+            else:
+                # Try to find most recent matching custom heatmap
+                prefix = f"{job_id}/custom_heatmap_{float(start_time):.1f}_{float(end_time):.1f}_"
+                matching_files = [f for f in files if f.startswith(prefix)]
+                logger.info(f"Matching custom heatmaps found: {matching_files}")
+                
+                if matching_files:
+                    supabase_path = sorted(matching_files)[-1]  # Get most recent
+                    logger.info(f"Using most recent custom heatmap: {supabase_path}")
                 else:
-                    supabase_path = f"{job_id}/custom_heatmap_default.jpg"
-            finally:
-                cur.close()
+                    supabase_path = f"{job_id}/video_heatmap.jpg"
+                    logger.info(f"No custom heatmap found, using default: {supabase_path}")
         else:
+            # Standard heatmap path when no time range is specified
             supabase_path = f"{job_id}/video_heatmap.jpg"
+            logger.info(f"Using standard heatmap path: {supabase_path}")
+        
         heatmap_color = download_image_from_supabase(supabase_path)
         if heatmap_color is None:
             return jsonify({"error": "Heatmap not found in Supabase"}), 404
