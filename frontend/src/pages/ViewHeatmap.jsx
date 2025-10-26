@@ -173,7 +173,13 @@ export default function ViewHeatmap() {
             endDate.setHours(...customTimeRange.end.split(":").map(Number));
             const startTimeInSeconds = (startDate - videoStart) / 1000;
             const endTimeInSeconds = (endDate - videoStart) / 1000;
-            const customUrl = heatmapService.getCustomHeatmapImageUrl(selectedJob.job_id, startTimeInSeconds, endTimeInSeconds);
+            const customUrl = heatmapService.getCustomHeatmapImageUrl(
+              selectedJob.job_id,
+              startTimeInSeconds,
+              endTimeInSeconds,
+              heatmapMeta?.timestamp,
+              heatmapMeta?.uuid
+            );
             setCustomHeatmapUrl(customUrl);
             // Fetch custom analytics
             setAnalysisLoading(true);
@@ -359,7 +365,9 @@ export default function ViewHeatmap() {
     console.log("[CustomHeatmap] requestBody:", requestBody);
 
     try {
-      await heatmapService.generateCustomHeatmap(selectedJob.job_id, requestBody);
+      const response = await heatmapService.generateCustomHeatmap(selectedJob.job_id, requestBody);
+      // Store timestamp and UUID for later use
+      setHeatmapMeta(response);
       // Polling will now be handled by the useEffect above
     } catch (err) {
       setIsCustomGenerating(false);

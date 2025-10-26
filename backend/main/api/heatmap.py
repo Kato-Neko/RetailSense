@@ -266,10 +266,11 @@ def export_heatmap_pdf(job_id):
         if start_time is not None and end_time is not None:
             timestamp = request.args.get('timestamp')
             unique_id = request.args.get('uuid')
-            if timestamp and unique_id:
-                supabase_path = f"{job_id}/custom_heatmap_{float(start_time):.1f}_{float(end_time):.1f}_{timestamp}_{unique_id}.jpg"
-            else:
-                supabase_path = f"{job_id}/custom_heatmap_{float(start_time):.1f}_{float(end_time):.1f}.jpg"
+            import time, uuid
+            ts = str(int(time.time()))
+            uid = str(uuid.uuid4())[:8]
+            supabase_path = f"{job_id}/custom_heatmap_{float(start_time):.1f}_{float(end_time):.1f}_{ts}_{uid}.jpg"
+            return jsonify({'timestamp': ts, 'uuid': uid}), 200
         else:
             supabase_path = f"{job_id}/video_heatmap.jpg"
         heatmap_color = download_image_from_supabase(supabase_path)
@@ -377,9 +378,15 @@ def get_custom_heatmap_image(job_id):
         
     start = request.args.get('start')
     end = request.args.get('end')
+    timestamp = request.args.get('timestamp')
+    unique_id = request.args.get('uuid')
     
-    # Try to load the file with just start/end times first
-    supabase_path = f"{job_id}/custom_heatmap_{float(start):.1f}_{float(end):.1f}.jpg"
+    # Try to load the file with unique identifier if provided
+    if timestamp and unique_id:
+        supabase_path = f"{job_id}/custom_heatmap_{float(start):.1f}_{float(end):.1f}_{timestamp}_{unique_id}.jpg"
+    else:
+        supabase_path = f"{job_id}/custom_heatmap_{float(start):.1f}_{float(end):.1f}.jpg"
+    
     img_bytes = download_image_bytes_from_supabase(supabase_path)
     
     if img_bytes is None:
