@@ -404,6 +404,31 @@ def generate_custom_heatmap(job_id):
         return jsonify({"error": str(e)}), 500
 
 
+@heatmap_bp.route('/heatmap_jobs/<job_id>/custom_analysis', methods=['GET'])
+@cross_origin()
+def get_custom_analysis(job_id):
+    """Get custom analysis data for a job"""
+    try:
+        start = request.args.get('start')
+        end = request.args.get('end')
+        timestamp = request.args.get('timestamp')
+        unique_id = request.args.get('uid')
+
+        if start and end and timestamp and unique_id:
+            supabase_path = f"{job_id}/custom_heatmap_{float(start):.1f}_{float(end):.1f}_{timestamp}_{unique_id}.jpg"
+            try:
+                image_bytes = download_image_bytes_from_supabase(supabase_path)
+                return Response(image_bytes, mimetype='image/jpeg')
+            except Exception as e:
+                logger.error(f"Error downloading custom analysis image from Supabase: {e}")
+                return jsonify({"error": "Custom analysis image not found"}), 404
+        else:
+            return jsonify({"error": "Missing required parameters"}), 400
+
+    except Exception as e:
+        logger.error(f"Error in get_custom_analysis: {e}")
+        return jsonify({"error": str(e)}), 500
+
 @heatmap_bp.route('/heatmap_jobs/<job_id>/custom_heatmap_image', methods=['GET', 'OPTIONS'])
 @cross_origin()
 def get_custom_heatmap_image(job_id):
