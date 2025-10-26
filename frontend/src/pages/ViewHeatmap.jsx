@@ -162,9 +162,15 @@ export default function ViewHeatmap() {
             setIsCustomGenerating(false);
             setCustomGenerationComplete(true);
             // Store the metadata for exports
-            if (data.timestamp && data.uuid) {
-              setHeatmapMeta({ timestamp: data.timestamp, uuid: data.uuid });
+            const newHeatmapMeta = (data.timestamp && data.uuid) ? { 
+              timestamp: data.timestamp, 
+              uuid: data.uuid 
+            } : null;
+            
+            if (newHeatmapMeta) {
+              setHeatmapMeta(newHeatmapMeta);
             }
+            
             // Fetch custom heatmap image and analytics
             const videoStart = new Date(selectedJob.start_datetime);
             const startDate = new Date(customDateRange.start);
@@ -177,8 +183,8 @@ export default function ViewHeatmap() {
               selectedJob.job_id,
               startTimeInSeconds,
               endTimeInSeconds,
-              heatmapMeta?.timestamp,
-              heatmapMeta?.uuid
+              newHeatmapMeta?.timestamp,
+              newHeatmapMeta?.uuid
             );
             setCustomHeatmapUrl(customUrl);
             // Fetch custom analytics
@@ -188,8 +194,8 @@ export default function ViewHeatmap() {
                 start_time: startTimeInSeconds,
                 end_time: endTimeInSeconds,
                 area: 'all',
-                timestamp: heatmapMeta?.timestamp,
-                uuid: heatmapMeta?.uuid
+                timestamp: newHeatmapMeta?.timestamp,
+                uuid: newHeatmapMeta?.uuid
               });
               setAnalysis(customAnalysis);
               toast.success('Custom heatmap generated successfully!');
@@ -563,6 +569,12 @@ export default function ViewHeatmap() {
                                   className="bg-gradient-to-r from-white to-cyan-200 text-black font-semibold shadow-md border border-border py-2 text-sm hover:opacity-90 dark:from-blue-900 dark:to-cyan-800 dark:text-white flex-1"
                                   onClick={async () => {
                                     if (!selectedJob || !customDateRange || !customTimeRange) return;
+                                    
+                                    if (!heatmapMeta?.timestamp || !heatmapMeta?.uuid) {
+                                      toast.error('Custom heatmap metadata not found. Please generate the custom heatmap first.');
+                                      return;
+                                    }
+                                    
                                     try {
                                       const videoStart = new Date(selectedJob.start_datetime);
                                       const startDate = new Date(customDateRange.start);
@@ -581,8 +593,8 @@ export default function ViewHeatmap() {
                                             end_time: endTimeInSeconds,
                                             start_datetime: startDatetimeStr,
                                             end_datetime: endDatetimeStr,
-                                            timestamp: heatmapMeta?.timestamp,
-                                            uuid: heatmapMeta?.uuid
+                                            timestamp: heatmapMeta.timestamp,
+                                            uuid: heatmapMeta.uuid
                                           },
                                           responseType: 'blob'
                                         }
@@ -605,6 +617,12 @@ export default function ViewHeatmap() {
                                   className="bg-gradient-to-r from-white to-cyan-200 text-black font-semibold shadow-md border border-border py-2 text-sm hover:opacity-90 dark:from-blue-900 dark:to-cyan-800 dark:text-white flex-1"
                                   onClick={async () => {
                                     if (!selectedJob || !customDateRange || !customTimeRange) return;
+                                    
+                                    if (!heatmapMeta?.timestamp || !heatmapMeta?.uuid) {
+                                      toast.error('Custom heatmap metadata not found. Please generate the custom heatmap first.');
+                                      return;
+                                    }
+                                    
                                     try {
                                       const videoStart = new Date(selectedJob.start_datetime);
                                       const startDate = new Date(customDateRange.start);
@@ -623,8 +641,8 @@ export default function ViewHeatmap() {
                                             end_time: endTimeInSeconds,
                                             start_datetime: startDatetimeStr,
                                             end_datetime: endDatetimeStr,
-                                            timestamp: heatmapMeta?.timestamp,
-                                            uuid: heatmapMeta?.uuid
+                                            timestamp: heatmapMeta.timestamp,
+                                            uuid: heatmapMeta.uuid
                                           },
                                           responseType: 'blob'
                                         }
