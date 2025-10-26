@@ -144,7 +144,12 @@ def export_heatmap_csv(job_id):
                 det for det in detections
                 if 'timestamp' in det and start_time <= det['timestamp'] <= end_time
             ]
-            supabase_path = f"{job_id}/custom_heatmap_{float(start_time):.1f}_{float(end_time):.1f}.jpg"
+            # Generate a more unique filename
+            import time
+            import uuid
+            timestamp = int(time.time())
+            unique_id = str(uuid.uuid4())[:8]
+            supabase_path = f"{job_id}/custom_heatmap_{float(start_time):.1f}_{float(end_time):.1f}_{timestamp}_{unique_id}.jpg"
         else:
             supabase_path = f"{job_id}/video_heatmap.jpg"
         heatmap_color = download_image_from_supabase(supabase_path)
@@ -244,7 +249,12 @@ def export_heatmap_pdf(job_id):
                 if 'timestamp' in det and start_time <= det['timestamp'] <= end_time
             ]
         if start_time is not None and end_time is not None:
-            supabase_path = f"{job_id}/custom_heatmap_{float(start_time):.1f}_{float(end_time):.1f}.jpg"
+            # Generate a more unique filename
+            import time
+            import uuid
+            timestamp = int(time.time())
+            unique_id = str(uuid.uuid4())[:8]
+            supabase_path = f"{job_id}/custom_heatmap_{float(start_time):.1f}_{float(end_time):.1f}_{timestamp}_{unique_id}.jpg"
         else:
             supabase_path = f"{job_id}/video_heatmap.jpg"
         heatmap_color = download_image_from_supabase(supabase_path)
@@ -332,9 +342,18 @@ def generate_custom_heatmap(job_id):
 @heatmap_bp.route('/heatmap_jobs/<job_id>/custom_heatmap_image', methods=['GET', 'OPTIONS'])
 @cross_origin()
 def get_custom_heatmap_image(job_id):
+    if request.method == 'OPTIONS':
+        return '', 204
+        
     start = request.args.get('start')
     end = request.args.get('end')
-    supabase_path = f"{job_id}/custom_heatmap_{float(start):.1f}_{float(end):.1f}.jpg"
+    
+    # Generate a more unique filename
+    import time
+    import uuid
+    timestamp = int(time.time())
+    unique_id = str(uuid.uuid4())[:8]
+    supabase_path = f"{job_id}/custom_heatmap_{float(start):.1f}_{float(end):.1f}_{timestamp}_{unique_id}.jpg"
     img_bytes = download_image_bytes_from_supabase(supabase_path)
     if img_bytes is None:
         return jsonify({"error": "Custom heatmap not found in Supabase"}), 404
