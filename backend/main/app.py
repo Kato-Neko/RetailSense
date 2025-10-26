@@ -4,7 +4,7 @@ Flask entry point for the backend, using refactored modules.
 """
 
 import os
-from flask import Flask, jsonify
+from flask import Flask, jsonify, request, make_response
 from flask_cors import CORS, cross_origin
 from flask_jwt_extended import JWTManager, jwt_required
 
@@ -27,21 +27,34 @@ CORS(
     app,
     resources={
         r"/api/*": {
-            "origins": allowed_origins,
+            "origins": "*",  # Allow all origins
             "supports_credentials": True,
             "allow_headers": ["Content-Type", "Authorization"],
             "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-            "expose_headers": ["Content-Type", "Authorization"]
+            "expose_headers": ["Content-Type", "Authorization", "Content-Disposition"],
+            "max_age": 600  # Cache preflight requests for 10 minutes
         },
         r"/*": {  # Add this to catch any routes not under /api
-            "origins": allowed_origins,
+            "origins": "*",  # Allow all origins
             "supports_credentials": True,
             "allow_headers": ["Content-Type", "Authorization"],
             "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-            "expose_headers": ["Content-Type", "Authorization"]
+            "expose_headers": ["Content-Type", "Authorization", "Content-Disposition"],
+            "max_age": 600  # Cache preflight requests for 10 minutes
         }
     }
 )
+
+# Add OPTIONS handler for all routes
+@app.before_request
+def handle_preflight():
+    if request.method == "OPTIONS":
+        response = make_response()
+        response.headers.add("Access-Control-Allow-Origin", "*")
+        response.headers.add("Access-Control-Allow-Headers", "Content-Type,Authorization")
+        response.headers.add("Access-Control-Allow-Methods", "GET,POST,PUT,DELETE,OPTIONS")
+        response.headers.add("Access-Control-Expose-Headers", "Content-Type,Authorization,Content-Disposition")
+        return response
 
 
 jobs = {}
@@ -81,6 +94,22 @@ def direct_heatmap_analysis(job_id):
     """Direct access to analysis without /api prefix"""
     from .api.heatmap import get_heatmap_analysis_logic
     return get_heatmap_analysis_logic(job_id)
+
+@app.route('/heatmap_jobs/<job_id>/export/pdf', methods=['GET', 'OPTIONS'])
+@cross_origin()
+@jwt_required()
+def direct_export_pdf(job_id):
+    """Direct access to PDF export without /api prefix"""
+    from .api.heatmap import export_heatmap_pdf
+    return export_heatmap_pdf(job_id)
+
+@app.route('/heatmap_jobs/<job_id>/export/csv', methods=['GET', 'OPTIONS'])
+@cross_origin()
+@jwt_required()
+def direct_export_csv(job_id):
+    """Direct access to CSV export without /api prefix"""
+    from .api.heatmap import export_heatmap_csv
+    return export_heatmap_csv(job_id)
 
 ## no in-memory progress kept here; services.state manages progress
 

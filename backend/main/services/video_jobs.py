@@ -280,7 +280,49 @@ def run_custom_heatmap_job(job_id: str, start_time: float, end_time: float, set_
         if 'timestamp' in det and start_time <= det['timestamp'] <= end_time
     ]
 
-    floorplan_path = os.path.join(UPLOAD_FOLDER, job_id, job_row[3])
+    # Download floorplan from Supabase to local temp file
+    from ..core.storage import download_image_from_supabase
+    import cv2
+    floorplan_filename = job_row[3]
+    floorplan_supabase_path = f"{job_id}/{floorplan_filename}"
+    
+    logger.info(f"Downloading floorplan from Supabase: {floorplan_supabase_path}")
+    floorplan_img = download_image_from_supabase(floorplan_supabase_path)
+    if floorplan_img is None:
+        logger.error(f"Failed to download floorplan from Supabase: {floorplan_supabase_path}")
+        set_progress(1.0)
+        return
+
+    # Save floorplan to local temp file for blend_heatmap
+    temp_dir = os.path.join(UPLOAD_FOLDER, job_id)
+    os.makedirs(temp_dir, exist_ok=True)
+    temp_floorplan_path = os.path.join(temp_dir, f"temp_{floorplan_filename}")
+
+    try:
+        write_success = cv2.imwrite(temp_floorplan_path, floorplan_img)
+        if not write_success:
+            # Fallback: try writing raw bytes from storage (safer if encoding mismatch)
+            try:
+                from ..core.storage import download_image_bytes_from_supabase
+                raw_bytes = download_image_bytes_from_supabase(floorplan_supabase_path)
+                if raw_bytes:
+                    with open(temp_floorplan_path, 'wb') as bf:
+                        bf.write(raw_bytes)
+                    logger.info(f"Wrote floorplan temp file via raw bytes fallback: {temp_floorplan_path}")
+                else:
+                    logger.error(f"Fallback raw bytes download failed for: {floorplan_supabase_path}")
+                    set_progress(1.0)
+                    return
+            except Exception as e:
+                logger.error(f"Fallback write of floorplan failed: {e}")
+                set_progress(1.0)
+                return
+        else:
+            logger.info(f"Saved floorplan to temp file: {temp_floorplan_path}")
+    except Exception as e:
+        logger.error(f"Error saving floorplan to temp file: {e}")
+        set_progress(1.0)
+        return
 
     def progress_callback(progress: float):
         set_progress(progress)
@@ -291,12 +333,18 @@ def run_custom_heatmap_job(job_id: str, start_time: float, end_time: float, set_
         with open(points_path, 'r') as f:
             points_data = json.load(f)
         
-        # Convert normalized points to pixel coordinates
-        video_path = os.path.join(UPLOAD_FOLDER, job_id, job_row[2])
-        cap = cv2.VideoCapture(video_path)
-        video_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-        video_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-        cap.release()
+        # Get video dimensions from first detection bbox if available
+        if filtered_detections and 'bbox' in filtered_detections[0]:
+            bbox = filtered_detections[0]['bbox']
+            # Assuming bbox coordinates are in video space
+            video_width = max(bbox[0], bbox[2]) * 2  # Estimate from coordinates
+            video_height = max(bbox[1], bbox[3]) * 2
+        else:
+            # Fallback to standard HD dimensions if no detections
+            video_width = 1920
+            video_height = 1080
+            
+        logger.info(f"Using dimensions for homography: {video_width}x{video_height}")
         
         homography_points = []
         for point in points_data:
@@ -306,18 +354,44 @@ def run_custom_heatmap_job(job_id: str, start_time: float, end_time: float, set_
     else:
         homography_points = None
 
-    blended_img = blend_heatmap(
+    from ..services.heatmap_processing import create_custom_heatmap
+    
+    # Get video dimensions from first detection or use HD default
+    if filtered_detections and 'bbox' in filtered_detections[0]:
+        bbox = filtered_detections[0]['bbox']
+        dimensions = (max(bbox[0], bbox[2]) * 2, max(bbox[1], bbox[3]) * 2)
+    else:
+        dimensions = (1920, 1080)
+
+    blended_img = create_custom_heatmap(
         filtered_detections,
-        floorplan_path,
-        None,
-        os.path.join(RESULTS_FOLDER, job_id, f"video_{job_id}.mp4"),
-        os.path.join(UPLOAD_FOLDER, job_id, job_row[2]),
-        points=homography_points,
-        progress_callback=progress_callback,
-        return_image=True
+        temp_floorplan_path,
+        dimensions=dimensions,
+        points=homography_points
     )
-    upload_image_to_supabase(
-        blended_img,
-        f"{job_id}/custom_heatmap_{float(start_time):.1f}_{float(end_time):.1f}.jpg"
-    )
+    # Generate unique identifiers for the filename
+    import time
+    import uuid
+    timestamp = int(time.time())
+    unique_id = str(uuid.uuid4())[:8]
+    
+    filename = f"{job_id}/custom_heatmap_{float(start_time):.1f}_{float(end_time):.1f}_{timestamp}_{unique_id}.jpg"
+    upload_image_to_supabase(blended_img, filename)
+    
+    # Store the identifiers in the jobs state for frontend to retrieve
+    from ..services.state import get_jobs_store
+    jobs = get_jobs_store()
+    if job_id in jobs:
+        jobs[job_id]['custom_heatmap_meta'] = {
+            'timestamp': timestamp,
+            'uuid': unique_id
+        }
+    
+    # Clean up temp floorplan file
+    try:
+        os.remove(temp_floorplan_path)
+        logger.info(f"Cleaned up temp floorplan file: {temp_floorplan_path}")
+    except Exception as e:
+        logger.warning(f"Failed to clean up temp floorplan file: {e}")
+    
     set_progress(1.0)

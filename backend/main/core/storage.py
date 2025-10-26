@@ -49,37 +49,109 @@ def upload_image_to_supabase(image_np, supabase_path):
 def download_json_from_supabase(supabase_path):
     bucket = "projectresults"
     try:
+        # First check if the file exists
+        try:
+            info = supabase.storage.from_(bucket).get_public_url(supabase_path)
+            if not info:
+                logger.warning(f"File not found in Supabase at {bucket}/{supabase_path}")
+                return None
+        except Exception as e:
+            logger.warning(f"Error checking file existence in Supabase at {bucket}/{supabase_path}: {e}")
+            return None
+
         res = supabase.storage.from_(bucket).download(supabase_path)
         if res is None:
+            logger.warning(f"File download returned None from Supabase at {bucket}/{supabase_path}")
             return None
-        return json.loads(res.decode('utf-8'))
+        
+        try:
+            return json.loads(res.decode('utf-8'))
+        except json.JSONDecodeError as e:
+            logger.error(f"Failed to parse JSON from Supabase at {bucket}/{supabase_path}: {e}")
+            return None
     except Exception as e:
-        logger.warning(f"Failed to download JSON from Supabase at {bucket}/{supabase_path}: {e}")
+        logger.error(f"Failed to download JSON from Supabase at {bucket}/{supabase_path}: {e}")
         return None
 
 
 def download_image_from_supabase(supabase_path):
     bucket = "projectresults"
     try:
+        # First check if the file exists
+        try:
+            info = supabase.storage.from_(bucket).get_public_url(supabase_path)
+            if not info:
+                logger.warning(f"Image not found in Supabase at {bucket}/{supabase_path}")
+                return None
+        except Exception as e:
+            logger.warning(f"Error checking image existence in Supabase at {bucket}/{supabase_path}: {e}")
+            return None
+
         res = supabase.storage.from_(bucket).download(supabase_path)
         if res is None:
+            logger.warning(f"Image download returned None from Supabase at {bucket}/{supabase_path}")
             return None
-        file_bytes = np.frombuffer(res, np.uint8)
-        img = cv2.imdecode(file_bytes, cv2.IMREAD_COLOR)
-        return img
+        
+        try:
+            file_bytes = np.frombuffer(res, np.uint8)
+            img = cv2.imdecode(file_bytes, cv2.IMREAD_COLOR)
+            if img is None:
+                logger.error(f"Failed to decode image from Supabase at {bucket}/{supabase_path}")
+                return None
+            return img
+        except Exception as e:
+            logger.error(f"Failed to process image data from Supabase at {bucket}/{supabase_path}: {e}")
+            return None
     except Exception as e:
-        logger.warning(f"Failed to download image from Supabase at {bucket}/{supabase_path}: {e}")
+        logger.error(f"Failed to download image from Supabase at {bucket}/{supabase_path}: {e}")
         return None
 
+
+def check_file_exists_in_supabase(supabase_path):
+    bucket = "projectresults"
+    try:
+        logger.info(f"Checking if file exists in Supabase: {bucket}/{supabase_path}")
+        # Try to get the file's metadata - this is faster than listing
+        info = supabase.storage.from_(bucket).get_public_url(supabase_path)
+        if info:
+            logger.info(f"File exists in Supabase: {bucket}/{supabase_path}")
+            return True
+        return False
+    except Exception as e:
+        logger.error(f"Error checking file existence in Supabase: {e}")
+        return False
+
+def list_files_in_supabase(prefix=""):
+    bucket = "projectresults"
+    try:
+        logger.info(f"Listing files in Supabase bucket {bucket} with prefix: {prefix}")
+        files = supabase.storage.from_(bucket).list(prefix)
+        file_names = [f['name'] for f in files]
+        logger.info(f"Found {len(file_names)} files: {file_names}")
+        return file_names
+    except Exception as e:
+        logger.error(f"Failed to list files in Supabase at {bucket}/{prefix}: {e}")
+        return []
 
 def download_image_bytes_from_supabase(supabase_path):
     bucket = "projectresults"
     try:
+        # First check if the file exists
+        try:
+            info = supabase.storage.from_(bucket).get_public_url(supabase_path)
+            if not info:
+                logger.warning(f"File not found in Supabase at {bucket}/{supabase_path}")
+                return None
+        except Exception as e:
+            logger.warning(f"Error checking file existence in Supabase at {bucket}/{supabase_path}: {e}")
+            return None
+
         res = supabase.storage.from_(bucket).download(supabase_path)
         if res is None:
+            logger.warning(f"File download returned None from Supabase at {bucket}/{supabase_path}")
             return None
         return res
     except Exception as e:
-        logger.warning(f"Failed to download image bytes from Supabase at {bucket}/{supabase_path}: {e}")
+        logger.error(f"Failed to download image bytes from Supabase at {bucket}/{supabase_path}: {e}")
         return None
 

@@ -112,20 +112,29 @@ def get_heatmap_image(job_id):
     return get_heatmap_image_logic(job_id)
 
 
-@heatmap_bp.route('/heatmap_jobs/<job_id>/export/csv', methods=['GET'])
+@heatmap_bp.route('/heatmap_jobs/<job_id>/export/csv', methods=['GET', 'OPTIONS'])
+@cross_origin(expose_headers=['Content-Disposition'])
 @jwt_required()
 def export_heatmap_csv(job_id):
+    if request.method == 'OPTIONS':
+        return '', 204
+        
     try:
-        conn = get_db_connection()
-        cur = conn.cursor()
-        cur.execute("SELECT * FROM jobs WHERE job_id = %s", (job_id,))
-        job_row = cur.fetchone()
-        cur.close()
-        conn.close()
-        if not job_row:
-            return jsonify({"error": "Job not found"}), 404
-        if job_row[6] != 'completed':
-            return jsonify({"error": "Job not completed"}), 404
+        conn = None
+        try:
+            conn = get_db_connection()
+            cur = conn.cursor()
+            cur.execute("SELECT * FROM jobs WHERE job_id = %s", (job_id,))
+            job_row = cur.fetchone()
+            cur.close()
+            
+            if not job_row:
+                return jsonify({"error": "Job not found"}), 404
+            if job_row[6] != 'completed':
+                return jsonify({"error": "Job not completed"}), 404
+        finally:
+            if conn:
+                conn.close()
 
         start_datetime = request.args.get('start_datetime', '')
         end_datetime = request.args.get('end_datetime', '')
@@ -140,7 +149,21 @@ def export_heatmap_csv(job_id):
             return jsonify({"error": "No detections data available"}), 404
 
         if start_time is not None and end_time is not None:
-            supabase_path = f"{job_id}/custom_heatmap_{float(start_time):.1f}_{float(end_time):.1f}.jpg"
+            detections = [
+                det for det in detections
+                if 'timestamp' in det and start_time <= det['timestamp'] <= end_time
+            ]
+            # Get the stored custom heatmap path
+            cur = conn.cursor()
+            try:
+                cur.execute("SELECT custom_heatmap_path FROM jobs WHERE job_id = %s", (job_id,))
+                result = cur.fetchone()
+                if result and result[0]:
+                    supabase_path = result[0]
+                else:
+                    supabase_path = f"{job_id}/custom_heatmap_default.jpg"
+            finally:
+                cur.close()
         else:
             supabase_path = f"{job_id}/video_heatmap.jpg"
         heatmap_color = download_image_from_supabase(supabase_path)
@@ -161,6 +184,8 @@ def export_heatmap_csv(job_id):
         writer.writerow(['Start:', start_datetime if start_datetime else 'Full video duration'])
         writer.writerow(['End:', end_datetime if end_datetime else 'Full video duration'])
         writer.writerow(['Area:', area])
+        writer.writerow([])
+        writer.writerow(['Total Visitors:', analysis['total_visitors']])
         writer.writerow([])
         writer.writerow(['Traffic Distribution'])
         writer.writerow(['High Traffic (%)', 'Medium Traffic (%)', 'Low Traffic (%)'])
@@ -197,16 +222,32 @@ def export_heatmap_csv(job_id):
                 det.get('timestamp', 'N/A')
             ])
         output.seek(0)
-        return Response(
-            output,
+        
+        # Get the CSV data
+        csv_data = output.getvalue()
+        output.close()
+        
+        # Create a temporary file
+        temp_csv = f'/tmp/heatmap_{job_id}.csv'
+        with open(temp_csv, 'w', newline='', encoding='utf-8') as f:
+            f.write(csv_data)
+        
+        # Return the file
+        return send_file(
+            temp_csv,
             mimetype='text/csv',
-            headers={'Content-Disposition': f'attachment; filename=heatmap_{job_id}.csv'}
+            as_attachment=True,
+            download_name=f'heatmap_{job_id}.csv'
         )
+        
+        return response
     except Exception as e:
         return jsonify({"error": f"Error generating CSV export: {str(e)}"}), 500
 
 
 @heatmap_bp.route('/heatmap_jobs/<job_id>/export/pdf', methods=['GET'])
+@cross_origin(expose_headers=['Content-Disposition'])
+@jwt_required()
 def export_heatmap_pdf(job_id):
     try:
         start_datetime = request.args.get('start_datetime', 'Full video duration')
@@ -235,10 +276,30 @@ def export_heatmap_pdf(job_id):
                 det for det in detections
                 if 'timestamp' in det and start_time <= det['timestamp'] <= end_time
             ]
-        if start_time is not None and end_time is not None:
-            supabase_path = f"{job_id}/custom_heatmap_{float(start_time):.1f}_{float(end_time):.1f}.jpg"
-        else:
-            supabase_path = f"{job_id}/video_heatmap.jpg"
+            timestamp = request.args.get('timestamp')
+            unique_id = request.args.get('uuid')
+            
+            # Try to find the custom heatmap
+            from ..core.storage import list_files_in_supabase
+            files = list_files_in_supabase(f"{job_id}")
+            logger.info(f"Found files for PDF export: {files}")
+            
+            if timestamp and unique_id:
+                # Try exact match first
+                supabase_path = f"{job_id}/custom_heatmap_{float(start_time):.1f}_{float(end_time):.1f}_{timestamp}_{unique_id}.jpg"
+                logger.info(f"Looking for specific custom heatmap: {supabase_path}")
+            else:
+                # Try to find most recent matching custom heatmap
+                prefix = f"{job_id}/custom_heatmap_{float(start_time):.1f}_{float(end_time):.1f}_"
+                matching_files = [f for f in files if f.startswith(prefix)]
+                logger.info(f"Matching custom heatmaps found: {matching_files}")
+                
+                if matching_files:
+                    supabase_path = sorted(matching_files)[-1]  # Get most recent
+                    logger.info(f"Using most recent custom heatmap: {supabase_path}")
+                else:
+                    supabase_path = f"{job_id}/video_heatmap.jpg"
+                    logger.info(f"No custom heatmap found, using default: {supabase_path}")
         heatmap_color = download_image_from_supabase(supabase_path)
         if heatmap_color is None:
             return jsonify({'error': 'Heatmap not found in Supabase'}), 404
@@ -251,9 +312,13 @@ def export_heatmap_pdf(job_id):
         if not analysis:
             return jsonify({'error': 'Analysis not found'}), 404
 
-        from reportlab.platypus import Image, Paragraph, Spacer, SimpleDocTemplate
-        from reportlab.lib.pagesizes import letter
-        from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+        try:
+            from reportlab.platypus import Image, Paragraph, Spacer, SimpleDocTemplate
+            from reportlab.lib.pagesizes import letter
+            from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+        except ImportError as e:
+            logger.error(f"ReportLab import error: {str(e)}")
+            return jsonify({'error': 'PDF generation library not available'}), 500
 
         buffer = io.BytesIO()
         doc = SimpleDocTemplate(buffer, pagesize=letter)
@@ -290,11 +355,35 @@ def export_heatmap_pdf(job_id):
         for ph in analysis['peak_hours']:
             elements.append(Paragraph(f"• {ph['start_minute']}-{ph['end_minute']} minutes: {ph['count']} detections", styles['Normal']))
 
-        doc.build(elements)
-        buffer.seek(0)
-        return send_file(buffer, mimetype='application/pdf', as_attachment=True, download_name=f'heatmap_{job_id}_report.pdf')
+        try:
+            # Create PDF in memory first
+            doc.build(elements)
+            pdf_data = buffer.getvalue()
+            buffer.close()
+            
+            # Create a temporary file to store the PDF
+            temp_pdf = f'/tmp/heatmap_{job_id}_report.pdf'
+            with open(temp_pdf, 'wb') as f:
+                f.write(pdf_data)
+            
+            # Return the file
+            return send_file(
+                temp_pdf,
+                mimetype='application/pdf',
+                as_attachment=True,
+                download_name=f'heatmap_{job_id}_report.pdf'
+            )
+            
+        except Exception as e:
+            logger.error(f"Error in PDF generation: {str(e)}")
+            if buffer:
+                buffer.close()
+            return jsonify({"error": "Failed to generate PDF"}), 500
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        logger.error(f"PDF export error for job {job_id}: {str(e)}")
+        import traceback
+        logger.error(f"PDF export traceback: {traceback.format_exc()}")
+        return jsonify({'error': f'PDF generation failed: {str(e)}'}), 500
 
 
 @heatmap_bp.route('/heatmap_jobs/<job_id>/custom_heatmap', methods=['POST'])
@@ -314,21 +403,175 @@ def generate_custom_heatmap(job_id):
         return jsonify({"error": str(e)}), 500
 
 
-@heatmap_bp.route('/heatmap_jobs/<job_id>/custom_heatmap_image')
+@heatmap_bp.route('/heatmap_jobs/<job_id>/custom_analysis', methods=['GET'])
+@cross_origin()
+def get_custom_analysis(job_id):
+    """Get custom analysis data for a job"""
+    try:
+        start = request.args.get('start_time')
+        end = request.args.get('end_time')
+        timestamp = request.args.get('timestamp')
+        unique_id = request.args.get('uuid')
+
+        # Check if we have minimum required parameters
+        if not (start and end):
+            return jsonify({"error": "Missing start_time or end_time parameters"}), 400
+
+        # If we have timestamp and uuid, use them for specific image
+        if timestamp and unique_id:
+            supabase_path = f"{job_id}/custom_heatmap_{float(start):.1f}_{float(end):.1f}_{timestamp}_{unique_id}.jpg"
+            logger.info(f"Looking for specific file: {supabase_path}")
+        else:
+            # Try direct path first
+            supabase_path = f"{job_id}/custom_heatmap_{float(start):.1f}_{float(end):.1f}.jpg"
+            try:
+                from ..core.storage import check_file_exists_in_supabase
+                if check_file_exists_in_supabase(supabase_path):
+                    logger.info(f"Found custom heatmap at: {supabase_path}")
+                else:
+                    # Try listing as fallback
+                    from ..core.storage import list_files_in_supabase
+                    files = list_files_in_supabase(f"{job_id}")
+                    logger.info(f"Found files in Supabase for {job_id}: {files}")
+                    
+                    prefix = f"{job_id}/custom_heatmap_{float(start):.1f}_{float(end):.1f}_"
+                    logger.info(f"Looking for files matching prefix: {prefix}")
+                    
+                    matching_files = [f for f in files if f.startswith(prefix)]
+                    logger.info(f"Matching files found: {matching_files}")
+                    
+                    if matching_files:
+                        supabase_path = sorted(matching_files)[-1]  # Get most recent
+                        logger.info(f"Selected most recent file: {supabase_path}")
+                    else:
+                        logger.error(f"No matching custom heatmap found for prefix: {prefix}")
+                        return jsonify({"error": "No matching custom heatmap found"}), 404
+            except Exception as e:
+                logger.error(f"Error checking for custom heatmap: {e}")
+                return jsonify({"error": "Failed to check for custom heatmap"}), 500
+
+        # Get the heatmap image
+        try:
+            image_bytes = download_image_bytes_from_supabase(supabase_path)
+            return Response(image_bytes, mimetype='image/jpeg')
+        except Exception as e:
+            logger.error(f"Error downloading custom analysis image from Supabase: {e}")
+            return jsonify({"error": "Custom analysis image not found"}), 404
+
+    except Exception as e:
+        logger.error(f"Error in get_custom_analysis: {e}")
+        return jsonify({"error": str(e)}), 500
+
+@heatmap_bp.route('/heatmap_jobs/<job_id>/export/jpg', methods=['GET'])
+@cross_origin(expose_headers=['Content-Disposition'])
+def export_heatmap_jpg(job_id):
+    try:
+        start_time = request.args.get('start_time', type=float)
+        end_time = request.args.get('end_time', type=float)
+        timestamp = request.args.get('timestamp')
+        unique_id = request.args.get('uuid')
+        
+        if start_time is not None and end_time is not None and timestamp and unique_id:
+            supabase_path = f"{job_id}/custom_heatmap_{float(start_time):.1f}_{float(end_time):.1f}_{timestamp}_{unique_id}.jpg"
+        else:
+            supabase_path = f"{job_id}/video_heatmap.jpg"
+            
+        image_bytes = download_image_bytes_from_supabase(supabase_path)
+        if not image_bytes:
+            return jsonify({"error": "Heatmap image not found"}), 404
+            
+        return Response(
+            image_bytes,
+            mimetype='image/jpeg',
+            headers={
+                'Content-Disposition': f'attachment; filename=heatmap_{job_id}.jpg',
+                'Access-Control-Expose-Headers': 'Content-Disposition'
+            }
+        )
+    except Exception as e:
+        logger.error(f"Error in export_heatmap_jpg: {e}")
+        return jsonify({"error": str(e)}), 500
+
+@heatmap_bp.route('/heatmap_jobs/<job_id>/custom_heatmap_image', methods=['GET', 'OPTIONS'])
+@cross_origin()
 def get_custom_heatmap_image(job_id):
+    if request.method == 'OPTIONS':
+        response = Response(status=200)
+        response.headers.update({
+            'Access-Control-Allow-Origin': '*',
+            'Access-Control-Allow-Methods': 'GET, OPTIONS',
+            'Access-Control-Allow-Headers': 'Content-Type, Authorization'
+        })
+        return response
+        
     start = request.args.get('start')
     end = request.args.get('end')
-    supabase_path = f"{job_id}/custom_heatmap_{float(start):.1f}_{float(end):.1f}.jpg"
+    timestamp = request.args.get('timestamp')
+    unique_id = request.args.get('uuid')
+    
+    if not all([start, end]):
+        return jsonify({"error": "Missing start or end parameters"}), 400
+        
+    # List all files in the job's folder to find the right one
+    from ..core.storage import list_files_in_supabase
+    files = list_files_in_supabase(f"{job_id}")
+    
+    if timestamp and unique_id:
+        # Try exact match first
+        supabase_path = f"{job_id}/custom_heatmap_{float(start):.1f}_{float(end):.1f}_{timestamp}_{unique_id}.jpg"
+    else:
+        # Try to find most recent matching file
+        matching_files = [f for f in files if f.startswith(f"{job_id}/custom_heatmap_{float(start):.1f}_{float(end):.1f}_")]
+        if matching_files:
+            supabase_path = sorted(matching_files)[-1]  # Get most recent
+        else:
+            supabase_path = f"{job_id}/custom_heatmap_{float(start):.1f}_{float(end):.1f}.jpg"
+    
+    logger.info(f"Attempting to download: {supabase_path}")
     img_bytes = download_image_bytes_from_supabase(supabase_path)
+    
     if img_bytes is None:
-        return jsonify({"error": "Custom heatmap not found in Supabase"}), 404
-    return Response(img_bytes, mimetype="image/jpeg")
+        return jsonify({
+            "error": "Custom heatmap not found in Supabase",
+            "path": supabase_path,
+            "available_files": files
+        }), 404
+    
+    # Save the image to a temporary file
+    temp_jpg = os.path.join(os.path.dirname(__file__), f'temp_{job_id}.jpg')
+    with open(temp_jpg, 'wb') as f:
+        f.write(img_bytes)
+    
+    response = send_file(
+        temp_jpg,
+        mimetype="image/jpeg",
+        as_attachment=True,
+        download_name=f"heatmap_{job_id}.jpg"
+    )
+    
+    @response.call_on_close
+    def cleanup():
+        try:
+            if os.path.exists(temp_jpg):
+                os.remove(temp_jpg)
+        except:
+            pass
+    
+    return response
 
 
 @heatmap_bp.route('/heatmap_jobs/<job_id>/custom_heatmap_progress')
 def get_custom_heatmap_progress(job_id):
     progress = get_custom_progress(job_id)
-    return jsonify({"progress": progress})
+    # Include the custom heatmap metadata if available
+    from ..services.state import get_jobs_store
+    jobs = get_jobs_store()
+    meta = jobs.get(job_id, {}).get('custom_heatmap_meta', {})
+    return jsonify({
+        "progress": progress,
+        "timestamp": meta.get('timestamp'),
+        "uuid": meta.get('uuid')
+    })
 
 
 def get_heatmap_analysis_logic(job_id):

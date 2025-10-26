@@ -16,3 +16,4 @@ torchvision==0.16.0
 ultralytics==8.0.196
 deep-sort-realtime==1.3.2
 psutil==5.9.6
+reportlab==4.0.4

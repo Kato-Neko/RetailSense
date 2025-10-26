@@ -310,7 +310,9 @@ export const heatmapService = {
         params: {
           start_time: params.start_time,
           end_time: params.end_time,
-          area: params.area
+          area: params.area,
+          timestamp: params.timestamp,
+          uuid: params.uuid
         }
       });
       return response.data;
@@ -321,11 +323,11 @@ export const heatmapService = {
 
   generateCustomHeatmap: async (jobId, payload) => {
     const response = await apiClient.post(`/api/heatmap_jobs/${jobId}/custom_heatmap`, payload);
-    return response.data;
+    return response.data; // This will return { timestamp, uuid }
   },
 
-  getCustomHeatmapImageUrl: (jobId, start, end) => {
-    return `${API_BASE_URL}/heatmap_jobs/${jobId}/custom_heatmap_image?start=${start}&end=${end}`;
+  getCustomHeatmapImageUrl: (jobId, start, end, timestamp, uuid) => {
+    return `${API_BASE_URL}/heatmap_jobs/${jobId}/custom_heatmap_image?start_time=${start}&end_time=${end}&timestamp=${timestamp}&uuid=${uuid}`;
   },
   
   getDetections: async (jobId) => {
