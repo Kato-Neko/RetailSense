@@ -140,6 +140,10 @@ def export_heatmap_csv(job_id):
             return jsonify({"error": "No detections data available"}), 404
 
         if start_time is not None and end_time is not None:
+            detections = [
+                det for det in detections
+                if 'timestamp' in det and start_time <= det['timestamp'] <= end_time
+            ]
             supabase_path = f"{job_id}/custom_heatmap_{float(start_time):.1f}_{float(end_time):.1f}.jpg"
         else:
             supabase_path = f"{job_id}/video_heatmap.jpg"
@@ -161,6 +165,8 @@ def export_heatmap_csv(job_id):
         writer.writerow(['Start:', start_datetime if start_datetime else 'Full video duration'])
         writer.writerow(['End:', end_datetime if end_datetime else 'Full video duration'])
         writer.writerow(['Area:', area])
+        writer.writerow([])
+        writer.writerow(['Total Visitors:', analysis['total_visitors']])
         writer.writerow([])
         writer.writerow(['Traffic Distribution'])
         writer.writerow(['High Traffic (%)', 'Medium Traffic (%)', 'Low Traffic (%)'])
@@ -323,7 +329,8 @@ def generate_custom_heatmap(job_id):
         return jsonify({"error": str(e)}), 500
 
 
-@heatmap_bp.route('/heatmap_jobs/<job_id>/custom_heatmap_image')
+@heatmap_bp.route('/heatmap_jobs/<job_id>/custom_heatmap_image', methods=['GET', 'OPTIONS'])
+@cross_origin()
 def get_custom_heatmap_image(job_id):
     start = request.args.get('start')
     end = request.args.get('end')
