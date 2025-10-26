@@ -31,10 +31,12 @@ for key, value in supabase_vars.items():
 
 # Supabase client
 SUPABASE_URL = os.getenv("SUPABASE_URL")
-SUPABASE_KEY = os.getenv("SUPABASE_KEY")
+# Prefer service role key if available, otherwise use regular key
+SUPABASE_KEY = os.getenv("SUPABASE_SERVICE_KEY") or os.getenv("SUPABASE_KEY")
 
 print(f"SUPABASE_URL: {SUPABASE_URL}")
 print(f"SUPABASE_KEY: {'***' if SUPABASE_KEY else 'None'}")
+print(f"Using service key: {bool(os.getenv('SUPABASE_SERVICE_KEY'))}")
 
 # Validate required environment variables
 if not SUPABASE_URL:
@@ -42,8 +44,8 @@ if not SUPABASE_URL:
     raise ValueError("SUPABASE_URL environment variable is required")
 
 if not SUPABASE_KEY:
-    logger.error("SUPABASE_KEY environment variable is missing or empty")
-    raise ValueError("SUPABASE_KEY environment variable is required")
+    logger.error("SUPABASE_KEY or SUPABASE_SERVICE_KEY environment variable is missing or empty")
+    raise ValueError("SUPABASE_KEY or SUPABASE_SERVICE_KEY environment variable is required")
 
 # Create supabase client only if variables are present
 logger.info("Creating Supabase client...")
