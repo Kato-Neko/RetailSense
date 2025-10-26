@@ -344,15 +344,14 @@ def export_heatmap_pdf(job_id):
             doc.build(elements)
             buffer.seek(0)
             
-            # Save PDF to a temporary file to ensure it's valid
-            temp_pdf = os.path.join(os.path.dirname(__file__), f'temp_{job_id}.pdf')
-            with open(temp_pdf, 'wb') as f:
-                f.write(buffer.getvalue())
+            # Create a new memory buffer for the response
+            response_buffer = io.BytesIO(buffer.getvalue())
             buffer.close()
+            response_buffer.seek(0)
             
-            # Send the file and then delete it
+            # Create the response
             response = send_file(
-                temp_pdf,
+                response_buffer,
                 mimetype='application/pdf',
                 as_attachment=True,
                 download_name=f'heatmap_{job_id}_report.pdf'
@@ -370,8 +369,7 @@ def export_heatmap_pdf(job_id):
             @response.call_on_close
             def cleanup():
                 try:
-                    if os.path.exists(temp_pdf):
-                        os.remove(temp_pdf)
+                    response_buffer.close()
                 except:
                     pass
                     
@@ -423,18 +421,32 @@ def get_custom_heatmap_image(job_id):
     timestamp = request.args.get('timestamp')
     unique_id = request.args.get('uuid')
     
-    # Try to load the file with unique identifier if provided
+    if not all([start, end]):
+        return jsonify({"error": "Missing start or end parameters"}), 400
+        
+    # List all files in the job's folder to find the right one
+    from ..core.storage import list_files_in_supabase
+    files = list_files_in_supabase(f"{job_id}")
+    
     if timestamp and unique_id:
+        # Try exact match first
         supabase_path = f"{job_id}/custom_heatmap_{float(start):.1f}_{float(end):.1f}_{timestamp}_{unique_id}.jpg"
     else:
-        supabase_path = f"{job_id}/custom_heatmap_{float(start):.1f}_{float(end):.1f}.jpg"
+        # Try to find most recent matching file
+        matching_files = [f for f in files if f.startswith(f"{job_id}/custom_heatmap_{float(start):.1f}_{float(end):.1f}_")]
+        if matching_files:
+            supabase_path = sorted(matching_files)[-1]  # Get most recent
+        else:
+            supabase_path = f"{job_id}/custom_heatmap_{float(start):.1f}_{float(end):.1f}.jpg"
     
+    logger.info(f"Attempting to download: {supabase_path}")
     img_bytes = download_image_bytes_from_supabase(supabase_path)
     
     if img_bytes is None:
         return jsonify({
             "error": "Custom heatmap not found in Supabase",
-            "path": supabase_path
+            "path": supabase_path,
+            "available_files": files
         }), 404
     
     # Save the image to a temporary file
