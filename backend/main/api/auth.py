@@ -25,10 +25,25 @@ def register():
     if not all([username, password, email]):
         return jsonify({"error": "Missing required fields"}), 400
     try:
-        existing_user = supabase.table('users').select('username').eq('username', username).execute()
-        if existing_user.data:
+        # Check if username already exists
+        existing_username = supabase.table('users').select('username').eq('username', username).execute()
+        if existing_username.data:
             return jsonify({"error": "Username already exists"}), 409
+        
+        # Check if email already exists in users table
+        existing_email = supabase.table('users').select('email').eq('email', email).execute()
+        if existing_email.data:
+            return jsonify({"error": "Email already registered"}), 409
+        
+        # Try to sign up with Supabase Auth
         response = supabase.auth.sign_up({"email": email, "password": password})
+        
+        # Check if Supabase Auth sign up failed (e.g., email already exists in auth)
+        if hasattr(response, 'error') and response.error:
+            error_message = str(response.error.message) if hasattr(response.error, 'message') else str(response.error)
+            logger.error(f"Supabase Auth error: {error_message}")
+            return jsonify({"error": f"Registration failed: {error_message}"}), 400
+        
         if response.user:
             password_hash = hash_password(password)
             supabase.table('users').insert({
@@ -39,7 +54,7 @@ def register():
             }).execute()
             return jsonify({"success": True, "message": "Registration successful"}), 201
         else:
-            return jsonify({"error": getattr(response, 'error', 'Registration failed')}), 400
+            return jsonify({"error": "Registration failed"}), 400
     except Exception as e:
         logger.error(f"Error during registration: {str(e)}")
         return jsonify({"error": f"Error: {str(e)}"}), 500
