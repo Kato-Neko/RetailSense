@@ -113,7 +113,7 @@ def get_heatmap_image(job_id):
 
 
 @heatmap_bp.route('/heatmap_jobs/<job_id>/export/csv', methods=['GET', 'OPTIONS'])
-@cross_origin()
+@cross_origin(expose_headers=['Content-Disposition'])
 @jwt_required()
 def export_heatmap_csv(job_id):
     if request.method == 'OPTIONS':
@@ -223,26 +223,22 @@ def export_heatmap_csv(job_id):
             ])
         output.seek(0)
         
-        # Save to a temporary file
-        temp_csv = os.path.join(os.path.dirname(__file__), f'temp_{job_id}.csv')
-        with open(temp_csv, 'w', newline='', encoding='utf-8') as f:
-            f.write(output.getvalue())
+        # Get the CSV data
+        csv_data = output.getvalue()
         output.close()
         
-        response = send_file(
+        # Create a temporary file
+        temp_csv = f'/tmp/heatmap_{job_id}.csv'
+        with open(temp_csv, 'w', newline='', encoding='utf-8') as f:
+            f.write(csv_data)
+        
+        # Return the file
+        return send_file(
             temp_csv,
             mimetype='text/csv',
             as_attachment=True,
             download_name=f'heatmap_{job_id}.csv'
         )
-        
-        @response.call_on_close
-        def cleanup():
-            try:
-                if os.path.exists(temp_csv):
-                    os.remove(temp_csv)
-            except:
-                pass
         
         return response
     except Exception as e:
@@ -343,23 +339,22 @@ def export_heatmap_pdf(job_id):
             elements.append(Paragraph(f"• {ph['start_minute']}-{ph['end_minute']} minutes: {ph['count']} detections", styles['Normal']))
 
         try:
-            # Build PDF in memory first
+            # Create PDF in memory first
             doc.build(elements)
             pdf_data = buffer.getvalue()
             buffer.close()
             
-            # Return the PDF data directly
-            return Response(
-                pdf_data,
+            # Create a temporary file to store the PDF
+            temp_pdf = f'/tmp/heatmap_{job_id}_report.pdf'
+            with open(temp_pdf, 'wb') as f:
+                f.write(pdf_data)
+            
+            # Return the file
+            return send_file(
+                temp_pdf,
                 mimetype='application/pdf',
-                headers={
-                    'Content-Disposition': f'attachment; filename=heatmap_{job_id}_report.pdf',
-                    'Access-Control-Allow-Origin': '*',
-                    'Access-Control-Allow-Methods': 'GET, OPTIONS',
-                    'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-                    'Access-Control-Expose-Headers': 'Content-Disposition',
-                    'Content-Type': 'application/pdf'
-                }
+                as_attachment=True,
+                download_name=f'heatmap_{job_id}_report.pdf'
             )
             
         except Exception as e:
@@ -451,7 +446,7 @@ def get_custom_analysis(job_id):
         return jsonify({"error": str(e)}), 500
 
 @heatmap_bp.route('/heatmap_jobs/<job_id>/export/jpg', methods=['GET'])
-@cross_origin()
+@cross_origin(expose_headers=['Content-Disposition'])
 def export_heatmap_jpg(job_id):
     try:
         start_time = request.args.get('start_time', type=float)
