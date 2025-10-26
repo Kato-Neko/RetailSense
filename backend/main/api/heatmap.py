@@ -401,16 +401,30 @@ def get_custom_analysis(job_id):
         timestamp = request.args.get('timestamp')
         unique_id = request.args.get('uuid')
 
-        if start and end and timestamp and unique_id:
+        # Check if we have minimum required parameters
+        if not (start and end):
+            return jsonify({"error": "Missing start_time or end_time parameters"}), 400
+
+        # If we have timestamp and uuid, use them for specific image
+        if timestamp and unique_id:
             supabase_path = f"{job_id}/custom_heatmap_{float(start):.1f}_{float(end):.1f}_{timestamp}_{unique_id}.jpg"
-            try:
-                image_bytes = download_image_bytes_from_supabase(supabase_path)
-                return Response(image_bytes, mimetype='image/jpeg')
-            except Exception as e:
-                logger.error(f"Error downloading custom analysis image from Supabase: {e}")
-                return jsonify({"error": "Custom analysis image not found"}), 404
         else:
-            return jsonify({"error": "Missing required parameters"}), 400
+            # Try to find most recent matching custom heatmap
+            from ..core.storage import list_files_in_supabase
+            files = list_files_in_supabase(f"{job_id}")
+            matching_files = [f for f in files if f.startswith(f"{job_id}/custom_heatmap_{float(start):.1f}_{float(end):.1f}_")]
+            if matching_files:
+                supabase_path = sorted(matching_files)[-1]  # Get most recent
+            else:
+                return jsonify({"error": "No matching custom heatmap found"}), 404
+
+        # Get the heatmap image
+        try:
+            image_bytes = download_image_bytes_from_supabase(supabase_path)
+            return Response(image_bytes, mimetype='image/jpeg')
+        except Exception as e:
+            logger.error(f"Error downloading custom analysis image from Supabase: {e}")
+            return jsonify({"error": "Custom analysis image not found"}), 404
 
     except Exception as e:
         logger.error(f"Error in get_custom_analysis: {e}")
