@@ -369,10 +369,23 @@ def run_custom_heatmap_job(job_id: str, start_time: float, end_time: float, set_
         dimensions=dimensions,
         points=homography_points
     )
-    upload_image_to_supabase(
-        blended_img,
-        f"{job_id}/custom_heatmap_{float(start_time):.1f}_{float(end_time):.1f}.jpg"
-    )
+    # Generate unique identifiers for the filename
+    import time
+    import uuid
+    timestamp = int(time.time())
+    unique_id = str(uuid.uuid4())[:8]
+    
+    filename = f"{job_id}/custom_heatmap_{float(start_time):.1f}_{float(end_time):.1f}_{timestamp}_{unique_id}.jpg"
+    upload_image_to_supabase(blended_img, filename)
+    
+    # Store the identifiers in the jobs state for frontend to retrieve
+    from ..services.state import get_jobs_store
+    jobs = get_jobs_store()
+    if job_id in jobs:
+        jobs[job_id]['custom_heatmap_meta'] = {
+            'timestamp': timestamp,
+            'uuid': unique_id
+        }
     
     # Clean up temp floorplan file
     try:

@@ -85,6 +85,7 @@ export default function ViewHeatmap() {
   const [isValidDateTime, setIsValidDateTime] = useState(false);
   const [detections, setDetections] = useState(null);
   const [detectionsLoading, setDetectionsLoading] = useState(false);
+  const [heatmapMeta, setHeatmapMeta] = useState(null);
 
   const location = useLocation();
   const navigate = useNavigate();
@@ -160,6 +161,10 @@ export default function ViewHeatmap() {
             clearInterval(poll);
             setIsCustomGenerating(false);
             setCustomGenerationComplete(true);
+            // Store the metadata for exports
+            if (data.timestamp && data.uuid) {
+              setHeatmapMeta({ timestamp: data.timestamp, uuid: data.uuid });
+            }
             // Fetch custom heatmap image and analytics
             const videoStart = new Date(selectedJob.start_datetime);
             const startDate = new Date(customDateRange.start);
@@ -565,7 +570,9 @@ export default function ViewHeatmap() {
                                             start_time: startTimeInSeconds,
                                             end_time: endTimeInSeconds,
                                             start_datetime: startDatetimeStr,
-                                            end_datetime: endDatetimeStr
+                                            end_datetime: endDatetimeStr,
+                                            timestamp: heatmapMeta?.timestamp,
+                                            uuid: heatmapMeta?.uuid
                                           },
                                           responseType: 'blob'
                                         }
@@ -605,7 +612,9 @@ export default function ViewHeatmap() {
                                             start_time: startTimeInSeconds,
                                             end_time: endTimeInSeconds,
                                             start_datetime: startDatetimeStr,
-                                            end_datetime: endDatetimeStr
+                                            end_datetime: endDatetimeStr,
+                                            timestamp: heatmapMeta?.timestamp,
+                                            uuid: heatmapMeta?.uuid
                                           },
                                           responseType: 'blob'
                                         }
@@ -639,7 +648,12 @@ export default function ViewHeatmap() {
                                       const res = await apiClient.get(
                                         `/heatmap_jobs/${selectedJob.job_id}/custom_heatmap_image`,
                                         {
-                                          params: { start: startTimeInSeconds, end: endTimeInSeconds },
+                                          params: { 
+                                            start: startTimeInSeconds, 
+                                            end: endTimeInSeconds,
+                                            timestamp: heatmapMeta?.timestamp,
+                                            uuid: heatmapMeta?.uuid
+                                          },
                                           responseType: 'blob'
                                         }
                                       );
