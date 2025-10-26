@@ -300,6 +300,11 @@ def export_heatmap_pdf(job_id):
                 else:
                     supabase_path = f"{job_id}/video_heatmap.jpg"
                     logger.info(f"No custom heatmap found, using default: {supabase_path}")
+        else:
+            # Standard heatmap path when no time range is specified
+            supabase_path = f"{job_id}/video_heatmap.jpg"
+            logger.info(f"Using standard heatmap path: {supabase_path}")
+        
         heatmap_color = download_image_from_supabase(supabase_path)
         if heatmap_color is None:
             return jsonify({'error': 'Heatmap not found in Supabase'}), 404
@@ -537,25 +542,15 @@ def get_custom_heatmap_image(job_id):
             "available_files": files
         }), 404
     
-    # Save the image to a temporary file
-    temp_jpg = os.path.join(os.path.dirname(__file__), f'temp_{job_id}.jpg')
-    with open(temp_jpg, 'wb') as f:
-        f.write(img_bytes)
-    
-    response = send_file(
-        temp_jpg,
+    # Return image bytes directly without saving to disk
+    response = Response(
+        img_bytes,
         mimetype="image/jpeg",
-        as_attachment=True,
-        download_name=f"heatmap_{job_id}.jpg"
+        headers={
+            'Content-Disposition': f'inline; filename=heatmap_{job_id}.jpg',
+            'Cache-Control': 'no-cache'
+        }
     )
-    
-    @response.call_on_close
-    def cleanup():
-        try:
-            if os.path.exists(temp_jpg):
-                os.remove(temp_jpg)
-        except:
-            pass
     
     return response
 
