@@ -246,7 +246,7 @@ def export_heatmap_csv(job_id):
 
 
 @heatmap_bp.route('/heatmap_jobs/<job_id>/export/pdf', methods=['GET'])
-@cross_origin()
+@cross_origin(expose_headers=['Content-Disposition'])
 @jwt_required()
 def export_heatmap_pdf(job_id):
     try:
@@ -279,10 +279,27 @@ def export_heatmap_pdf(job_id):
             timestamp = request.args.get('timestamp')
             unique_id = request.args.get('uuid')
             
+            # Try to find the custom heatmap
+            from ..core.storage import list_files_in_supabase
+            files = list_files_in_supabase(f"{job_id}")
+            logger.info(f"Found files for PDF export: {files}")
+            
             if timestamp and unique_id:
+                # Try exact match first
                 supabase_path = f"{job_id}/custom_heatmap_{float(start_time):.1f}_{float(end_time):.1f}_{timestamp}_{unique_id}.jpg"
+                logger.info(f"Looking for specific custom heatmap: {supabase_path}")
             else:
-                supabase_path = f"{job_id}/video_heatmap.jpg"
+                # Try to find most recent matching custom heatmap
+                prefix = f"{job_id}/custom_heatmap_{float(start_time):.1f}_{float(end_time):.1f}_"
+                matching_files = [f for f in files if f.startswith(prefix)]
+                logger.info(f"Matching custom heatmaps found: {matching_files}")
+                
+                if matching_files:
+                    supabase_path = sorted(matching_files)[-1]  # Get most recent
+                    logger.info(f"Using most recent custom heatmap: {supabase_path}")
+                else:
+                    supabase_path = f"{job_id}/video_heatmap.jpg"
+                    logger.info(f"No custom heatmap found, using default: {supabase_path}")
         heatmap_color = download_image_from_supabase(supabase_path)
         if heatmap_color is None:
             return jsonify({'error': 'Heatmap not found in Supabase'}), 404
