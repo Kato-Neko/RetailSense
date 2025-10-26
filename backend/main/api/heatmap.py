@@ -443,44 +443,58 @@ def get_custom_analysis(job_id):
             supabase_path = f"{job_id}/custom_heatmap_{float(start):.1f}_{float(end):.1f}_{timestamp}_{unique_id}.jpg"
             logger.info(f"Looking for specific file: {supabase_path}")
         else:
-            # Try direct path first
-            supabase_path = f"{job_id}/custom_heatmap_{float(start):.1f}_{float(end):.1f}.jpg"
-            try:
-                from ..core.storage import check_file_exists_in_supabase
-                if check_file_exists_in_supabase(supabase_path):
-                    logger.info(f"Found custom heatmap at: {supabase_path}")
-                else:
-                    # Try listing as fallback
-                    from ..core.storage import list_files_in_supabase
-                    files = list_files_in_supabase(f"{job_id}")
-                    logger.info(f"Found files in Supabase for {job_id}: {files}")
-                    
-                    prefix = f"{job_id}/custom_heatmap_{float(start):.1f}_{float(end):.1f}_"
-                    logger.info(f"Looking for files matching prefix: {prefix}")
-                    
-                    matching_files = [f for f in files if f.startswith(prefix)]
-                    logger.info(f"Matching files found: {matching_files}")
-                    
-                    if matching_files:
-                        supabase_path = sorted(matching_files)[-1]  # Get most recent
-                        logger.info(f"Selected most recent file: {supabase_path}")
-                    else:
-                        logger.error(f"No matching custom heatmap found for prefix: {prefix}")
-                        return jsonify({"error": "No matching custom heatmap found"}), 404
-            except Exception as e:
-                logger.error(f"Error checking for custom heatmap: {e}")
-                return jsonify({"error": "Failed to check for custom heatmap"}), 500
+            # Try listing to find matching files
+            from ..core.storage import list_files_in_supabase
+            files = list_files_in_supabase(f"{job_id}")
+            logger.info(f"Found files in Supabase for {job_id}: {files}")
+            
+            prefix = f"{job_id}/custom_heatmap_{float(start):.1f}_{float(end):.1f}_"
+            logger.info(f"Looking for files matching prefix: {prefix}")
+            
+            matching_files = [f for f in files if f.startswith(prefix)]
+            logger.info(f"Matching files found: {matching_files}")
+            
+            if matching_files:
+                supabase_path = sorted(matching_files)[-1]  # Get most recent
+                logger.info(f"Selected most recent file: {supabase_path}")
+            else:
+                logger.error(f"No matching custom heatmap found for prefix: {prefix}")
+                return jsonify({"error": "No matching custom heatmap found"}), 404
 
-        # Get the heatmap image
-        try:
-            image_bytes = download_image_bytes_from_supabase(supabase_path)
-            return Response(image_bytes, mimetype='image/jpeg')
-        except Exception as e:
-            logger.error(f"Error downloading custom analysis image from Supabase: {e}")
-            return jsonify({"error": "Custom analysis image not found"}), 404
+        # Get the heatmap image for analysis
+        heatmap_color = download_image_from_supabase(supabase_path)
+        if heatmap_color is None:
+            return jsonify({"error": "Custom heatmap not found"}), 404
+        
+        # Convert to grayscale for analysis
+        if len(heatmap_color.shape) == 3:
+            heatmap_gray = cv2.cvtColor(heatmap_color, cv2.COLOR_BGR2GRAY)
+        else:
+            heatmap_gray = heatmap_color
+        
+        # Get detections for the time range
+        detections, fps = load_detections(job_id)
+        if detections is None:
+            return jsonify({"error": "Detections not found"}), 404
+        
+        # Filter detections for the time range
+        start_time = float(start)
+        end_time = float(end)
+        filtered_detections = [
+            det for det in detections
+            if 'timestamp' in det and start_time <= det['timestamp'] <= end_time
+        ]
+        
+        # Run analysis
+        analysis = analyze_heatmap(heatmap_gray, (1080, 1920), detections=filtered_detections, fps=fps)
+        
+        # Return JSON analysis data
+        return jsonify(analysis)
 
     except Exception as e:
         logger.error(f"Error in get_custom_analysis: {e}")
+        import traceback
+        logger.error(f"Traceback: {traceback.format_exc()}")
         return jsonify({"error": str(e)}), 500
 
 @heatmap_bp.route('/heatmap_jobs/<job_id>/export/jpg', methods=['GET'])
