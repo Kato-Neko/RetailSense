@@ -771,6 +771,36 @@ def get_live_camera_feed(job_id):
             return jsonify({"error": str(e)}), 500
 
 
+@heatmap_bp.route('/heatmap_jobs/live/debug', methods=['GET'])
+@cross_origin()
+@jwt_required()
+def debug_live_jobs():
+    """Debug endpoint to list all live jobs and their processors"""
+    try:
+        from ..services.state import get_jobs_store
+        jobs = get_jobs_store()
+        result = {}
+        for job_id, job_data in jobs.items():
+            if job_data.get('job_type') == 'live':
+                processor = job_data.get('processor')
+                result[job_id] = {
+                    'status': job_data.get('status'),
+                    'message': job_data.get('message'),
+                    'has_processor': processor is not None,
+                    'is_running': processor.is_running if processor else False,
+                    'has_frame': None
+                }
+                if processor:
+                    try:
+                        with processor.latest_frame_lock:
+                            result[job_id]['has_frame'] = processor.latest_frame is not None
+                    except:
+                        result[job_id]['has_frame'] = False
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 @heatmap_bp.route('/heatmap_jobs/<job_id>/live/stream', methods=['GET', 'OPTIONS'])
 @cross_origin()
 def get_live_camera_stream(job_id):
@@ -806,13 +836,25 @@ def get_live_camera_stream(job_id):
         # Add detailed logging
         if not processor:
             logger.warning(f"Processor not found for job {job_id}")
+            # Try to get processor from jobs store directly for debugging
+            from ..services.state import get_jobs_store
+            jobs = get_jobs_store()
+            logger.warning(f"Available jobs: {list(jobs.keys())}")
+            if job_id in jobs:
+                logger.warning(f"Job {job_id} found in store with keys: {list(jobs[job_id].keys())}")
         elif not processor.is_running:
             logger.warning(f"Processor exists but is_running={processor.is_running} for job {job_id}")
+            # Check if latest_frame exists even if not running
+            with processor.latest_frame_lock:
+                has_frame = processor.latest_frame is not None
+            logger.info(f"Processor has frame: {has_frame}")
         else:
             logger.info(f"Processor found and running for job {job_id}")
+            with processor.latest_frame_lock:
+                has_frame = processor.latest_frame is not None
+            logger.info(f"Processor has frame: {has_frame}")
         
-        # If processor doesn't exist or isn't running, still try to stream from latest_frame
-        # This allows us to show frames even if the stream temporarily paused
+        # If processor doesn't exist, return error
         if not processor:
             def generate_error():
                 import cv2
@@ -852,9 +894,8 @@ def get_live_camera_stream(job_id):
                         time.sleep(0.05)  # Small sleep to prevent CPU overload
                         continue
                     
-                    # Check if processor still exists and has frames
+                    # Re-check processor exists (it might have been removed)
                     if not processor:
-                        # Processor was removed, send error
                         error_img = np.zeros((480, 640, 3), dtype=np.uint8)
                         cv2.putText(error_img, 'Stream ended', (50, 200),
                                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
@@ -865,14 +906,18 @@ def get_live_camera_stream(job_id):
                     
                     # Get latest frame
                     frame = None
-                    with processor.latest_frame_lock:
-                        if processor.latest_frame is not None:
-                            frame = processor.latest_frame.copy()
+                    try:
+                        with processor.latest_frame_lock:
+                            if processor.latest_frame is not None:
+                                frame = processor.latest_frame.copy()
+                    except Exception as e:
+                        logger.error(f"Error accessing latest_frame: {e}")
+                        frame = None
                     
                     if frame is None:
                         # No frame available yet - send placeholder
                         placeholder_img = np.zeros((480, 640, 3), dtype=np.uint8)
-                        status_text = 'Waiting for frames...' if processor.is_running else 'Stream paused'
+                        status_text = 'Waiting for frames...' if (processor and processor.is_running) else 'Stream paused'
                         cv2.putText(placeholder_img, status_text, (50, 200),
                                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
                         _, placeholder_buffer = cv2.imencode('.jpg', placeholder_img, [cv2.IMWRITE_JPEG_QUALITY, 85])
@@ -880,6 +925,7 @@ def get_live_camera_stream(job_id):
                                b'Content-Type: image/jpeg\r\n\r\n' + placeholder_buffer.tobytes() + b'\r\n')
                         last_frame_time = current_time
                         consecutive_errors = 0
+                        time.sleep(0.5)  # Wait longer if no frames
                         continue
                     
                     # Encode frame as JPEG
