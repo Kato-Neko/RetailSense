@@ -44,6 +44,9 @@ const Dashboard = () => {
   const [monthlyData, setMonthlyData] = useState([])
   const [exportOpen, setExportOpen] = useState(false)
   const [exportValue, setExportValue] = useState("")
+  const [comparisonMode, setComparisonMode] = useState(false)
+  const [comparisonStats, setComparisonStats] = useState({ totalVisitors: 0, peakHour: "N/A" })
+  const [comparisonData, setComparisonData] = useState({ daily: [], weekly: [], monthly: [] })
 
   // Turbo colormap-inspired gradient (24 colors, blue to red)
   const turboColors = [
@@ -73,6 +76,36 @@ const Dashboard = () => {
     setExportOpen(false);
   };
 
+  // Helper function to get date ranges for current and previous periods
+  const getDateRanges = () => {
+    const now = new Date()
+    
+    if (activeChart === "daily") {
+      // Last 24 hours vs previous 24 hours
+      const currentStart = new Date(now.getTime() - 24 * 60 * 60 * 1000)
+      const currentEnd = now
+      const comparisonStart = new Date(now.getTime() - 48 * 60 * 60 * 1000)
+      const comparisonEnd = new Date(now.getTime() - 24 * 60 * 60 * 1000)
+      return { currentStart, currentEnd, comparisonStart, comparisonEnd }
+    } else if (activeChart === "weekly") {
+      // Last 7 days vs previous 7 days
+      const currentStart = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000)
+      const currentEnd = now
+      const comparisonStart = new Date(now.getTime() - 14 * 24 * 60 * 60 * 1000)
+      const comparisonEnd = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000)
+      return { currentStart, currentEnd, comparisonStart, comparisonEnd }
+    } else if (activeChart === "monthly") {
+      // This month vs last month
+      const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+      const currentStart = new Date(today.getFullYear(), today.getMonth(), 1)
+      const currentEnd = now
+      const comparisonStart = new Date(today.getFullYear(), today.getMonth() - 1, 1)
+      const comparisonEnd = new Date(today.getFullYear(), today.getMonth(), 0)
+      return { currentStart, currentEnd, comparisonStart, comparisonEnd }
+    }
+    return { currentStart: now, currentEnd: now, comparisonStart: now, comparisonEnd: now }
+  }
+
   useEffect(() => {
     const fetchDashboardData = async () => {
       setIsLoading(true)
@@ -93,12 +126,23 @@ const Dashboard = () => {
         setRecentJobs(recent)
 
         // Calculate stats from job history
-        const completedJobs = jobHistory.filter((job) => job.status === "completed")
+        let allCompletedJobs = jobHistory.filter((job) => job.status === "completed")
+        
+        // Filter by date range when comparison mode is enabled
+        let completedJobs = allCompletedJobs
+        if (comparisonMode) {
+          const { currentStart, currentEnd } = getDateRanges()
+          completedJobs = allCompletedJobs.filter(job => {
+            const jobCreated = new Date(job.created_at)
+            return jobCreated >= currentStart && jobCreated < currentEnd
+          })
+        }
+        
         // Only count completed video jobs for Processed Videos
         const processedVideos = jobHistory.filter(
           job => job.input_video_name && job.status === "completed"
         ).length;
-        const heatmapCount = completedJobs.length
+        const heatmapCount = allCompletedJobs.length
 
         // Set initial stats (will be updated after processing detections)
         setStats({
@@ -193,7 +237,7 @@ const Dashboard = () => {
         }))
 
         // --- Weekly Data ---
-        // Use data already processed above (no need to fetch again!)
+       
         const weekDays = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
         const weeklyDataArr = weekDays.map((day, idx) => ({
           day,
@@ -209,6 +253,104 @@ const Dashboard = () => {
           visitors: monthlyUniqueVisitors[idx].size,
         }))
         setMonthlyData(monthlyDataArr)
+
+        // Process comparison data if comparison mode is enabled
+        if (comparisonMode) {
+          const { comparisonStart, comparisonEnd } = getDateRanges()
+          
+          // Filter jobs for comparison period
+          const comparisonJobs = allCompletedJobs.filter(job => {
+            const jobCreated = new Date(job.created_at)
+            return jobCreated >= comparisonStart && jobCreated < comparisonEnd
+          })
+          
+          if (comparisonJobs.length > 0) {
+            // Process detections for comparison period
+            let compTotalUniqueVisitors = new Set()
+            let compHourlyVisitors = Array.from({ length: 24 }, () => new Set())
+            let compWeeklyVisitors = Array.from({ length: 7 }, () => new Set())
+            let compMonthlyVisitors = Array.from({ length: 12 }, () => new Set())
+
+            for (const job of comparisonJobs) {
+              try {
+                const detectionsResponse = await heatmapService.getDetections(job.job_id)
+                if (detectionsResponse && detectionsResponse.detections) {
+                  const detections = detectionsResponse.detections
+                  const fps = detectionsResponse.fps
+                  const startDate = job.start_datetime ? new Date(job.start_datetime) : null
+
+                  detections.forEach((det) => {
+                    const trackId = det.track_id
+                    const timeInSeconds = det.timestamp || (det.frame / fps)
+                    const detectionTime = startDate ? new Date(startDate.getTime() + timeInSeconds * 1000) : null
+                    const hour = detectionTime ? detectionTime.getHours() : null
+                    const day = detectionTime ? detectionTime.getDay() : null
+                    const month = detectionTime ? detectionTime.getMonth() : null
+
+                    if (trackId && hour !== null) {
+                      compTotalUniqueVisitors.add(`${job.job_id}_${trackId}`)
+                      compHourlyVisitors[hour].add(`${job.job_id}_${trackId}`)
+                    }
+                    if (trackId && day !== null) {
+                      compWeeklyVisitors[day].add(`${job.job_id}_${trackId}`)
+                    }
+                    if (trackId && month !== null) {
+                      compMonthlyVisitors[month].add(`${job.job_id}_${trackId}`)
+                    }
+                  })
+                }
+              } catch (error) {
+                console.error(`Error fetching comparison detections for job ${job.job_id}:`, error)
+              }
+            }
+
+            // Find peak hour for comparison
+            let compPeakHourIdx = 0
+            let compPeakHourValue = 0
+            compHourlyVisitors.forEach((set, idx) => {
+              if (set.size > compPeakHourValue) {
+                compPeakHourValue = set.size
+                compPeakHourIdx = idx
+              }
+            })
+            const compPeakHourLabel = compPeakHourValue > 0 ? 
+              `${compPeakHourIdx.toString().padStart(2, "0")}:00-${(compPeakHourIdx + 1).toString().padStart(2, "0")}:00` : 
+              "N/A"
+
+            // Format comparison data
+            const compDailyArr = Array.from({ length: 24 }, (_, hour) => ({
+              hour: hour.toString().padStart(2, "0") + ":00",
+              visitors: compHourlyVisitors[hour].size
+            }))
+            
+            const weekDays = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
+            const compWeeklyArr = weekDays.map((day, idx) => ({
+              day,
+              visitors: compWeeklyVisitors[idx].size
+            }))
+
+            const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+            const compMonthlyArr = monthNames.map((month, idx) => ({
+              month,
+              visitors: compMonthlyVisitors[idx].size
+            }))
+
+            setComparisonData({
+              daily: compDailyArr,
+              weekly: compWeeklyArr,
+              monthly: compMonthlyArr
+            })
+
+            setComparisonStats({
+              totalVisitors: compTotalUniqueVisitors.size,
+              peakHour: compPeakHourLabel
+            })
+          } else {
+            // No comparison data available
+            setComparisonData({ daily: [], weekly: [], monthly: [] })
+            setComparisonStats({ totalVisitors: 0, peakHour: "N/A" })
+          }
+        }
       } catch (error) {
         console.error("Error fetching dashboard data:", error)
         toast.error("Failed to load dashboard data")
@@ -227,7 +369,7 @@ const Dashboard = () => {
     return () => {
       window.removeEventListener('dashboard-refresh', handleRefresh);
     };
-  }, [])
+  }, [comparisonMode, activeChart])
 
   // Compute turbo color for each point in daily and weekly chart
   const getTurboColor = (value, min, max) => {
@@ -268,6 +410,32 @@ const Dashboard = () => {
       fill: getTurboColor(d.visitors, min, max),
     }))
   }, [monthlyData, turboColors])
+
+  // Merge current and comparison data for chart rendering
+  const mergedData = useMemo(() => {
+    if (!comparisonMode) {
+      if (activeChart === "daily") return dailyLineData
+      if (activeChart === "weekly") return weeklyLineData
+      if (activeChart === "monthly") return monthlyBarData
+      return []
+    }
+
+    // Merge data for comparison mode
+    const currentData = activeChart === "daily" ? dailyLineData : activeChart === "weekly" ? weeklyLineData : monthlyBarData
+    const compData = activeChart === "daily" ? comparisonData.daily : activeChart === "weekly" ? comparisonData.weekly : comparisonData.monthly
+    
+    // Merge by index
+    const merged = currentData.map((item, idx) => {
+      const comparison = compData[idx]
+      return {
+        ...item,
+        comparison: comparison ? comparison.visitors : 0,
+        current: item.visitors || 0
+      }
+    })
+    
+    return merged
+  }, [comparisonMode, activeChart, dailyLineData, weeklyLineData, monthlyBarData, comparisonData])
 
   // Helper to create a turbo-gradient SVG path for the line chart
   function TurboLinePath({ data, xAccessor, yAccessor, colorAccessor }) {
@@ -440,6 +608,36 @@ const Dashboard = () => {
             <span className="text-xs text-muted-foreground mt-1 tracking-wide">Generated Heatmaps</span>
         </Card>
       </div>
+        {/* Comparison Stats Banner */}
+        {comparisonMode && (
+          <Card className="bg-gradient-to-br from-slate-800/80 to-slate-900/90 dark:from-slate-800/80 dark:to-slate-900/90 border border-slate-600 mb-4 p-4">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <div className="text-center">
+                <div className="text-2xl font-bold text-cyan-400">
+                  {(stats.totalVisitors - comparisonStats.totalVisitors > 0 ? '+' : '')}
+                  {stats.totalVisitors - comparisonStats.totalVisitors}
+                </div>
+                <div className="text-xs text-muted-foreground">Visitor Change</div>
+              </div>
+              <div className="text-center">
+                <div className="text-2xl font-bold text-yellow-400">
+                  {comparisonStats.totalVisitors > 0 
+                    ? ((stats.totalVisitors - comparisonStats.totalVisitors) / comparisonStats.totalVisitors * 100).toFixed(1)
+                    : '0.0'}%
+                </div>
+                <div className="text-xs text-muted-foreground">Growth Rate</div>
+              </div>
+              <div className="text-center">
+                <div className="text-lg font-bold text-blue-400">Current: {stats.totalVisitors}</div>
+                <div className="text-xs text-muted-foreground">Total Visitors</div>
+              </div>
+              <div className="text-center">
+                <div className="text-lg font-bold text-slate-400">Previous: {comparisonStats.totalVisitors}</div>
+                <div className="text-xs text-muted-foreground">Total Visitors</div>
+              </div>
+            </div>
+          </Card>
+        )}
         {/* Section Divider */}
         <div className="w-full h-px bg-border bg-gradient-to-r from-primary/20 via-muted/10 to-cyan-400/20 mb-7" />
       {/* Main Grid */}
@@ -448,7 +646,17 @@ const Dashboard = () => {
           <Card id="foot-traffic-chart-card" className="col-span-2 bg-gradient-to-br from-background/80 to-muted/90 dark:from-slate-900/80 dark:to-slate-950/90 border border-border shadow-2xl shadow-primary/10 backdrop-blur-xl rounded-xl">
             <CardHeader className="pb-2">
               <div className="flex items-center justify-between mb-2">
-                <CardTitle className="text-lg font-bold text-foreground tracking-tight drop-shadow">Foot Traffic Analytics</CardTitle>
+                <div className="flex items-center gap-3">
+                  <CardTitle className="text-lg font-bold text-foreground tracking-tight drop-shadow">Foot Traffic Analytics</CardTitle>
+                  <Button
+                    variant={comparisonMode ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => setComparisonMode(!comparisonMode)}
+                    className="text-xs"
+                  >
+                    {comparisonMode ? "✓ Compare" : "Compare"}
+                  </Button>
+                </div>
                 <Popover open={exportOpen} onOpenChange={setExportOpen}>
                   <PopoverTrigger asChild>
                     <Button
@@ -524,7 +732,7 @@ const Dashboard = () => {
                   }}
                 >
                   {activeChart === "daily" && (
-                    <ReLineChart data={dailyLineData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                    <ReLineChart data={mergedData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                       <defs>
                         <linearGradient id="turbo-gradient-daily" x1="0" y1="0" x2="1" y2="0">
                           {dailyLineData.map((d, i) => (
@@ -542,7 +750,7 @@ const Dashboard = () => {
                       <ChartTooltip content={<ChartTooltipContent />} />
                 <Line 
                   type="monotone" 
-                  dataKey="visitors" 
+                  dataKey={comparisonMode ? "current" : "visitors"} 
                         stroke="url(#turbo-gradient-daily)"
                         strokeWidth={2.5}
                   dot={false}
@@ -552,11 +760,23 @@ const Dashboard = () => {
                         isAnimationActive={true}
                         connectNulls
                       />
+                      {comparisonMode && (
+                        <Line 
+                          type="monotone" 
+                          dataKey="comparison" 
+                          stroke="#94a3b8"
+                          strokeWidth={2}
+                          strokeDasharray="5 5"
+                          dot={false}
+                          activeDot={{ r: 6 }}
+                          name="Previous Period"
+                        />
+                      )}
                       <ChartLegend content={<ChartLegendContent />} />
                     </ReLineChart>
                   )}
                   {activeChart === "weekly" && (
-                    <ReLineChart data={weeklyLineData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                    <ReLineChart data={mergedData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                       <defs>
                         <linearGradient id="turbo-gradient-weekly" x1="0" y1="0" x2="1" y2="0">
                           {weeklyLineData.map((d, i) => (
@@ -574,7 +794,7 @@ const Dashboard = () => {
                       <ChartTooltip content={<ChartTooltipContent />} />
                       <Line
                         type="monotone" 
-                        dataKey="visitors" 
+                        dataKey={comparisonMode ? "current" : "visitors"} 
                         stroke="url(#turbo-gradient-weekly)"
                         strokeWidth={2.5}
                         dot={false}
@@ -584,20 +804,35 @@ const Dashboard = () => {
                         isAnimationActive={true}
                         connectNulls
                       />
+                      {comparisonMode && (
+                        <Line 
+                          type="monotone" 
+                          dataKey="comparison" 
+                          stroke="#94a3b8"
+                          strokeWidth={2}
+                          strokeDasharray="5 5"
+                          dot={false}
+                          activeDot={{ r: 6 }}
+                          name="Previous Period"
+                        />
+                      )}
                       <ChartLegend content={<ChartLegendContent />} />
                     </ReLineChart>
                   )}
                   {activeChart === "monthly" && (
-                    <ReBarChart data={monthlyBarData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                    <ReBarChart data={mergedData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                       <CartesianGrid strokeDasharray="3 3" stroke="#334155" vertical={false} />
                       <XAxis dataKey="month" stroke="#ff6f00" tick={{ fontSize: 12, fill: '#ff6f00' }} />
                       <YAxis stroke="#ff6f00" tick={{ fontSize: 12, fill: '#ff6f00' }} label={{ value: 'Visitors', angle: -90, position: 'insideLeft', fill: '#ff6f00', fontSize: 14, dy: -10 }} />
                       <ChartTooltip content={<ChartTooltipContent />} />
-                      <Bar dataKey="visitors" radius={[6, 6, 0, 0]}>
-                        {monthlyBarData.map((entry, idx) => (
+                      <Bar dataKey={comparisonMode ? "current" : "visitors"} name={comparisonMode ? "Current Period" : "Visitors"} radius={[6, 6, 0, 0]}>
+                        {mergedData.map((entry, idx) => (
                           <Cell key={idx} fill={entry.fill} />
                         ))}
                       </Bar>
+                      {comparisonMode && (
+                        <Bar dataKey="comparison" name="Previous Period" radius={[6, 6, 0, 0]} fill="#94a3b8" />
+                      )}
                       <ChartLegend content={<ChartLegendContent />} />
                 </ReBarChart>
                   )}
