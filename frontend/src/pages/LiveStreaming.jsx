@@ -133,18 +133,44 @@ const LiveStreaming = () => {
   useEffect(() => {
     if (!jobId || !isConnected || !showFeed) return
 
-    const refreshFeed = () => {
-      if (showFeed) {
+    let abortController = new AbortController()
+    let isMounted = true
+
+    const refreshFeed = async () => {
+      if (!isMounted || !showFeed) return
+      
+      try {
         const feedUrl = heatmapService.getLiveCameraFeedUrl(jobId)
-        setCameraFeedUrl(`${feedUrl}?t=${Date.now()}`)
+        // Use a timestamp to bypass cache
+        const url = `${feedUrl}?t=${Date.now()}`
+        
+        // Create an Image object to load the frame
+        const img = new Image()
+        img.onload = () => {
+          if (isMounted) {
+            setCameraFeedUrl(url)
+          }
+        }
+        img.onerror = () => {
+          // Silently fail - don't spam errors
+          console.warn('Failed to load camera frame')
+        }
+        img.src = url
+      } catch (error) {
+        // Silently handle errors to prevent spam
+        console.warn('Camera feed refresh error:', error)
       }
     }
 
-    // Refresh immediately and then every 200ms for smooth video-like experience
+    // Refresh immediately and then every 500ms (2 fps) for better performance
     refreshFeed()
-    const feedInterval = setInterval(refreshFeed, 200)
+    const feedInterval = setInterval(refreshFeed, 500)
 
-    return () => clearInterval(feedInterval)
+    return () => {
+      isMounted = false
+      abortController.abort()
+      clearInterval(feedInterval)
+    }
   }, [jobId, isConnected, showFeed])
 
   return (

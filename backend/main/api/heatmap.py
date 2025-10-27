@@ -704,7 +704,21 @@ def get_live_camera_feed(job_id):
         
         frame_bytes = get_latest_frame(job_id)
         if frame_bytes is None:
-            return jsonify({"error": "Live feed not available yet"}), 404
+            # Return a placeholder image instead of 404 to prevent errors
+            import cv2
+            import numpy as np
+            placeholder = np.zeros((480, 640, 3), dtype=np.uint8)
+            _, buffer = cv2.imencode('.jpg', placeholder, [cv2.IMWRITE_JPEG_QUALITY, 85])
+            return Response(
+                buffer.tobytes(),
+                mimetype="image/jpeg",
+                headers={
+                    'Cache-Control': 'no-cache, no-store, must-revalidate',
+                    'Pragma': 'no-cache',
+                    'Expires': '0',
+                    'X-Frame-Status': 'placeholder'
+                }
+            )
         
         return Response(
             frame_bytes,
@@ -712,9 +726,27 @@ def get_live_camera_feed(job_id):
             headers={
                 'Cache-Control': 'no-cache, no-store, must-revalidate',
                 'Pragma': 'no-cache',
-                'Expires': '0'
+                'Expires': '0',
+                'X-Frame-Status': 'live'
             }
         )
     except Exception as e:
         logger.error(f"Error getting live feed: {e}")
-        return jsonify({"error": str(e)}), 500
+        # Return error as image to prevent network errors
+        try:
+            import cv2
+            import numpy as np
+            error_img = np.zeros((480, 640, 3), dtype=np.uint8)
+            cv2.putText(error_img, 'Error loading feed', (50, 240), 
+                       cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
+            _, buffer = cv2.imencode('.jpg', error_img, [cv2.IMWRITE_JPEG_QUALITY, 85])
+            return Response(
+                buffer.tobytes(),
+                mimetype="image/jpeg",
+                headers={
+                    'Cache-Control': 'no-cache, no-store, must-revalidate',
+                    'X-Frame-Status': 'error'
+                }
+            )
+        except:
+            return jsonify({"error": str(e)}), 500
