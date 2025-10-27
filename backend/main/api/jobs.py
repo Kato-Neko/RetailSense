@@ -515,30 +515,43 @@ def stop_live_job(job_id):
         if has_is_live and not job_row[1]:
             return jsonify({"error": "Job is not a live streaming job"}), 400
         
-        # Get processor and stop it
+        # Get processor and stop it (non-blocking)
         processor = get_live_job_processor(job_id)
         if processor:
-            processor.stop()
-            processor._update_status('stopped', 'Live stream stopped by user')
+            try:
+                processor.stop()
+            except Exception as e:
+                logger.error(f"Error stopping processor: {e}")
         
-        # Update in-memory store
+        # Update in-memory store immediately
         jobs = get_jobs_store()
         if job_id in jobs:
             jobs[job_id]['status'] = 'stopped'
             jobs[job_id]['message'] = 'Live stream stopped by user'
         
-        # Update database
-        conn = get_db_connection()
-        cur = conn.cursor()
-        cur.execute('''
-            UPDATE jobs 
-            SET status = %s, message = %s, updated_at = CURRENT_TIMESTAMP
-            WHERE job_id = %s
-        ''', ('stopped', 'Live stream stopped by user', job_id))
-        conn.commit()
-        cur.close()
-        conn.close()
+        # Update database in background to avoid timeout
+        def update_db_status():
+            try:
+                conn = get_db_connection()
+                cur = conn.cursor()
+                cur.execute('''
+                    UPDATE jobs 
+                    SET status = %s, message = %s, updated_at = CURRENT_TIMESTAMP
+                    WHERE job_id = %s
+                ''', ('stopped', 'Live stream stopped by user', job_id))
+                conn.commit()
+                cur.close()
+                conn.close()
+            except Exception as e:
+                logger.error(f"Error updating database status: {e}")
         
+        # Run database update in background thread
+        import threading
+        db_thread = threading.Thread(target=update_db_status)
+        db_thread.daemon = True
+        db_thread.start()
+        
+        # Return immediately without waiting for database update
         return jsonify({"success": True, "message": "Live stream stopped"}), 200
         
     except Exception as e:
