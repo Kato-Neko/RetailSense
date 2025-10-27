@@ -34,6 +34,8 @@ class LiveStreamProcessor:
         self.thread = None
         self.model = None
         self.tracker = None
+        self.latest_frame = None
+        self.latest_frame_lock = threading.Lock()
         self.last_heatmap_update = time.time()
         self.heatmap_update_interval = 30  # Update heatmap every 30 seconds
         
@@ -97,6 +99,10 @@ class LiveStreamProcessor:
                     logger.warning("Failed to read frame from stream, retrying...")
                     time.sleep(0.1)
                     continue
+                
+                # Store latest frame for live feed
+                with self.latest_frame_lock:
+                    self.latest_frame = frame.copy()
                 
                 # Process every Nth frame
                 if self.frame_count % frame_skip == 0:
@@ -331,4 +337,24 @@ def get_live_job_processor(job_id: str) -> Optional[LiveStreamProcessor]:
     if job and 'processor' in job:
         return job['processor']
     return None
+
+
+def get_latest_frame(job_id: str) -> Optional[bytes]:
+    """Get the latest frame from a live stream as JPEG bytes"""
+    processor = get_live_job_processor(job_id)
+    if not processor:
+        return None
+    
+    with processor.latest_frame_lock:
+        if processor.latest_frame is None:
+            return None
+        
+        # Encode frame as JPEG
+        try:
+            import cv2
+            _, buffer = cv2.imencode('.jpg', processor.latest_frame, [cv2.IMWRITE_JPEG_QUALITY, 85])
+            return buffer.tobytes()
+        except Exception as e:
+            logger.error(f"Error encoding frame: {e}")
+            return None
 

@@ -25,6 +25,8 @@ const LiveStreaming = () => {
   const [jobId, setJobId] = useState(null)
   const [liveStatus, setLiveStatus] = useState(null)
   const [heatmapUrl, setHeatmapUrl] = useState(null)
+  const [cameraFeedUrl, setCameraFeedUrl] = useState(null)
+  const [showFeed, setShowFeed] = useState(true) // Toggle between feed and heatmap
 
   const handleInputChange = (field, value) => {
     setCameraConfig((prev) => ({
@@ -107,8 +109,8 @@ const LiveStreaming = () => {
         if (status.status === 'live' && status.is_running) {
           setStreamStatus("connected")
           // Update heatmap URL with timestamp to force refresh
-          const url = heatmapService.getLiveHeatmapImageUrl(jobId)
-          setHeatmapUrl(`${url}?t=${Date.now()}`)
+          const heatmapUrl = heatmapService.getLiveHeatmapImageUrl(jobId)
+          setHeatmapUrl(`${heatmapUrl}?t=${Date.now()}`)
         } else if (status.status === 'error') {
           setStreamStatus("error")
         } else if (status.status === 'stopped') {
@@ -126,6 +128,24 @@ const LiveStreaming = () => {
 
     return () => clearInterval(interval)
   }, [jobId, isConnected])
+
+  // Refresh camera feed more frequently
+  useEffect(() => {
+    if (!jobId || !isConnected || !showFeed) return
+
+    const refreshFeed = () => {
+      if (showFeed) {
+        const feedUrl = heatmapService.getLiveCameraFeedUrl(jobId)
+        setCameraFeedUrl(`${feedUrl}?t=${Date.now()}`)
+      }
+    }
+
+    // Refresh immediately and then every 200ms for smooth video-like experience
+    refreshFeed()
+    const feedInterval = setInterval(refreshFeed, 200)
+
+    return () => clearInterval(feedInterval)
+  }, [jobId, isConnected, showFeed])
 
   return (
     <div className="space-y-6">
@@ -319,33 +339,85 @@ const LiveStreaming = () => {
                     <span className="font-medium">{liveStatus.frame_count || 0}</span>
                   </div>
                 )}
+                
+                {/* Toggle between feed and heatmap */}
+                <div className="flex gap-2">
+                  <Button
+                    variant={showFeed ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => setShowFeed(true)}
+                    className="flex-1"
+                  >
+                    <Camera className="mr-2 h-4 w-4" />
+                    Camera Feed
+                  </Button>
+                  <Button
+                    variant={!showFeed ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => setShowFeed(false)}
+                    className="flex-1"
+                  >
+                    <Video className="mr-2 h-4 w-4" />
+                    Heatmap
+                  </Button>
+                </div>
+
                 <div className="aspect-video bg-muted rounded-lg overflow-hidden relative">
-                  {heatmapUrl ? (
-                    <>
-                      <img 
-                        src={heatmapUrl} 
-                        alt="Live Heatmap" 
-                        className="w-full h-full object-contain"
-                        onError={() => {
-                          setHeatmapUrl(null)
-                        }}
-                      />
-                      <div className="absolute bottom-2 right-2 bg-black/50 text-white text-xs px-2 py-1 rounded">
-                        Live Heatmap
+                  {showFeed ? (
+                    // Camera Feed View
+                    cameraFeedUrl ? (
+                      <>
+                        <img 
+                          src={cameraFeedUrl} 
+                          alt="Live Camera Feed" 
+                          className="w-full h-full object-contain"
+                          onError={() => {
+                            setCameraFeedUrl(null)
+                          }}
+                        />
+                        <div className="absolute bottom-2 right-2 bg-black/50 text-white text-xs px-2 py-1 rounded">
+                          Live Feed
+                        </div>
+                      </>
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center">
+                        <div className="text-center space-y-2">
+                          <Camera className="h-12 w-12 mx-auto text-muted-foreground" />
+                          <p className="text-sm text-muted-foreground">
+                            Waiting for camera feed...
+                          </p>
+                        </div>
                       </div>
-                    </>
+                    )
                   ) : (
-                    <div className="w-full h-full flex items-center justify-center">
-                      <div className="text-center space-y-2">
-                        <Video className="h-12 w-12 mx-auto text-muted-foreground" />
-                        <p className="text-sm text-muted-foreground">
-                          Waiting for heatmap data...
-                        </p>
-                        <p className="text-xs text-muted-foreground">
-                          Heatmap updates every 30 seconds
-                        </p>
+                    // Heatmap View
+                    heatmapUrl ? (
+                      <>
+                        <img 
+                          src={heatmapUrl} 
+                          alt="Live Heatmap" 
+                          className="w-full h-full object-contain"
+                          onError={() => {
+                            setHeatmapUrl(null)
+                          }}
+                        />
+                        <div className="absolute bottom-2 right-2 bg-black/50 text-white text-xs px-2 py-1 rounded">
+                          Live Heatmap
+                        </div>
+                      </>
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center">
+                        <div className="text-center space-y-2">
+                          <Video className="h-12 w-12 mx-auto text-muted-foreground" />
+                          <p className="text-sm text-muted-foreground">
+                            Waiting for heatmap data...
+                          </p>
+                          <p className="text-xs text-muted-foreground">
+                            Heatmap updates every 30 seconds
+                          </p>
+                        </div>
                       </div>
-                    </div>
+                    )
                   )}
                 </div>
               </div>

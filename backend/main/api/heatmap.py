@@ -692,3 +692,29 @@ def get_live_heatmap_image(job_id):
     except Exception as e:
         logger.error(f"Error getting live heatmap: {e}")
         return jsonify({"error": str(e)}), 500
+
+
+@heatmap_bp.route('/heatmap_jobs/<job_id>/live/feed', methods=['GET', 'OPTIONS'])
+@cross_origin()
+@jwt_required()
+def get_live_camera_feed(job_id):
+    """Get the current live camera feed frame"""
+    try:
+        from ..services.live_stream import get_latest_frame
+        
+        frame_bytes = get_latest_frame(job_id)
+        if frame_bytes is None:
+            return jsonify({"error": "Live feed not available yet"}), 404
+        
+        return Response(
+            frame_bytes,
+            mimetype="image/jpeg",
+            headers={
+                'Cache-Control': 'no-cache, no-store, must-revalidate',
+                'Pragma': 'no-cache',
+                'Expires': '0'
+            }
+        )
+    except Exception as e:
+        logger.error(f"Error getting live feed: {e}")
+        return jsonify({"error": str(e)}), 500
