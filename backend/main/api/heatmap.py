@@ -700,14 +700,30 @@ def get_live_heatmap_image(job_id):
 def get_live_camera_feed(job_id):
     """Get the current live camera feed frame"""
     try:
-        from ..services.live_stream import get_latest_frame
+        from ..services.live_stream import get_latest_frame, get_live_job_processor
         
-        frame_bytes = get_latest_frame(job_id)
+        # Check if processor exists and is running
+        processor = get_live_job_processor(job_id)
+        if not processor:
+            logger.warning(f"No processor found for job {job_id}")
+            frame_bytes = None
+        elif not processor.is_running:
+            logger.warning(f"Processor for job {job_id} is not running")
+            frame_bytes = None
+        else:
+            frame_bytes = get_latest_frame(job_id)
+        
         if frame_bytes is None:
-            # Return a placeholder image instead of 404 to prevent errors
+            # Return a placeholder image with message
             import cv2
             import numpy as np
             placeholder = np.zeros((480, 640, 3), dtype=np.uint8)
+            # Add text message
+            cv2.putText(placeholder, 'Waiting for frames...', (50, 200), 
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+            if processor and not processor.is_running:
+                cv2.putText(placeholder, 'Stream not running', (50, 250), 
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
             _, buffer = cv2.imencode('.jpg', placeholder, [cv2.IMWRITE_JPEG_QUALITY, 85])
             return Response(
                 buffer.tobytes(),
@@ -731,14 +747,16 @@ def get_live_camera_feed(job_id):
             }
         )
     except Exception as e:
-        logger.error(f"Error getting live feed: {e}")
+        logger.error(f"Error getting live feed: {e}", exc_info=True)
         # Return error as image to prevent network errors
         try:
             import cv2
             import numpy as np
             error_img = np.zeros((480, 640, 3), dtype=np.uint8)
-            cv2.putText(error_img, 'Error loading feed', (50, 240), 
-                       cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
+            cv2.putText(error_img, 'Error loading feed', (50, 200), 
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
+            cv2.putText(error_img, str(e)[:50], (50, 250), 
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
             _, buffer = cv2.imencode('.jpg', error_img, [cv2.IMWRITE_JPEG_QUALITY, 85])
             return Response(
                 buffer.tobytes(),
@@ -748,5 +766,6 @@ def get_live_camera_feed(job_id):
                     'X-Frame-Status': 'error'
                 }
             )
-        except:
+        except Exception as e2:
+            logger.error(f"Error creating error image: {e2}")
             return jsonify({"error": str(e)}), 500

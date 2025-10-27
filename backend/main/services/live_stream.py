@@ -68,12 +68,23 @@ class LiveStreamProcessor:
             self.tracker = _get_tracker()
             
             # Open RTSP stream
+            logger.info(f"Attempting to open RTSP stream: {self.rtsp_url}")
             self.cap = cv2.VideoCapture(self.rtsp_url)
             self.cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)  # Minimize latency
+            
+            # Give it a moment to connect
+            time.sleep(0.5)
             
             if not self.cap.isOpened():
                 logger.error(f"Failed to open RTSP stream: {self.rtsp_url}")
                 self._update_status('error', 'Failed to connect to camera stream')
+                # Store a placeholder frame so feed endpoint doesn't fail
+                import numpy as np
+                placeholder = np.zeros((480, 640, 3), dtype=np.uint8)
+                cv2.putText(placeholder, 'Failed to connect', (50, 200), 
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
+                with self.latest_frame_lock:
+                    self.latest_frame = placeholder
                 return
                 
             # Get stream properties
@@ -81,14 +92,28 @@ class LiveStreamProcessor:
             width = int(self.cap.get(cv2.CAP_PROP_FRAME_WIDTH))
             height = int(self.cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
             
-            logger.info(f"Stream opened: {width}x{height} @ {self.fps}fps")
+            logger.info(f"Stream opened successfully: {width}x{height} @ {self.fps}fps")
             self._update_status('live', f'Streaming from {self.camera_name}')
             
-            # Extract first frame for floorplan
-            if not self.floorplan_path:
-                ret, first_frame = self.cap.read()
-                if ret:
+            # Read first frame immediately to populate latest_frame
+            ret, first_frame = self.cap.read()
+            if ret and first_frame is not None:
+                with self.latest_frame_lock:
+                    self.latest_frame = first_frame.copy()
+                logger.info("First frame captured successfully")
+                
+                # Extract first frame for floorplan if needed
+                if not self.floorplan_path:
                     self._save_first_frame(first_frame)
+            else:
+                logger.warning("Failed to read first frame from stream")
+                # Store placeholder
+                import numpy as np
+                placeholder = np.zeros((480, 640, 3), dtype=np.uint8)
+                cv2.putText(placeholder, 'Reading frames...', (50, 200), 
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+                with self.latest_frame_lock:
+                    self.latest_frame = placeholder
             
             frame_skip = 5  # Process every 5th frame for performance
             last_detection_save = time.time()
