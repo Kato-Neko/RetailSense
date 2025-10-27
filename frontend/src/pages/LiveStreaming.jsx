@@ -28,6 +28,7 @@ const LiveStreaming = () => {
   const [cameraFeedUrl, setCameraFeedUrl] = useState(null)
   const [showFeed, setShowFeed] = useState(true) // Toggle between feed and heatmap
   const [feedError, setFeedError] = useState(false)
+  const [useStream, setUseStream] = useState(true) // Use MJPEG stream vs single frames
 
   const handleInputChange = (field, value) => {
     setCameraConfig((prev) => ({
@@ -130,9 +131,9 @@ const LiveStreaming = () => {
     return () => clearInterval(interval)
   }, [jobId, isConnected])
 
-  // Refresh camera feed more frequently
+  // Refresh camera feed (only for single-frame mode, not MJPEG stream)
   useEffect(() => {
-    if (!jobId || !isConnected || !showFeed) return
+    if (!jobId || !isConnected || !showFeed || useStream) return
 
     let abortController = new AbortController()
     let isMounted = true
@@ -141,7 +142,7 @@ const LiveStreaming = () => {
     let feedInterval = null
 
     const refreshFeed = async () => {
-      if (!isMounted || !showFeed) return
+      if (!isMounted || !showFeed || useStream) return
       
       try {
         const feedUrl = heatmapService.getLiveCameraFeedUrl(jobId)
@@ -151,7 +152,7 @@ const LiveStreaming = () => {
         // Create an Image object to load the frame
         const img = new Image()
         img.onload = () => {
-          if (isMounted) {
+          if (isMounted && !useStream) {
             setCameraFeedUrl(url)
             setFeedError(false)
             failedAttempts = 0 // Reset counter on success
@@ -196,7 +197,7 @@ const LiveStreaming = () => {
         clearInterval(feedInterval)
       }
     }
-  }, [jobId, isConnected, showFeed])
+  }, [jobId, isConnected, showFeed, useStream])
 
   return (
     <div className="space-y-6">
@@ -412,11 +413,29 @@ const LiveStreaming = () => {
                     Heatmap
                   </Button>
                 </div>
+                
+                {/* Stream mode toggle */}
+                {showFeed && jobId && (
+                  <div className="flex items-center justify-between text-xs text-muted-foreground">
+                    <span>Stream Mode: {useStream ? 'MJPEG (Recommended)' : 'Single Frames'}</span>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => {
+                        setUseStream(!useStream)
+                        setFeedError(false)
+                      }}
+                      className="h-6 text-xs"
+                    >
+                      {useStream ? 'Switch to Frames' : 'Switch to Stream'}
+                    </Button>
+                  </div>
+                )}
 
                 <div className="aspect-video bg-muted rounded-lg overflow-hidden relative">
                   {showFeed ? (
                     // Camera Feed View
-                    feedError ? (
+                    feedError && !useStream ? (
                       <div className="w-full h-full flex items-center justify-center">
                         <div className="text-center space-y-2">
                           <Camera className="h-12 w-12 mx-auto text-destructive" />
@@ -424,24 +443,41 @@ const LiveStreaming = () => {
                             Camera feed unavailable
                           </p>
                           <p className="text-xs text-muted-foreground">
-                            Failed to load frames. Check camera connection.
+                            Failed to load frames. Try switching to stream mode.
                           </p>
                           <Button
                             size="sm"
                             variant="outline"
                             onClick={() => {
+                              setUseStream(true)
                               setFeedError(false)
-                              // Trigger refresh by updating showFeed
-                              setShowFeed(false)
-                              setTimeout(() => setShowFeed(true), 100)
                             }}
                             className="mt-2"
                           >
-                            Retry
+                            Switch to Stream Mode
                           </Button>
                         </div>
                       </div>
+                    ) : useStream && jobId ? (
+                      // MJPEG Stream using video tag
+                      <video
+                        src={heatmapService.getLiveCameraStreamUrl(jobId)}
+                        autoPlay
+                        muted
+                        playsInline
+                        className="w-full h-full object-contain"
+                        onError={(e) => {
+                          console.error("Stream error:", e)
+                          setFeedError(true)
+                        }}
+                        onLoadedData={() => {
+                          setFeedError(false)
+                        }}
+                      >
+                        Your browser does not support video streaming.
+                      </video>
                     ) : cameraFeedUrl ? (
+                      // Single frame mode (fallback)
                       <>
                         <img 
                           src={cameraFeedUrl} 

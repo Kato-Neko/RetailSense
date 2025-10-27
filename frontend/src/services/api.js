@@ -407,6 +407,10 @@ export const heatmapService = {
   getLiveCameraFeedUrl: (jobId) => {
     return `${API_BASE_URL}/api/heatmap_jobs/${jobId}/live/feed`;
   },
+
+  getLiveCameraStreamUrl: (jobId) => {
+    return `${API_BASE_URL}/api/heatmap_jobs/${jobId}/live/stream`;
+  },
 };
 
 // Export the API client for other custom requests

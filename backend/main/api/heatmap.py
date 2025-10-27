@@ -698,7 +698,7 @@ def get_live_heatmap_image(job_id):
 @cross_origin()
 @jwt_required()
 def get_live_camera_feed(job_id):
-    """Get the current live camera feed frame"""
+    """Get the current live camera feed frame (single frame)"""
     try:
         from ..services.live_stream import get_latest_frame, get_live_job_processor
         
@@ -769,3 +769,92 @@ def get_live_camera_feed(job_id):
         except Exception as e2:
             logger.error(f"Error creating error image: {e2}")
             return jsonify({"error": str(e)}), 500
+
+
+@heatmap_bp.route('/heatmap_jobs/<job_id>/live/stream', methods=['GET', 'OPTIONS'])
+@cross_origin()
+@jwt_required()
+def get_live_camera_stream(job_id):
+    """MJPEG stream endpoint - browser compatible streaming"""
+    try:
+        from ..services.live_stream import get_live_job_processor
+        
+        processor = get_live_job_processor(job_id)
+        if not processor or not processor.is_running:
+            def generate_error():
+                import cv2
+                import numpy as np
+                error_img = np.zeros((480, 640, 3), dtype=np.uint8)
+                cv2.putText(error_img, 'Stream not available', (50, 200), 
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+                _, buffer = cv2.imencode('.jpg', error_img, [cv2.IMWRITE_JPEG_QUALITY, 85])
+                yield (b'--frame\r\n'
+                       b'Content-Type: image/jpeg\r\n\r\n' + buffer.tobytes() + b'\r\n')
+            
+            return Response(
+                generate_error(),
+                mimetype='multipart/x-mixed-replace; boundary=frame',
+                headers={
+                    'Cache-Control': 'no-cache, no-store, must-revalidate',
+                    'Pragma': 'no-cache',
+                    'Expires': '0'
+                }
+            )
+        
+        def generate():
+            import cv2
+            import time
+            last_frame_time = 0
+            frame_interval = 1.0 / 5.0  # 5 FPS for MJPEG stream
+            
+            while processor.is_running:
+                try:
+                    current_time = time.time()
+                    if current_time - last_frame_time < frame_interval:
+                        time.sleep(0.05)  # Small sleep to prevent CPU overload
+                        continue
+                    
+                    # Get latest frame
+                    with processor.latest_frame_lock:
+                        if processor.latest_frame is None:
+                            # Send placeholder
+                            import numpy as np
+                            placeholder_img = np.zeros((480, 640, 3), dtype=np.uint8)
+                            cv2.putText(placeholder_img, 'Waiting for frames...', (50, 200),
+                                       cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+                            _, placeholder_buffer = cv2.imencode('.jpg', placeholder_img, [cv2.IMWRITE_JPEG_QUALITY, 85])
+                            placeholder = placeholder_buffer.tobytes()
+                            yield (b'--frame\r\n'
+                                   b'Content-Type: image/jpeg\r\n\r\n' + placeholder + b'\r\n')
+                            last_frame_time = current_time
+                            continue
+                        
+                        frame = processor.latest_frame.copy()
+                    
+                    # Encode frame as JPEG
+                    _, buffer = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 85])
+                    frame_bytes = buffer.tobytes()
+                    
+                    # Yield frame in MJPEG format
+                    yield (b'--frame\r\n'
+                           b'Content-Type: image/jpeg\r\n\r\n' + frame_bytes + b'\r\n')
+                    
+                    last_frame_time = current_time
+                    
+                except Exception as e:
+                    logger.error(f"Error generating MJPEG frame: {e}")
+                    time.sleep(0.1)
+                    
+        return Response(
+            generate(),
+            mimetype='multipart/x-mixed-replace; boundary=frame',
+            headers={
+                'Cache-Control': 'no-cache, no-store, must-revalidate',
+                'Pragma': 'no-cache',
+                'Expires': '0'
+            }
+        )
+        
+    except Exception as e:
+        logger.error(f"Error starting MJPEG stream: {e}", exc_info=True)
+        return jsonify({"error": str(e)}), 500
