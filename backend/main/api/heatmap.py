@@ -806,25 +806,13 @@ def get_live_camera_stream(job_id):
         # Add detailed logging
         if not processor:
             logger.warning(f"Processor not found for job {job_id}")
-            # Try to get processor from jobs store directly for debugging
-            from ..services.state import get_jobs_store
-            jobs = get_jobs_store()
-            logger.warning(f"Available jobs: {list(jobs.keys())}")
-            if job_id in jobs:
-                logger.warning(f"Job {job_id} found in store with keys: {list(jobs[job_id].keys())}")
         elif not processor.is_running:
             logger.warning(f"Processor exists but is_running={processor.is_running} for job {job_id}")
-            # Check if latest_frame exists even if not running
-            with processor.latest_frame_lock:
-                has_frame = processor.latest_frame is not None
-            logger.info(f"Processor has frame: {has_frame}")
         else:
             logger.info(f"Processor found and running for job {job_id}")
-            with processor.latest_frame_lock:
-                has_frame = processor.latest_frame is not None
-            logger.info(f"Processor has frame: {has_frame}")
         
-        # If processor doesn't exist, return error
+        # If processor doesn't exist or isn't running, still try to stream from latest_frame
+        # This allows us to show frames even if the stream temporarily paused
         if not processor:
             def generate_error():
                 import cv2
@@ -875,30 +863,16 @@ def get_live_camera_stream(job_id):
                                b'Content-Type: image/jpeg\r\n\r\n' + buffer.tobytes() + b'\r\n')
                         break
                     
-                    # Re-check processor exists (it might have been removed)
-                    if not processor:
-                        error_img = np.zeros((480, 640, 3), dtype=np.uint8)
-                        cv2.putText(error_img, 'Stream ended', (50, 200),
-                                   cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
-                        _, buffer = cv2.imencode('.jpg', error_img, [cv2.IMWRITE_JPEG_QUALITY, 85])
-                        yield (b'--frame\r\n'
-                               b'Content-Type: image/jpeg\r\n\r\n' + buffer.tobytes() + b'\r\n')
-                        break
-                    
                     # Get latest frame
                     frame = None
-                    try:
-                        with processor.latest_frame_lock:
-                            if processor.latest_frame is not None:
-                                frame = processor.latest_frame.copy()
-                    except Exception as e:
-                        logger.error(f"Error accessing latest_frame: {e}")
-                        frame = None
+                    with processor.latest_frame_lock:
+                        if processor.latest_frame is not None:
+                            frame = processor.latest_frame.copy()
                     
                     if frame is None:
                         # No frame available yet - send placeholder
                         placeholder_img = np.zeros((480, 640, 3), dtype=np.uint8)
-                        status_text = 'Waiting for frames...' if (processor and processor.is_running) else 'Stream paused'
+                        status_text = 'Waiting for frames...' if processor.is_running else 'Stream paused'
                         cv2.putText(placeholder_img, status_text, (50, 200),
                                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
                         _, placeholder_buffer = cv2.imencode('.jpg', placeholder_img, [cv2.IMWRITE_JPEG_QUALITY, 85])
@@ -906,7 +880,6 @@ def get_live_camera_stream(job_id):
                                b'Content-Type: image/jpeg\r\n\r\n' + placeholder_buffer.tobytes() + b'\r\n')
                         last_frame_time = current_time
                         consecutive_errors = 0
-                        time.sleep(0.5)  # Wait longer if no frames
                         continue
                     
                     # Encode frame as JPEG
