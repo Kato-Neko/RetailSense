@@ -69,20 +69,49 @@ class LiveStreamProcessor:
             
             # Open RTSP stream
             logger.info(f"Attempting to open RTSP stream: {self.rtsp_url}")
-            self.cap = cv2.VideoCapture(self.rtsp_url)
-            self.cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)  # Minimize latency
             
-            # Give it a moment to connect
-            time.sleep(0.5)
+            # Set RTSP transport options for better compatibility
+            try:
+                self.cap = cv2.VideoCapture(self.rtsp_url, cv2.CAP_FFMPEG)
+                self.cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)  # Minimize latency
+                # Set timeout for RTSP connection
+                self.cap.set(cv2.CAP_PROP_OPEN_TIMEOUT_MSEC, 10000)  # 10 second timeout
+            except Exception as e:
+                logger.error(f"Error creating VideoCapture: {e}")
+                self.cap = None
             
-            if not self.cap.isOpened():
-                logger.error(f"Failed to open RTSP stream: {self.rtsp_url}")
-                self._update_status('error', 'Failed to connect to camera stream')
-                # Store a placeholder frame so feed endpoint doesn't fail
+            if not self.cap:
+                error_msg = f"Failed to create VideoCapture for {self.rtsp_url}"
+                logger.error(error_msg)
+                self._update_status('error', error_msg)
+                # Store error placeholder
                 import numpy as np
                 placeholder = np.zeros((480, 640, 3), dtype=np.uint8)
-                cv2.putText(placeholder, 'Failed to connect', (50, 200), 
+                cv2.putText(placeholder, 'Failed to create capture', (50, 180), 
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
+                cv2.putText(placeholder, 'Check RTSP URL', (50, 220), 
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
+                with self.latest_frame_lock:
+                    self.latest_frame = placeholder
+                return
+            
+            # Give it a moment to connect
+            time.sleep(1.0)  # Increased wait time
+            
+            if not self.cap.isOpened():
+                error_msg = f"Failed to open RTSP stream: {self.rtsp_url}. This may be because Railway cannot access local network IPs."
+                logger.error(error_msg)
+                logger.warning("If using a local IP (192.168.x.x), Railway cloud cannot access it. Use a public IP or VPN tunnel.")
+                self._update_status('error', 'Failed to connect to camera stream')
+                # Store a placeholder frame with helpful message
+                import numpy as np
+                placeholder = np.zeros((480, 640, 3), dtype=np.uint8)
+                cv2.putText(placeholder, 'Connection Failed', (50, 180), 
                            cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
+                cv2.putText(placeholder, 'RTSP URL not accessible', (50, 220), 
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
+                cv2.putText(placeholder, 'from cloud server', (50, 250), 
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
                 with self.latest_frame_lock:
                     self.latest_frame = placeholder
                 return

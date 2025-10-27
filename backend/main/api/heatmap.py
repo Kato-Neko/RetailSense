@@ -915,11 +915,27 @@ def get_live_camera_stream(job_id):
                         frame = None
                     
                     if frame is None:
-                        # No frame available yet - send placeholder
+                        # No frame available yet - send placeholder with status info
                         placeholder_img = np.zeros((480, 640, 3), dtype=np.uint8)
-                        status_text = 'Waiting for frames...' if (processor and processor.is_running) else 'Stream paused'
+                        if processor:
+                            if processor.is_running:
+                                status_text = 'Waiting for frames...'
+                                color = (255, 255, 255)
+                            else:
+                                status_text = 'Stream paused'
+                                color = (255, 255, 0)
+                        else:
+                            status_text = 'No processor'
+                            color = (0, 0, 255)
+                        
                         cv2.putText(placeholder_img, status_text, (50, 200),
-                                   cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+                                   cv2.FONT_HERSHEY_SIMPLEX, 0.7, color, 2)
+                        
+                        # If we've been waiting a while, add helpful message
+                        if time.time() - last_frame_time > 5:
+                            cv2.putText(placeholder_img, 'Check RTSP connection', (50, 240),
+                                       cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
+                        
                         _, placeholder_buffer = cv2.imencode('.jpg', placeholder_img, [cv2.IMWRITE_JPEG_QUALITY, 85])
                         yield (b'--frame\r\n'
                                b'Content-Type: image/jpeg\r\n\r\n' + placeholder_buffer.tobytes() + b'\r\n')
