@@ -27,6 +27,7 @@ const LiveStreaming = () => {
   const [heatmapUrl, setHeatmapUrl] = useState(null)
   const [cameraFeedUrl, setCameraFeedUrl] = useState(null)
   const [showFeed, setShowFeed] = useState(true) // Toggle between feed and heatmap
+  const [feedError, setFeedError] = useState(false)
 
   const handleInputChange = (field, value) => {
     setCameraConfig((prev) => ({
@@ -135,6 +136,9 @@ const LiveStreaming = () => {
 
     let abortController = new AbortController()
     let isMounted = true
+    let failedAttempts = 0
+    const MAX_FAILED_ATTEMPTS = 10 // Stop after 10 consecutive failures
+    let feedInterval = null
 
     const refreshFeed = async () => {
       if (!isMounted || !showFeed) return
@@ -149,27 +153,48 @@ const LiveStreaming = () => {
         img.onload = () => {
           if (isMounted) {
             setCameraFeedUrl(url)
+            setFeedError(false)
+            failedAttempts = 0 // Reset counter on success
           }
         }
         img.onerror = () => {
-          // Silently fail - don't spam errors
-          console.warn('Failed to load camera frame')
+          failedAttempts++
+          if (failedAttempts >= MAX_FAILED_ATTEMPTS) {
+            console.error(`Camera feed failed to load ${MAX_FAILED_ATTEMPTS} times. Stopping refresh.`)
+            setFeedError(true)
+            if (feedInterval) {
+              clearInterval(feedInterval)
+              feedInterval = null
+            }
+          } else {
+            console.warn(`Failed to load camera frame (${failedAttempts}/${MAX_FAILED_ATTEMPTS})`)
+          }
         }
         img.src = url
       } catch (error) {
-        // Silently handle errors to prevent spam
+        failedAttempts++
         console.warn('Camera feed refresh error:', error)
+        if (failedAttempts >= MAX_FAILED_ATTEMPTS) {
+          console.error(`Camera feed failed ${MAX_FAILED_ATTEMPTS} times. Stopping refresh.`)
+          setFeedError(true)
+          if (feedInterval) {
+            clearInterval(feedInterval)
+            feedInterval = null
+          }
+        }
       }
     }
 
     // Refresh immediately and then every 500ms (2 fps) for better performance
     refreshFeed()
-    const feedInterval = setInterval(refreshFeed, 500)
+    feedInterval = setInterval(refreshFeed, 500)
 
     return () => {
       isMounted = false
       abortController.abort()
-      clearInterval(feedInterval)
+      if (feedInterval) {
+        clearInterval(feedInterval)
+      }
     }
   }, [jobId, isConnected, showFeed])
 
@@ -391,14 +416,39 @@ const LiveStreaming = () => {
                 <div className="aspect-video bg-muted rounded-lg overflow-hidden relative">
                   {showFeed ? (
                     // Camera Feed View
-                    cameraFeedUrl ? (
+                    feedError ? (
+                      <div className="w-full h-full flex items-center justify-center">
+                        <div className="text-center space-y-2">
+                          <Camera className="h-12 w-12 mx-auto text-destructive" />
+                          <p className="text-sm font-medium text-destructive">
+                            Camera feed unavailable
+                          </p>
+                          <p className="text-xs text-muted-foreground">
+                            Failed to load frames. Check camera connection.
+                          </p>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => {
+                              setFeedError(false)
+                              // Trigger refresh by updating showFeed
+                              setShowFeed(false)
+                              setTimeout(() => setShowFeed(true), 100)
+                            }}
+                            className="mt-2"
+                          >
+                            Retry
+                          </Button>
+                        </div>
+                      </div>
+                    ) : cameraFeedUrl ? (
                       <>
                         <img 
                           src={cameraFeedUrl} 
                           alt="Live Camera Feed" 
                           className="w-full h-full object-contain"
                           onError={() => {
-                            setCameraFeedUrl(null)
+                            // Individual image error - don't clear URL, let retry logic handle it
                           }}
                         />
                         <div className="absolute bottom-2 right-2 bg-black/50 text-white text-xs px-2 py-1 rounded">
