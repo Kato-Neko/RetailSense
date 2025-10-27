@@ -465,7 +465,6 @@ const LiveStreaming = () => {
                         src={heatmapService.getLiveCameraStreamUrl(jobId)}
                         alt="Live Camera Stream"
                         className="w-full h-full object-contain"
-                        crossOrigin="anonymous"
                         onError={(e) => {
                           console.error("Stream error:", e)
                           const target = e.target || e.currentTarget

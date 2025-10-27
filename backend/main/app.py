@@ -46,14 +46,12 @@ CORS(
 )
 
 # Add OPTIONS handler for all routes
+# Note: Flask-CORS handles CORS automatically, so we only handle OPTIONS if CORS doesn't
 @app.before_request
 def handle_preflight():
     if request.method == "OPTIONS":
+        # Let Flask-CORS handle it - don't add duplicate headers
         response = make_response()
-        response.headers.add("Access-Control-Allow-Origin", "*")
-        response.headers.add("Access-Control-Allow-Headers", "Content-Type,Authorization")
-        response.headers.add("Access-Control-Allow-Methods", "GET,POST,PUT,DELETE,OPTIONS")
-        response.headers.add("Access-Control-Expose-Headers", "Content-Type,Authorization,Content-Disposition")
         return response
 
 

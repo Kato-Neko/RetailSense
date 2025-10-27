@@ -777,13 +777,8 @@ def get_live_camera_stream(job_id):
     """MJPEG stream endpoint - browser compatible streaming
     Note: JWT check is done manually to avoid issues with streaming"""
     if request.method == 'OPTIONS':
+        # Let Flask-CORS handle OPTIONS requests
         response = Response(status=200)
-        response.headers.update({
-            'Access-Control-Allow-Origin': '*',
-            'Access-Control-Allow-Methods': 'GET, OPTIONS',
-            'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-            'Access-Control-Expose-Headers': 'Content-Type'
-        })
         return response
     
     # Manual JWT check for streaming compatibility
@@ -824,9 +819,7 @@ def get_live_camera_stream(job_id):
                 headers={
                     'Cache-Control': 'no-cache, no-store, must-revalidate',
                     'Pragma': 'no-cache',
-                    'Expires': '0',
-                    'Access-Control-Allow-Origin': '*',
-                    'Access-Control-Expose-Headers': 'Content-Type'
+                    'Expires': '0'
                 }
             )
             return response
@@ -881,9 +874,7 @@ def get_live_camera_stream(job_id):
             headers={
                 'Cache-Control': 'no-cache, no-store, must-revalidate',
                 'Pragma': 'no-cache',
-                'Expires': '0',
-                'Access-Control-Allow-Origin': '*',
-                'Access-Control-Expose-Headers': 'Content-Type'
+                'Expires': '0'
             }
         )
         return response
@@ -909,8 +900,7 @@ def get_live_camera_stream(job_id):
                 generate_error_stream(),
                 mimetype='multipart/x-mixed-replace; boundary=frame',
                 headers={
-                    'Cache-Control': 'no-cache, no-store, must-revalidate',
-                    'Access-Control-Allow-Origin': '*'
+                    'Cache-Control': 'no-cache, no-store, must-revalidate'
                 }
             )
         except Exception as e2:
