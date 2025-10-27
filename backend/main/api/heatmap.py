@@ -802,7 +802,18 @@ def get_live_camera_stream(job_id):
         from ..services.live_stream import get_live_job_processor
         
         processor = get_live_job_processor(job_id)
-        if not processor or not processor.is_running:
+        
+        # Add detailed logging
+        if not processor:
+            logger.warning(f"Processor not found for job {job_id}")
+        elif not processor.is_running:
+            logger.warning(f"Processor exists but is_running={processor.is_running} for job {job_id}")
+        else:
+            logger.info(f"Processor found and running for job {job_id}")
+        
+        # If processor doesn't exist or isn't running, still try to stream from latest_frame
+        # This allows us to show frames even if the stream temporarily paused
+        if not processor:
             def generate_error():
                 import cv2
                 import numpy as np
@@ -827,32 +838,49 @@ def get_live_camera_stream(job_id):
         def generate():
             import cv2
             import time
+            import numpy as np
             last_frame_time = 0
             frame_interval = 1.0 / 5.0  # 5 FPS for MJPEG stream
+            consecutive_errors = 0
+            max_errors = 10
             
-            while processor.is_running:
+            # Stream while processor exists (not just while running, to show last frame)
+            while True:
                 try:
                     current_time = time.time()
                     if current_time - last_frame_time < frame_interval:
                         time.sleep(0.05)  # Small sleep to prevent CPU overload
                         continue
                     
+                    # Check if processor still exists and has frames
+                    if not processor:
+                        # Processor was removed, send error
+                        error_img = np.zeros((480, 640, 3), dtype=np.uint8)
+                        cv2.putText(error_img, 'Stream ended', (50, 200),
+                                   cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+                        _, buffer = cv2.imencode('.jpg', error_img, [cv2.IMWRITE_JPEG_QUALITY, 85])
+                        yield (b'--frame\r\n'
+                               b'Content-Type: image/jpeg\r\n\r\n' + buffer.tobytes() + b'\r\n')
+                        break
+                    
                     # Get latest frame
+                    frame = None
                     with processor.latest_frame_lock:
-                        if processor.latest_frame is None:
-                            # Send placeholder
-                            import numpy as np
-                            placeholder_img = np.zeros((480, 640, 3), dtype=np.uint8)
-                            cv2.putText(placeholder_img, 'Waiting for frames...', (50, 200),
-                                       cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
-                            _, placeholder_buffer = cv2.imencode('.jpg', placeholder_img, [cv2.IMWRITE_JPEG_QUALITY, 85])
-                            placeholder = placeholder_buffer.tobytes()
-                            yield (b'--frame\r\n'
-                                   b'Content-Type: image/jpeg\r\n\r\n' + placeholder + b'\r\n')
-                            last_frame_time = current_time
-                            continue
-                        
-                        frame = processor.latest_frame.copy()
+                        if processor.latest_frame is not None:
+                            frame = processor.latest_frame.copy()
+                    
+                    if frame is None:
+                        # No frame available yet - send placeholder
+                        placeholder_img = np.zeros((480, 640, 3), dtype=np.uint8)
+                        status_text = 'Waiting for frames...' if processor.is_running else 'Stream paused'
+                        cv2.putText(placeholder_img, status_text, (50, 200),
+                                   cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+                        _, placeholder_buffer = cv2.imencode('.jpg', placeholder_img, [cv2.IMWRITE_JPEG_QUALITY, 85])
+                        yield (b'--frame\r\n'
+                               b'Content-Type: image/jpeg\r\n\r\n' + placeholder_buffer.tobytes() + b'\r\n')
+                        last_frame_time = current_time
+                        consecutive_errors = 0
+                        continue
                     
                     # Encode frame as JPEG
                     _, buffer = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 85])
@@ -863,9 +891,25 @@ def get_live_camera_stream(job_id):
                            b'Content-Type: image/jpeg\r\n\r\n' + frame_bytes + b'\r\n')
                     
                     last_frame_time = current_time
+                    consecutive_errors = 0
                     
                 except Exception as e:
-                    logger.error(f"Error generating MJPEG frame: {e}")
+                    consecutive_errors += 1
+                    logger.error(f"Error generating MJPEG frame (error {consecutive_errors}/{max_errors}): {e}")
+                    
+                    if consecutive_errors >= max_errors:
+                        # Too many errors, send error frame and stop
+                        try:
+                            error_img = np.zeros((480, 640, 3), dtype=np.uint8)
+                            cv2.putText(error_img, 'Stream error', (50, 200),
+                                       cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
+                            _, buffer = cv2.imencode('.jpg', error_img, [cv2.IMWRITE_JPEG_QUALITY, 85])
+                            yield (b'--frame\r\n'
+                                   b'Content-Type: image/jpeg\r\n\r\n' + buffer.tobytes() + b'\r\n')
+                        except:
+                            pass
+                        break
+                    
                     time.sleep(0.1)
                     
         response = Response(
