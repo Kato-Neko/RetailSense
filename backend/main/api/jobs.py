@@ -416,21 +416,47 @@ def create_live_job():
         conn = get_db_connection()
         try:
             cur = conn.cursor()
-            cur.execute('''
-                INSERT INTO jobs (job_id, "user", input_video_name, input_floorplan_name, status, message, 
-                                 start_datetime, end_datetime, created_at, updated_at, output_heatmap_path, output_video_path,
-                                 job_type, rtsp_url, camera_name, is_live)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-            ''', (
-                job_id, current_user, 'live_stream', None, 'connecting', 'Connecting to camera stream...',
-                datetime.datetime.now(), None, datetime.datetime.now(), datetime.datetime.now(),
-                None, None, 'live', rtsp_url, camera_name, True
-            ))
+            
+            # Check if new columns exist
+            cur.execute("""
+                SELECT column_name 
+                FROM information_schema.columns 
+                WHERE table_name='jobs' AND column_name IN ('camera_name', 'rtsp_url', 'is_live', 'job_type')
+            """)
+            existing_columns = {row[0] for row in cur.fetchall()}
+            
+            # Build INSERT query based on available columns
+            base_columns = ['job_id', '"user"', 'input_video_name', 'input_floorplan_name', 'status', 'message', 
+                           'start_datetime', 'end_datetime', 'created_at', 'updated_at', 'output_heatmap_path', 'output_video_path']
+            base_values = [job_id, current_user, 'live_stream', None, 'connecting', 'Connecting to camera stream...',
+                          datetime.datetime.now(), None, datetime.datetime.now(), datetime.datetime.now(), None, None]
+            
+            if 'job_type' in existing_columns:
+                base_columns.append('job_type')
+                base_values.append('live')
+            if 'rtsp_url' in existing_columns:
+                base_columns.append('rtsp_url')
+                base_values.append(rtsp_url)
+            if 'camera_name' in existing_columns:
+                base_columns.append('camera_name')
+                base_values.append(camera_name)
+            if 'is_live' in existing_columns:
+                base_columns.append('is_live')
+                base_values.append(True)
+            
+            placeholders = ', '.join(['%s'] * len(base_values))
+            columns_str = ', '.join(base_columns)
+            
+            cur.execute(f'''
+                INSERT INTO jobs ({columns_str})
+                VALUES ({placeholders})
+            ''', tuple(base_values))
             conn.commit()
             cur.close()
         except Exception as e:
             logger.error(f"Error inserting live job into database: {e}")
             conn.rollback()
+            return jsonify({"error": f"Database error: {str(e)}. Please run the database migration. See backend/migrations/APPLY_MIGRATION.md"}), 500
         finally:
             conn.close()
         
@@ -462,7 +488,20 @@ def stop_live_job(job_id):
         # Verify job belongs to user
         conn = get_db_connection()
         cur = conn.cursor()
-        cur.execute("SELECT \"user\", is_live FROM jobs WHERE job_id = %s", (job_id,))
+        
+        # Check if is_live column exists
+        cur.execute("""
+            SELECT column_name 
+            FROM information_schema.columns 
+            WHERE table_name='jobs' AND column_name='is_live'
+        """)
+        has_is_live = cur.fetchone() is not None
+        
+        if has_is_live:
+            cur.execute("SELECT \"user\", is_live FROM jobs WHERE job_id = %s", (job_id,))
+        else:
+            cur.execute("SELECT \"user\" FROM jobs WHERE job_id = %s", (job_id,))
+        
         job_row = cur.fetchone()
         cur.close()
         conn.close()
@@ -473,7 +512,7 @@ def stop_live_job(job_id):
         if job_row[0] != current_user:
             return jsonify({"error": "Unauthorized"}), 403
         
-        if not job_row[1]:
+        if has_is_live and not job_row[1]:
             return jsonify({"error": "Job is not a live streaming job"}), 400
         
         # Get processor and stop it
@@ -515,13 +554,29 @@ def get_live_job_status(job_id):
     try:
         current_user = get_jwt_identity()
         
-        # Get job from database
+        # Get job from database - handle missing columns gracefully
         conn = get_db_connection()
         cur = conn.cursor()
-        cur.execute('''
-            SELECT "user", status, message, camera_name, rtsp_url, is_live, created_at, updated_at
-            FROM jobs WHERE job_id = %s
-        ''', (job_id,))
+        
+        # Check if new columns exist
+        cur.execute("""
+            SELECT column_name 
+            FROM information_schema.columns 
+            WHERE table_name='jobs' AND column_name IN ('camera_name', 'rtsp_url', 'is_live', 'job_type')
+        """)
+        existing_columns = {row[0] for row in cur.fetchall()}
+        
+        # Build query based on available columns
+        columns = ['"user"', 'status', 'message', 'created_at', 'updated_at']
+        if 'camera_name' in existing_columns:
+            columns.insert(3, 'camera_name')
+        if 'rtsp_url' in existing_columns:
+            columns.insert(4, 'rtsp_url')
+        if 'is_live' in existing_columns:
+            columns.insert(5, 'is_live')
+        
+        query = f'SELECT {", ".join(columns)} FROM jobs WHERE job_id = %s'
+        cur.execute(query, (job_id,))
         job_row = cur.fetchone()
         cur.close()
         conn.close()
@@ -532,23 +587,34 @@ def get_live_job_status(job_id):
         if job_row[0] != current_user:
             return jsonify({"error": "Unauthorized"}), 403
         
+        # Parse results based on available columns
+        status_idx = 1
+        message_idx = 2
+        camera_name_idx = 3 if 'camera_name' in existing_columns else None
+        rtsp_url_idx = 4 if 'rtsp_url' in existing_columns else None
+        is_live_idx = 5 if 'is_live' in existing_columns else None
+        created_at_idx = len(columns) - 2
+        updated_at_idx = len(columns) - 1
+        
         # Get processor status
         processor = get_live_job_processor(job_id)
         is_running = processor.is_running if processor else False
         frame_count = processor.frame_count if processor else 0
         
-        return jsonify({
+        response_data = {
             "job_id": job_id,
-            "status": job_row[1],
-            "message": job_row[2],
-            "camera_name": job_row[3],
-            "rtsp_url": job_row[4],
-            "is_live": job_row[5],
+            "status": job_row[status_idx],
+            "message": job_row[message_idx],
+            "camera_name": job_row[camera_name_idx] if camera_name_idx else None,
+            "rtsp_url": job_row[rtsp_url_idx] if rtsp_url_idx else None,
+            "is_live": job_row[is_live_idx] if is_live_idx else False,
             "is_running": is_running,
             "frame_count": frame_count,
-            "created_at": to_manila_iso(job_row[6]) if job_row[6] else None,
-            "updated_at": to_manila_iso(job_row[7]) if job_row[7] else None
-        }), 200
+            "created_at": to_manila_iso(job_row[created_at_idx]) if job_row[created_at_idx] else None,
+            "updated_at": to_manila_iso(job_row[updated_at_idx]) if job_row[updated_at_idx] else None
+        }
+        
+        return jsonify(response_data), 200
         
     except Exception as e:
         logger.error(f"Error getting live job status: {e}", exc_info=True)
