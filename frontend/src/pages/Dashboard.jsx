@@ -100,23 +100,24 @@ const Dashboard = () => {
         ).length;
         const heatmapCount = completedJobs.length
 
-        // For this demo, we'll estimate visitor count based on completed jobs
-        const estimatedVisitors = heatmapCount * 150 + Math.floor(Math.random() * 200)
-
+        // Set initial stats (will be updated after processing detections)
         setStats({
-          totalVisitors: estimatedVisitors,
-          peakHour: "14:00-15:00", // This would ideally come from real analysis
+          totalVisitors: 0,
+          peakHour: "14:00-15:00",
           processedVideos: processedVideos,
           generatedHeatmaps: heatmapCount,
         })
 
         // Prepare traffic counts and unique visitor set
+        // IMPORTANT: Fetch detections ONCE per job and process for all views
         const trafficCounts = {}
         let totalUniqueVisitors = new Set()
         let hourlyUniqueVisitors = Array.from({ length: 24 }, () => new Set())
+        let weeklyUniqueVisitors = Array.from({ length: 7 }, () => new Set())
+        let monthlyUniqueVisitors = Array.from({ length: 12 }, () => new Set())
 
         for (const job of completedJobs) {
-          // Fetch detections from the new API endpoint
+          // Fetch detections from the new API endpoint - ONLY ONCE
           try {
             const detectionsResponse = await heatmapService.getDetections(job.job_id)
             console.log("Detections Response:", detectionsResponse)
@@ -131,23 +132,25 @@ const Dashboard = () => {
                 const timeInSeconds = det.timestamp || (det.frame / fps)
                 const detectionTime = startDate ? new Date(startDate.getTime() + timeInSeconds * 1000) : null
                 const hour = detectionTime ? detectionTime.getHours() : null
+                const day = detectionTime ? detectionTime.getDay() : null
+                const month = detectionTime ? detectionTime.getMonth() : null
 
                 if (trackId && hour !== null) {
                   totalUniqueVisitors.add(`${job.job_id}_${trackId}`) // Ensure uniqueness across jobs
                   hourlyUniqueVisitors[hour].add(`${job.job_id}_${trackId}`)
                 }
+                if (trackId && day !== null) {
+                  weeklyUniqueVisitors[day].add(`${job.job_id}_${trackId}`)
+                }
+                if (trackId && month !== null) {
+                  monthlyUniqueVisitors[month].add(`${job.job_id}_${trackId}`)
+                }
               })
             } else {
               console.warn(`No detections found for job ${job.job_id}`)
-              toast.warn(`No detections found for job ${job.job_id}`)
             }
           } catch (error) {
             console.error(`Error fetching detections for job ${job.job_id}:`, error)
-            let errorMessage = `Failed to load detections for job ${job.job_id}`
-            if (error.response && error.response.status) {
-              errorMessage += ` (Status: ${error.response.status})`
-            }
-            toast.error(errorMessage)
           }
         }
 
@@ -190,27 +193,7 @@ const Dashboard = () => {
         }))
 
         // --- Weekly Data ---
-        // Group detections by day of week (0=Sun, 6=Sat)
-        let weeklyUniqueVisitors = Array.from({ length: 7 }, () => new Set())
-        for (const job of completedJobs) {
-          try {
-            const detectionsResponse = await heatmapService.getDetections(job.job_id)
-            if (detectionsResponse && detectionsResponse.detections) {
-              const detections = detectionsResponse.detections
-              const fps = detectionsResponse.fps
-              const startDate = job.start_datetime ? new Date(job.start_datetime) : null
-              detections.forEach((det) => {
-                const trackId = det.track_id
-                const timeInSeconds = det.timestamp || (det.frame / fps)
-                const detectionTime = startDate ? new Date(startDate.getTime() + timeInSeconds * 1000) : null
-                const day = detectionTime ? detectionTime.getDay() : null
-                if (trackId && day !== null) {
-                  weeklyUniqueVisitors[day].add(`${job.job_id}_${trackId}`)
-                }
-              })
-            }
-          } catch {}
-        }
+        // Use data already processed above (no need to fetch again!)
         const weekDays = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
         const weeklyDataArr = weekDays.map((day, idx) => ({
           day,
@@ -219,27 +202,7 @@ const Dashboard = () => {
         setWeeklyData(weeklyDataArr)
 
         // --- Monthly Data ---
-        // Group detections by month (0=Jan, 11=Dec)
-        let monthlyUniqueVisitors = Array.from({ length: 12 }, () => new Set())
-        for (const job of completedJobs) {
-          try {
-            const detectionsResponse = await heatmapService.getDetections(job.job_id)
-            if (detectionsResponse && detectionsResponse.detections) {
-              const detections = detectionsResponse.detections
-              const fps = detectionsResponse.fps
-              const startDate = job.start_datetime ? new Date(job.start_datetime) : null
-              detections.forEach((det) => {
-                const trackId = det.track_id
-                const timeInSeconds = det.timestamp || (det.frame / fps)
-                const detectionTime = startDate ? new Date(startDate.getTime() + timeInSeconds * 1000) : null
-                const month = detectionTime ? detectionTime.getMonth() : null
-                if (trackId && month !== null) {
-                  monthlyUniqueVisitors[month].add(`${job.job_id}_${trackId}`)
-                }
-              })
-            }
-          } catch {}
-        }
+        // Use data already processed above (no need to fetch again!)
         const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
         const monthlyDataArr = monthNames.map((month, idx) => ({
           month,

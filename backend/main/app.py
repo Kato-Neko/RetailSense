@@ -194,7 +194,7 @@ def cleanup_orphaned_jobs():
 
 if __name__ == '__main__':
     # init_db()  # No longer needed, handled by Supabase
-    cleanup_orphaned_jobs()  # Clean up jobs on startup
+    # cleanup_orphaned_jobs()  # Clean up jobs on startup - DISABLED due to database connection issues
     debug_mode = os.getenv('FLASK_DEBUG', 'False').lower() == 'true'
     port = int(os.getenv('PORT', 5000))
     app.run(host='0.0.0.0', port=port, debug=debug_mode)
