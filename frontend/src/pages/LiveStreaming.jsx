@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -9,6 +9,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { toast } from "sonner"
 import { Video, Camera, Wifi, Settings, Play, Square, Loader2 } from "lucide-react"
 import { Alert, AlertDescription } from "@/components/ui/alert"
+import { heatmapService } from "../services/api"
 
 const LiveStreaming = () => {
   const [cameraConfig, setCameraConfig] = useState({
@@ -21,6 +22,9 @@ const LiveStreaming = () => {
   const [isConnected, setIsConnected] = useState(false)
   const [isConnecting, setIsConnecting] = useState(false)
   const [streamStatus, setStreamStatus] = useState("disconnected") // disconnected, connecting, connected, error
+  const [jobId, setJobId] = useState(null)
+  const [liveStatus, setLiveStatus] = useState(null)
+  const [heatmapUrl, setHeatmapUrl] = useState(null)
 
   const handleInputChange = (field, value) => {
     setCameraConfig((prev) => ({
@@ -55,23 +59,13 @@ const LiveStreaming = () => {
         return
       }
 
-      // TODO: Replace with actual API call when backend is ready
-      // const response = await fetch('/api/heatmap_jobs/live', {
-      //   method: 'POST',
-      //   headers: {
-      //     'Content-Type': 'application/json',
-      //     'Authorization': `Bearer ${localStorage.getItem('access_token')}`
-      //   },
-      //   body: JSON.stringify({
-      //     rtsp_url: rtspUrl,
-      //     camera_name: cameraConfig.cameraName || cameraConfig.ipAddress,
-      //     points_data: [] // Will be configured later
-      //   })
-      // })
+      const response = await heatmapService.createLiveJob({
+        rtsp_url: rtspUrl,
+        camera_name: cameraConfig.cameraName || cameraConfig.ipAddress || "Unnamed Camera",
+        points_data: [] // Will be configured later
+      })
 
-      // Simulate connection for now
-      await new Promise((resolve) => setTimeout(resolve, 2000))
-
+      setJobId(response.job_id)
       setIsConnected(true)
       setIsConnecting(false)
       setStreamStatus("connected")
@@ -80,22 +74,58 @@ const LiveStreaming = () => {
       console.error("Connection error:", error)
       setIsConnecting(false)
       setStreamStatus("error")
-      toast.error("Failed to connect to camera. Please check your settings.")
+      const errorMessage = error?.error || "Failed to connect to camera. Please check your settings."
+      toast.error(errorMessage)
     }
   }
 
-  const handleDisconnect = () => {
+  const handleDisconnect = async () => {
+    if (jobId) {
+      try {
+        await heatmapService.stopLiveJob(jobId)
+        toast.success("Camera disconnected successfully")
+      } catch (error) {
+        console.error("Disconnect error:", error)
+        toast.error("Failed to disconnect camera properly")
+      }
+    }
     setIsConnected(false)
     setStreamStatus("disconnected")
-    toast.info("Camera disconnected")
+    setJobId(null)
   }
 
-  const handleStopStream = () => {
-    // TODO: Implement stop stream API call
-    setIsConnected(false)
-    setStreamStatus("disconnected")
-    toast.info("Stream stopped")
-  }
+  // Poll for live stream status
+  useEffect(() => {
+    if (!jobId || !isConnected) return
+
+    const pollStatus = async () => {
+      try {
+        const status = await heatmapService.getLiveJobStatus(jobId)
+        setLiveStatus(status)
+        
+        // Update connection status based on backend status
+        if (status.status === 'live' && status.is_running) {
+          setStreamStatus("connected")
+          // Update heatmap URL with timestamp to force refresh
+          const url = heatmapService.getLiveHeatmapImageUrl(jobId)
+          setHeatmapUrl(`${url}?t=${Date.now()}`)
+        } else if (status.status === 'error') {
+          setStreamStatus("error")
+        } else if (status.status === 'stopped') {
+          setIsConnected(false)
+          setStreamStatus("disconnected")
+        }
+      } catch (error) {
+        console.error("Error polling status:", error)
+      }
+    }
+
+    // Poll immediately, then every 5 seconds
+    pollStatus()
+    const interval = setInterval(pollStatus, 5000)
+
+    return () => clearInterval(interval)
+  }, [jobId, isConnected])
 
   return (
     <div className="space-y-6">
@@ -282,17 +312,41 @@ const LiveStreaming = () => {
             </div>
 
             {isConnected && (
-              <div className="pt-4 border-t">
-                <div className="aspect-video bg-muted rounded-lg flex items-center justify-center">
-                  <div className="text-center space-y-2">
-                    <Video className="h-12 w-12 mx-auto text-muted-foreground" />
-                    <p className="text-sm text-muted-foreground">
-                      Live stream preview will appear here
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      Backend integration coming soon
-                    </p>
+              <div className="pt-4 border-t space-y-4">
+                {liveStatus && (
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-muted-foreground">Frames Processed:</span>
+                    <span className="font-medium">{liveStatus.frame_count || 0}</span>
                   </div>
+                )}
+                <div className="aspect-video bg-muted rounded-lg overflow-hidden relative">
+                  {heatmapUrl ? (
+                    <>
+                      <img 
+                        src={heatmapUrl} 
+                        alt="Live Heatmap" 
+                        className="w-full h-full object-contain"
+                        onError={() => {
+                          setHeatmapUrl(null)
+                        }}
+                      />
+                      <div className="absolute bottom-2 right-2 bg-black/50 text-white text-xs px-2 py-1 rounded">
+                        Live Heatmap
+                      </div>
+                    </>
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center">
+                      <div className="text-center space-y-2">
+                        <Video className="h-12 w-12 mx-auto text-muted-foreground" />
+                        <p className="text-sm text-muted-foreground">
+                          Waiting for heatmap data...
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          Heatmap updates every 30 seconds
+                        </p>
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
             )}

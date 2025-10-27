@@ -672,3 +672,23 @@ def get_heatmap_analysis_logic(job_id):
 @jwt_required()
 def get_heatmap_analysis(job_id):
     return get_heatmap_analysis_logic(job_id)
+
+
+@heatmap_bp.route('/heatmap_jobs/<job_id>/live/heatmap', methods=['GET', 'OPTIONS'])
+@cross_origin()
+@jwt_required()
+def get_live_heatmap_image(job_id):
+    """Get the current live heatmap image"""
+    try:
+        supabase_path = f"{job_id}/live_heatmap.jpg"
+        logger.info(f"Attempting to download live heatmap image from Supabase: {supabase_path}")
+        img_bytes = download_image_bytes_from_supabase(supabase_path)
+        if img_bytes is None:
+            logger.warning(f"Live heatmap image not found in Supabase: {supabase_path}")
+            return jsonify({"error": "Live heatmap not available yet"}), 404
+        
+        logger.info(f"Successfully downloaded live heatmap image from Supabase: {supabase_path}")
+        return Response(img_bytes, mimetype="image/jpeg")
+    except Exception as e:
+        logger.error(f"Error getting live heatmap: {e}")
+        return jsonify({"error": str(e)}), 500

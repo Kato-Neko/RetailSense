@@ -11,6 +11,7 @@ from ..core.config import UPLOAD_FOLDER, RESULTS_FOLDER, ALLOWED_EXTENSIONS_VIDE
 from ..core.db import get_db_connection
 from ..services.video_jobs import process_video_job
 from ..services.state import get_jobs_store
+from ..services.live_stream import LiveStreamProcessor, get_live_job_processor
 from ..helpers.files import allowed_file
 from werkzeug.utils import secure_filename
 
@@ -355,3 +356,200 @@ def get_job_time_range(job_id):
         "start_time": start_time,
         "end_time": end_time
     })
+
+
+@jobs_bp.route('/heatmap_jobs/live', methods=['POST', 'OPTIONS'])
+@cross_origin()
+@jwt_required()
+def create_live_job():
+    """Create a new live streaming job"""
+    try:
+        data = request.get_json()
+        rtsp_url = data.get('rtsp_url')
+        camera_name = data.get('camera_name')
+        points_data = data.get('points_data', [])
+        
+        if not rtsp_url:
+            return jsonify({"error": "Missing rtsp_url"}), 400
+        
+        if not camera_name:
+            camera_name = "Unnamed Camera"
+        
+        # Generate job ID
+        job_id = str(uuid.uuid4())
+        current_user = get_jwt_identity()
+        
+        # Create job directories
+        job_upload_folder = os.path.join(UPLOAD_FOLDER, job_id)
+        os.makedirs(job_upload_folder, exist_ok=True)
+        job_results_folder = os.path.join(RESULTS_FOLDER, job_id)
+        os.makedirs(job_results_folder, exist_ok=True)
+        
+        # Save points data if provided
+        points_path = None
+        if points_data:
+            points_filename = f"points_{job_id}.json"
+            points_path = os.path.join(job_upload_folder, points_filename)
+            with open(points_path, 'w') as f:
+                json.dump(points_data, f)
+        
+        # Create processor
+        processor = LiveStreamProcessor(
+            rtsp_url=rtsp_url,
+            job_id=job_id,
+            camera_name=camera_name,
+            points_path=points_path
+        )
+        
+        # Store job in memory
+        jobs = get_jobs_store()
+        jobs[job_id] = {
+            'status': 'connecting',
+            'message': 'Connecting to camera stream...',
+            'processor': processor,
+            'job_type': 'live',
+            'camera_name': camera_name,
+            'rtsp_url': rtsp_url
+        }
+        
+        # Insert into database
+        conn = get_db_connection()
+        try:
+            cur = conn.cursor()
+            cur.execute('''
+                INSERT INTO jobs (job_id, "user", input_video_name, input_floorplan_name, status, message, 
+                                 start_datetime, end_datetime, created_at, updated_at, output_heatmap_path, output_video_path,
+                                 job_type, rtsp_url, camera_name, is_live)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            ''', (
+                job_id, current_user, 'live_stream', None, 'connecting', 'Connecting to camera stream...',
+                datetime.datetime.now(), None, datetime.datetime.now(), datetime.datetime.now(),
+                None, None, 'live', rtsp_url, camera_name, True
+            ))
+            conn.commit()
+            cur.close()
+        except Exception as e:
+            logger.error(f"Error inserting live job into database: {e}")
+            conn.rollback()
+        finally:
+            conn.close()
+        
+        # Start processing in background
+        started = processor.start()
+        if not started:
+            return jsonify({"error": "Failed to start stream processing"}), 500
+        
+        return jsonify({
+            "job_id": job_id,
+            "status": "connecting",
+            "message": "Connecting to camera stream...",
+            "camera_name": camera_name
+        }), 200
+        
+    except Exception as e:
+        logger.error(f"Error creating live job: {e}", exc_info=True)
+        return jsonify({"error": f"Server error: {str(e)}"}), 500
+
+
+@jobs_bp.route('/heatmap_jobs/<job_id>/live/stop', methods=['POST', 'OPTIONS'])
+@cross_origin()
+@jwt_required()
+def stop_live_job(job_id):
+    """Stop a live streaming job"""
+    try:
+        current_user = get_jwt_identity()
+        
+        # Verify job belongs to user
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute("SELECT \"user\", is_live FROM jobs WHERE job_id = %s", (job_id,))
+        job_row = cur.fetchone()
+        cur.close()
+        conn.close()
+        
+        if not job_row:
+            return jsonify({"error": "Job not found"}), 404
+        
+        if job_row[0] != current_user:
+            return jsonify({"error": "Unauthorized"}), 403
+        
+        if not job_row[1]:
+            return jsonify({"error": "Job is not a live streaming job"}), 400
+        
+        # Get processor and stop it
+        processor = get_live_job_processor(job_id)
+        if processor:
+            processor.stop()
+            processor._update_status('stopped', 'Live stream stopped by user')
+        
+        # Update in-memory store
+        jobs = get_jobs_store()
+        if job_id in jobs:
+            jobs[job_id]['status'] = 'stopped'
+            jobs[job_id]['message'] = 'Live stream stopped by user'
+        
+        # Update database
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute('''
+            UPDATE jobs 
+            SET status = %s, message = %s, updated_at = CURRENT_TIMESTAMP
+            WHERE job_id = %s
+        ''', ('stopped', 'Live stream stopped by user', job_id))
+        conn.commit()
+        cur.close()
+        conn.close()
+        
+        return jsonify({"success": True, "message": "Live stream stopped"}), 200
+        
+    except Exception as e:
+        logger.error(f"Error stopping live job: {e}", exc_info=True)
+        return jsonify({"error": f"Server error: {str(e)}"}), 500
+
+
+@jobs_bp.route('/heatmap_jobs/<job_id>/live/status', methods=['GET', 'OPTIONS'])
+@cross_origin()
+@jwt_required()
+def get_live_job_status(job_id):
+    """Get status of a live streaming job"""
+    try:
+        current_user = get_jwt_identity()
+        
+        # Get job from database
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute('''
+            SELECT "user", status, message, camera_name, rtsp_url, is_live, created_at, updated_at
+            FROM jobs WHERE job_id = %s
+        ''', (job_id,))
+        job_row = cur.fetchone()
+        cur.close()
+        conn.close()
+        
+        if not job_row:
+            return jsonify({"error": "Job not found"}), 404
+        
+        if job_row[0] != current_user:
+            return jsonify({"error": "Unauthorized"}), 403
+        
+        # Get processor status
+        processor = get_live_job_processor(job_id)
+        is_running = processor.is_running if processor else False
+        frame_count = processor.frame_count if processor else 0
+        
+        return jsonify({
+            "job_id": job_id,
+            "status": job_row[1],
+            "message": job_row[2],
+            "camera_name": job_row[3],
+            "rtsp_url": job_row[4],
+            "is_live": job_row[5],
+            "is_running": is_running,
+            "frame_count": frame_count,
+            "created_at": to_manila_iso(job_row[6]) if job_row[6] else None,
+            "updated_at": to_manila_iso(job_row[7]) if job_row[7] else None
+        }), 200
+        
+    except Exception as e:
+        logger.error(f"Error getting live job status: {e}", exc_info=True)
+        return jsonify({"error": f"Server error: {str(e)}"}), 500

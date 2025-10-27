@@ -367,6 +367,42 @@ export const heatmapService = {
       throw error.response ? error.response.data : error;
     }
   },
+
+  // Live streaming functions
+  createLiveJob: async (config) => {
+    try {
+      const response = await apiClient.post('/api/heatmap_jobs/live', {
+        rtsp_url: config.rtsp_url,
+        camera_name: config.camera_name,
+        points_data: config.points_data || []
+      });
+      return response.data;
+    } catch (error) {
+      throw error.response ? error.response.data : error;
+    }
+  },
+
+  stopLiveJob: async (jobId) => {
+    try {
+      const response = await apiClient.post(`/api/heatmap_jobs/${jobId}/live/stop`);
+      return response.data;
+    } catch (error) {
+      throw error.response ? error.response.data : error;
+    }
+  },
+
+  getLiveJobStatus: async (jobId) => {
+    try {
+      const response = await apiClient.get(`/api/heatmap_jobs/${jobId}/live/status`);
+      return response.data;
+    } catch (error) {
+      throw error.response ? error.response.data : error;
+    }
+  },
+
+  getLiveHeatmapImageUrl: (jobId) => {
+    return `${API_BASE_URL}/api/heatmap_jobs/${jobId}/live/heatmap`;
+  },
 };
 
 // Export the API client for other custom requests
