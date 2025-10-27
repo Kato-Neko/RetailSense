@@ -459,23 +459,29 @@ const LiveStreaming = () => {
                         </div>
                       </div>
                     ) : useStream && jobId ? (
-                      // MJPEG Stream using video tag
-                      <video
+                      // MJPEG Stream using img tag (more compatible than video tag)
+                      <img
+                        key={`stream-${jobId}-${Date.now()}`}
                         src={heatmapService.getLiveCameraStreamUrl(jobId)}
-                        autoPlay
-                        muted
-                        playsInline
+                        alt="Live Camera Stream"
                         className="w-full h-full object-contain"
+                        crossOrigin="anonymous"
                         onError={(e) => {
                           console.error("Stream error:", e)
+                          const target = e.target || e.currentTarget
+                          console.error("Stream error details:", {
+                            src: target?.src,
+                            complete: target?.complete,
+                            naturalWidth: target?.naturalWidth,
+                            naturalHeight: target?.naturalHeight
+                          })
                           setFeedError(true)
                         }}
-                        onLoadedData={() => {
+                        onLoad={(e) => {
+                          console.log("Stream loaded successfully")
                           setFeedError(false)
                         }}
-                      >
-                        Your browser does not support video streaming.
-                      </video>
+                      />
                     ) : cameraFeedUrl ? (
                       // Single frame mode (fallback)
                       <>

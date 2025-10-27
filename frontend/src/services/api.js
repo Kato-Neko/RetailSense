@@ -409,7 +409,8 @@ export const heatmapService = {
   },
 
   getLiveCameraStreamUrl: (jobId) => {
-    return `${API_BASE_URL}/api/heatmap_jobs/${jobId}/live/stream`;
+    const token = localStorage.getItem('access_token');
+    return `${API_BASE_URL}/api/heatmap_jobs/${jobId}/live/stream${token ? `?token=${token}` : ''}`;
   },
 };
 
