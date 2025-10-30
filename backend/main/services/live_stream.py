@@ -37,7 +37,7 @@ class LiveStreamProcessor:
         self.latest_frame = None
         self.latest_frame_lock = threading.Lock()
         self.last_heatmap_update = time.time()
-        self.heatmap_update_interval = 3  # Update heatmap every 3 seconds
+        self.heatmap_update_interval = 5  # Update heatmap every 5 seconds
         
     def start(self, detection_callback: Optional[Callable] = None):
         """Start processing RTSP stream"""

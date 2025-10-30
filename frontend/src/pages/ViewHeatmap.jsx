@@ -133,7 +133,7 @@ export default function ViewHeatmap() {
     }
   }, [jobHistory, location.search, selectedJob]);
 
-  // Refresh live heatmap every 3s when in live mode
+  // Refresh live heatmap every 5s when in live mode
   useEffect(() => {
     if (!isLiveMode) return;
     const params = new URLSearchParams(location.search);
@@ -141,7 +141,7 @@ export default function ViewHeatmap() {
     if (!jobId) return;
     const tick = () => setLiveHeatmapUrl(`${heatmapService.getLiveHeatmapImageUrl(jobId)}?t=${Date.now()}`);
     tick();
-    const interval = setInterval(tick, 3000);
+    const interval = setInterval(tick, 5000);
     return () => clearInterval(interval);
   }, [isLiveMode, location.search]);
 
