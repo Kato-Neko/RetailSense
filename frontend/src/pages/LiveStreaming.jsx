@@ -68,8 +68,7 @@ const LiveStreaming = () => {
 
       const response = await heatmapService.createLiveJob({
         rtsp_url: rtspUrl,
-        camera_name: cameraConfig.cameraName || cameraConfig.ipAddress || "Unnamed Camera",
-        points_data: [] // Will be configured later
+        camera_name: cameraConfig.cameraName || cameraConfig.ipAddress || "Unnamed Camera"
       })
 
       setJobId(response.job_id)
