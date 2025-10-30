@@ -104,11 +104,21 @@ const LiveStreaming = () => {
   useEffect(() => {
     if (!jobId || !isConnected) return
 
+    let isMounted = true;
+    let retryCount = 0;
+    let pollDelay = 5000; // 5 seconds initially
+    let pollTimeout = null;
+    let didShowError = false;
+
     const pollStatus = async () => {
+      if (!isMounted) return;
       try {
-        const status = await heatmapService.getLiveJobStatus(jobId)
+        const status = await heatmapService.getLiveJobStatus(jobId);
+        if (!isMounted) return;
         setLiveStatus(status)
-        
+        retryCount = 0; // Reset on success
+        pollDelay = 5000;
+        didShowError = false;
         // Update connection status based on backend status
         if (status.status === 'live' && status.is_running) {
           setStreamStatus("connected")
@@ -121,7 +131,6 @@ const LiveStreaming = () => {
             const checkUrl = heatmapService.getLiveHeatmapImageUrl(jobId) + `?check=${Date.now()}`
             const res = await fetch(checkUrl, { method: 'GET' })
             if (res.ok) {
-              // Redirect with live flag so ViewHeatmap can render live heatmap like uploads
               navigate(`/view-heatmap?jobId=${encodeURIComponent(jobId)}&live=1`, { replace: false })
             }
           } catch {}
@@ -131,16 +140,31 @@ const LiveStreaming = () => {
           setIsConnected(false)
           setStreamStatus("disconnected")
         }
+        // Schedule next poll
+        pollTimeout = setTimeout(pollStatus, pollDelay);
       } catch (error) {
-        console.error("Error polling status:", error)
+        if (!isMounted) return;
+        // Only exponential backoff for timeout/network error
+        if ((error?.error?.includes?.('timeout') || error?.error === 'Network error') && retryCount < 3) {
+          retryCount++;
+          pollDelay = pollDelay * 2;
+          pollTimeout = setTimeout(pollStatus, pollDelay);
+          if (!didShowError && retryCount === 3) {
+            setStreamStatus("error");
+            didShowError = true;
+          }
+        } else {
+          setStreamStatus("error");
+        }
       }
     }
 
-    // Poll immediately, then every 5 seconds
-    pollStatus()
-    const interval = setInterval(pollStatus, 5000)
+    pollStatus(); // Start poll immediately
 
-    return () => clearInterval(interval)
+    return () => {
+      isMounted = false;
+      if (pollTimeout) clearTimeout(pollTimeout);
+    }
   }, [jobId, isConnected])
 
   // Refresh camera feed (only for single-frame mode, not MJPEG stream)
