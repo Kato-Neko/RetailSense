@@ -33,6 +33,7 @@ const LiveStreaming = () => {
   const [showFeed, setShowFeed] = useState(true) // Toggle between feed and heatmap
   const [feedError, setFeedError] = useState(false)
   const [useStream, setUseStream] = useState(true) // Use MJPEG stream vs single frames
+  const [isMaximized, setIsMaximized] = useState(false)
 
   const handleInputChange = (field, value) => {
     setCameraConfig((prev) => ({
@@ -247,6 +248,49 @@ const LiveStreaming = () => {
 
   return (
     <div className="space-y-6">
+      {isMaximized && (
+        <div className="fixed inset-0 z-50 bg-black/90 flex items-center justify-center">
+          <div className="absolute top-4 right-4">
+            <Button variant="secondary" onClick={() => setIsMaximized(false)}>Minimize</Button>
+          </div>
+          <div className="w-[95vw] h-[90vh] bg-muted rounded-lg overflow-hidden relative p-2">
+            {showFeed ? (
+              useStream && jobId ? (
+                <img
+                  key={`stream-max-${jobId}-${Date.now()}`}
+                  src={heatmapService.getLiveCameraStreamUrl(jobId)}
+                  alt="Live Camera Stream"
+                  className="w-full h-full object-contain"
+                />
+              ) : cameraFeedUrl ? (
+                <img 
+                  src={cameraFeedUrl}
+                  alt="Live Camera Feed"
+                  className="w-full h-full object-contain"
+                />
+              ) : (
+                <div className="w-full h-full flex items-center justify-center text-white">Waiting for camera feed...</div>
+              )
+            ) : (
+              heatmapUrl ? (
+                <img 
+                  src={heatmapUrl}
+                  alt="Live Heatmap"
+                  className="w-full h-full object-contain"
+                />
+              ) : floorplanPresent ? (
+                <img 
+                  src={`${heatmapService.getLiveFloorplanImageUrl(jobId)}?t=${Date.now()}`}
+                  alt="Floorplan"
+                  className="w-full h-full object-contain"
+                />
+              ) : (
+                <div className="w-full h-full flex items-center justify-center text-white">Waiting for heatmap data...</div>
+              )
+            )}
+          </div>
+        </div>
+      )}
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
@@ -472,6 +516,15 @@ const LiveStreaming = () => {
                     <Video className="mr-2 h-4 w-4" />
                     Heatmap
                   </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setIsMaximized(true)}
+                    className="ml-auto"
+                    title="Maximize"
+                  >
+                    Maximize
+                  </Button>
                 </div>
                 
                 {/* Stream mode toggle */}
@@ -582,6 +635,17 @@ const LiveStreaming = () => {
                           Live Heatmap
                         </div>
                       </>
+                    ) : floorplanPresent ? (
+                      <>
+                        <img 
+                          src={`${heatmapService.getLiveFloorplanImageUrl(jobId)}?t=${Date.now()}`}
+                          alt="Floorplan"
+                          className="w-full h-full object-contain"
+                        />
+                        <div className="absolute bottom-2 right-2 bg-black/50 text-white text-xs px-2 py-1 rounded">
+                          Floorplan (waiting for heatmap)
+                        </div>
+                      </>
                     ) : (
                       <div className="w-full h-full flex items-center justify-center">
                         <div className="text-center space-y-2">
@@ -589,9 +653,7 @@ const LiveStreaming = () => {
                           <p className="text-sm text-muted-foreground">
                             Waiting for heatmap data...
                           </p>
-                          <p className="text-xs text-muted-foreground">
-                            Heatmap updates every 30 seconds
-                          </p>
+                          <p className="text-xs text-muted-foreground">Heatmap updates every {heatmapInfo.intervalSec || 3} seconds</p>
                         </div>
                       </div>
                     )

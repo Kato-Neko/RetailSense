@@ -694,6 +694,24 @@ def get_live_heatmap_image(job_id):
         return jsonify({"error": str(e)}), 500
 
 
+@heatmap_bp.route('/heatmap_jobs/<job_id>/live/floorplan', methods=['GET', 'OPTIONS'])
+@cross_origin()
+@jwt_required()
+def get_live_floorplan_image(job_id):
+    """Get the saved floorplan (first frame) for a live job"""
+    try:
+        supabase_path = f"{job_id}/floorplan_{job_id}.jpg"
+        logger.info(f"Attempting to download live floorplan image from Supabase: {supabase_path}")
+        img_bytes = download_image_bytes_from_supabase(supabase_path)
+        if img_bytes is None:
+            logger.warning(f"Live floorplan image not found in Supabase: {supabase_path}")
+            return jsonify({"error": "Floorplan not available yet"}), 404
+        return Response(img_bytes, mimetype="image/jpeg")
+    except Exception as e:
+        logger.error(f"Error getting live floorplan: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
 @heatmap_bp.route('/heatmap_jobs/<job_id>/live/feed', methods=['GET', 'OPTIONS'])
 @cross_origin()
 @jwt_required()

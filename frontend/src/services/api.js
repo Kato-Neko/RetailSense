@@ -417,6 +417,10 @@ export const heatmapService = {
     return `${API_BASE_URL}/api/heatmap_jobs/${jobId}/live/heatmap`;
   },
 
+  getLiveFloorplanImageUrl: (jobId) => {
+    return `${API_BASE_URL}/api/heatmap_jobs/${jobId}/live/floorplan`;
+  },
+
   getLiveCameraFeedUrl: (jobId) => {
     return `${API_BASE_URL}/api/heatmap_jobs/${jobId}/live/feed`;
   },
