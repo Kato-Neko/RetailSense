@@ -267,7 +267,6 @@ def export_heatmap_csv(job_id):
     except Exception as e:
         return jsonify({"error": f"Error generating CSV export: {str(e)}"}), 500
 
-
 @heatmap_bp.route('/heatmap_jobs/<job_id>/export/pdf', methods=['GET'])
 @cross_origin(expose_headers=['Content-Disposition'])
 @jwt_required()
