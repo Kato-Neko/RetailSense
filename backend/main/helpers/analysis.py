@@ -1,5 +1,13 @@
 import numpy as np
 import cv2
+import os
+
+# Try to import AI analysis module (optional)
+try:
+    from .ai_analysis import generate_ai_recommendations
+    AI_AVAILABLE = True
+except ImportError:
+    AI_AVAILABLE = False
 
 
 def analyze_peak_hours(detections, fps, bin_minutes=5):
@@ -66,14 +74,6 @@ def analyze_heatmap(heatmap, floorplan_shape, detections=None, fps=None):
     for category in areas:
         areas[category]['percentage'] = round((areas[category]['pixels'] / total_area) * 100, 1)
 
-    recommendations = []
-    if areas['high']['percentage'] > 30:
-        recommendations.append("Consider redistributing traffic from high-density areas to improve customer flow")
-    if areas['low']['percentage'] > 40:
-        recommendations.append("Implement strategies to increase traffic in low-density areas")
-    if areas['medium']['percentage'] < 30:
-        recommendations.append("Optimize store layout to create more balanced traffic distribution")
-
     if detections and fps:
         peak_hours = analyze_peak_hours(detections, fps)
     else:
@@ -84,6 +84,23 @@ def analyze_heatmap(heatmap, floorplan_shape, detections=None, fps=None):
         total_visitors = len(unique_ids)
     else:
         total_visitors = 0
+
+    # Generate recommendations using AI if available and enabled, otherwise use rule-based
+    use_ai = os.getenv('USE_AI_RECOMMENDATIONS', 'false').lower() == 'true'
+    ai_provider = os.getenv('AI_PROVIDER', None)  # 'groq', 'gemini', 'openai', or None for auto-detect
+    if AI_AVAILABLE and use_ai:
+        recommendations = generate_ai_recommendations(areas, total_visitors, peak_hours, provider=ai_provider)
+    else:
+        # Fallback to rule-based recommendations
+        recommendations = []
+        if areas['high']['percentage'] > 30:
+            recommendations.append("Consider redistributing traffic from high-density areas to improve customer flow")
+        if areas['low']['percentage'] > 40:
+            recommendations.append("Implement strategies to increase traffic in low-density areas")
+        if areas['medium']['percentage'] < 30:
+            recommendations.append("Optimize store layout to create more balanced traffic distribution")
+        if not recommendations:
+            recommendations.append("Monitor traffic patterns over time to identify optimization opportunities")
 
     return {
         'areas': areas,
