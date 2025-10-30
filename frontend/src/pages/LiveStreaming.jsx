@@ -10,8 +10,10 @@ import { toast } from "sonner"
 import { Video, Camera, Wifi, Settings, Play, Square, Loader2 } from "lucide-react"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { heatmapService } from "../services/api"
+import { useNavigate } from "react-router-dom"
 
 const LiveStreaming = () => {
+  const navigate = useNavigate()
   const [cameraConfig, setCameraConfig] = useState({
     cameraName: "",
     ipAddress: "",
@@ -113,6 +115,16 @@ const LiveStreaming = () => {
           // Update heatmap URL with timestamp to force refresh
           const heatmapUrl = heatmapService.getLiveHeatmapImageUrl(jobId)
           setHeatmapUrl(`${heatmapUrl}?t=${Date.now()}`)
+
+          // If live heatmap is available (HTTP 200), redirect to View Heatmap for consistent UX
+          try {
+            const checkUrl = heatmapService.getLiveHeatmapImageUrl(jobId) + `?check=${Date.now()}`
+            const res = await fetch(checkUrl, { method: 'GET' })
+            if (res.ok) {
+              // Redirect with live flag so ViewHeatmap can render live heatmap like uploads
+              navigate(`/view-heatmap?jobId=${encodeURIComponent(jobId)}&live=1`, { replace: false })
+            }
+          } catch {}
         } else if (status.status === 'error') {
           setStreamStatus("error")
         } else if (status.status === 'stopped') {

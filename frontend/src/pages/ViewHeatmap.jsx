@@ -71,6 +71,8 @@ export default function ViewHeatmap() {
   const [analysis, setAnalysis] = useState(null)
   const [analysisLoading, setAnalysisLoading] = useState(false)
   const [customHeatmapUrl, setCustomHeatmapUrl] = useState(null)
+  const [liveHeatmapUrl, setLiveHeatmapUrl] = useState(null)
+  const [isLiveMode, setIsLiveMode] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
   const [settingsMode, setSettingsMode] = useState('standard')
   const [customStep, setCustomStep] = useState(0)
@@ -110,19 +112,42 @@ export default function ViewHeatmap() {
     if (jobHistory.length === 0) return;
     const params = new URLSearchParams(location.search);
     const jobId = params.get("jobId");
+    const liveFlag = params.get("live") === '1';
+    if (liveFlag) setIsLiveMode(true);
     if (jobId && !selectedJob) {
       const found = jobHistory.find(j => j.job_id === jobId);
       if (found) {
         setSelectedJob(found);
         setHeatmapGenerated(true);
         setCustomHeatmapUrl(null);
+      } else if (liveFlag) {
+        // Live mode: synthesize a minimal job so the UI renders consistently
+        const synthetic = { job_id: jobId, start_datetime: new Date().toISOString(), end_datetime: new Date().toISOString() };
+        setSelectedJob(synthetic);
+        setHeatmapGenerated(true);
+        setCustomHeatmapUrl(null);
+        // Initialize live heatmap image and start 30s refresh
+        const url = heatmapService.getLiveHeatmapImageUrl(jobId);
+        setLiveHeatmapUrl(`${url}?t=${Date.now()}`);
       }
     }
   }, [jobHistory, location.search, selectedJob]);
 
+  // Refresh live heatmap every 30s when in live mode
+  useEffect(() => {
+    if (!isLiveMode) return;
+    const params = new URLSearchParams(location.search);
+    const jobId = params.get("jobId");
+    if (!jobId) return;
+    const tick = () => setLiveHeatmapUrl(`${heatmapService.getLiveHeatmapImageUrl(jobId)}?t=${Date.now()}`);
+    tick();
+    const interval = setInterval(tick, 30000);
+    return () => clearInterval(interval);
+  }, [isLiveMode, location.search]);
+
   // Fetch analysis when selectedJob changes
   useEffect(() => {
-    if (!selectedJob) {
+    if (!selectedJob || isLiveMode) {
       setAnalysis(null)
       return
     }
@@ -449,7 +474,12 @@ export default function ViewHeatmap() {
                       </div>
                     ) : (
                       <img
-                        src={customHeatmapUrl || (selectedJob ? heatmapService.getHeatmapImageUrl(selectedJob.job_id) : null) || "/placeholder.svg"}
+                        src={
+                          customHeatmapUrl
+                            || (isLiveMode && liveHeatmapUrl)
+                            || (selectedJob ? heatmapService.getHeatmapImageUrl(selectedJob.job_id) : null)
+                            || "/placeholder.svg"
+                        }
                         alt="Foot traffic heatmap"
                         className={`rounded-lg ${showSettings ? 'w-full h-full object-contain' : 'w-full h-[500px] object-contain'}`}
                         onLoad={() => setIsLoading(false)}
