@@ -393,8 +393,19 @@ export const heatmapService = {
 
   getLiveJobStatus: async (jobId) => {
     try {
-      const response = await apiClient.get(`/api/heatmap_jobs/${jobId}/live/status`);
-      return response.data;
+      // Use a shorter timeout for status polling and retry once on timeout/network error
+      const doRequest = () => apiClient.get(`/api/heatmap_jobs/${jobId}/live/status`, { timeout: 5000 });
+      try {
+        const response = await doRequest();
+        return response.data;
+      } catch (e) {
+        // Retry once if timeout or network error
+        if (e?.error?.toString?.().includes('timeout') || e?.error === 'Network error') {
+          const response = await doRequest();
+          return response.data;
+        }
+        throw e;
+      }
     } catch (error) {
       throw error.response ? error.response.data : error;
     }
