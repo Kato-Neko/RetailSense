@@ -27,6 +27,7 @@ const LiveStreaming = () => {
   const [jobId, setJobId] = useState(null)
   const [liveStatus, setLiveStatus] = useState(null)
   const [heatmapInfo, setHeatmapInfo] = useState({ lastUpdated: null, intervalSec: 30 })
+  const [floorplanPresent, setFloorplanPresent] = useState(false)
   const [heatmapUrl, setHeatmapUrl] = useState(null)
   const [cameraFeedUrl, setCameraFeedUrl] = useState(null)
   const [showFeed, setShowFeed] = useState(true) // Toggle between feed and heatmap
@@ -121,6 +122,9 @@ const LiveStreaming = () => {
             lastUpdated: status.heatmap_last_updated,
             intervalSec: status.heatmap_interval_seconds || 30
           })
+        }
+        if (typeof status?.floorplan_present === 'boolean') {
+          setFloorplanPresent(status.floorplan_present)
         }
         retryCount = 0; // Reset on success
         pollDelay = 5000;
@@ -419,6 +423,12 @@ const LiveStreaming = () => {
                     <Label>RTSP URL</Label>
                     <span className="text-xs text-muted-foreground font-mono truncate max-w-[200px]">
                       {buildRtspUrl()}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between border-t pt-2 text-xs">
+                    <Label>Floorplan</Label>
+                    <span className={floorplanPresent ? "text-green-600" : "text-muted-foreground"}>
+                      {floorplanPresent ? 'Captured from first frame' : 'Awaiting first frame'}
                     </span>
                   </div>
                   <div className="flex items-center justify-between border-t pt-2 text-xs">

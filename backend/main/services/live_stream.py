@@ -158,6 +158,13 @@ class LiveStreamProcessor:
                 with self.latest_frame_lock:
                     self.latest_frame = frame.copy()
                 
+                # Ensure floorplan exists: if missing, save current frame as floorplan
+                if not self.floorplan_path or not os.path.exists(self.floorplan_path):
+                    try:
+                        self._save_first_frame(frame)
+                    except Exception as e:
+                        logger.warning(f"Deferred floorplan save failed: {e}")
+
                 # Process every Nth frame
                 if self.frame_count % frame_skip == 0:
                     detections = self._detect_and_track_frame(frame, self.frame_count)
