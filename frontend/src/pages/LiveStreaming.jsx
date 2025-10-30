@@ -26,6 +26,7 @@ const LiveStreaming = () => {
   const [streamStatus, setStreamStatus] = useState("disconnected") // disconnected, connecting, connected, error
   const [jobId, setJobId] = useState(null)
   const [liveStatus, setLiveStatus] = useState(null)
+  const [heatmapInfo, setHeatmapInfo] = useState({ lastUpdated: null, intervalSec: 30 })
   const [heatmapUrl, setHeatmapUrl] = useState(null)
   const [cameraFeedUrl, setCameraFeedUrl] = useState(null)
   const [showFeed, setShowFeed] = useState(true) // Toggle between feed and heatmap
@@ -116,6 +117,12 @@ const LiveStreaming = () => {
         const status = await heatmapService.getLiveJobStatus(jobId);
         if (!isMounted) return;
         setLiveStatus(status)
+        if (status?.heatmap_last_updated) {
+          setHeatmapInfo({
+            lastUpdated: status.heatmap_last_updated,
+            intervalSec: status.heatmap_interval_seconds || 30
+          })
+        }
         retryCount = 0; // Reset on success
         pollDelay = 5000;
         didShowError = false;
@@ -413,6 +420,14 @@ const LiveStreaming = () => {
                     <Label>RTSP URL</Label>
                     <span className="text-xs text-muted-foreground font-mono truncate max-w-[200px]">
                       {buildRtspUrl()}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between border-t pt-2 text-xs">
+                    <Label>Live Heatmap</Label>
+                    <span className="text-muted-foreground">
+                      {heatmapInfo.lastUpdated
+                        ? `Updated ${new Date(heatmapInfo.lastUpdated * 1000).toLocaleTimeString()} • every ${heatmapInfo.intervalSec || 30}s`
+                        : 'Generating… updates every 30s'}
                     </span>
                   </div>
                 </>

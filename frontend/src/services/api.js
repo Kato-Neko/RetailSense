@@ -393,19 +393,21 @@ export const heatmapService = {
 
   getLiveJobStatus: async (jobId) => {
     try {
-      // Use a shorter timeout for status polling and retry once on timeout/network error
-      const doRequest = () => apiClient.get(`/api/heatmap_jobs/${jobId}/live/status`, { timeout: 5000 });
-      try {
-        const response = await doRequest();
-        return response.data;
-      } catch (e) {
-        // Retry once if timeout or network error
-        if (e?.error?.toString?.().includes('timeout') || e?.error === 'Network error') {
-          const response = await doRequest();
+      // Robust polling: 10s timeout with up to 3 attempts, exponential backoff (0ms, 500ms, 1000ms)
+      const attempt = async (i) => {
+        try {
+          const response = await apiClient.get(`/api/heatmap_jobs/${jobId}/live/status`, { timeout: 10000 });
           return response.data;
+        } catch (e) {
+          const isTimeoutOrNetwork = e?.error?.toString?.().includes('timeout') || e?.error === 'Network error';
+          if (isTimeoutOrNetwork && i < 2) {
+            await new Promise(res => setTimeout(res, i === 0 ? 500 : 1000));
+            return attempt(i + 1);
+          }
+          throw e;
         }
-        throw e;
-      }
+      };
+      return await attempt(0);
     } catch (error) {
       throw error.response ? error.response.data : error;
     }

@@ -613,6 +613,17 @@ def get_live_job_status(job_id):
         processor = get_live_job_processor(job_id)
         is_running = processor.is_running if processor else False
         frame_count = processor.frame_count if processor else 0
+        heatmap_last_updated = None
+        heatmap_interval_seconds = None
+        if processor:
+            try:
+                import time
+                # last_heatmap_update is a unix timestamp in seconds
+                heatmap_last_updated = processor.last_heatmap_update
+                heatmap_interval_seconds = getattr(processor, 'heatmap_update_interval', None)
+            except Exception:
+                heatmap_last_updated = None
+                heatmap_interval_seconds = None
         
         response_data = {
             "job_id": job_id,
@@ -624,7 +635,9 @@ def get_live_job_status(job_id):
             "is_running": is_running,
             "frame_count": frame_count,
             "created_at": to_manila_iso(job_row[created_at_idx]) if job_row[created_at_idx] else None,
-            "updated_at": to_manila_iso(job_row[updated_at_idx]) if job_row[updated_at_idx] else None
+            "updated_at": to_manila_iso(job_row[updated_at_idx]) if job_row[updated_at_idx] else None,
+            "heatmap_last_updated": heatmap_last_updated,
+            "heatmap_interval_seconds": heatmap_interval_seconds
         }
         
         return jsonify(response_data), 200
