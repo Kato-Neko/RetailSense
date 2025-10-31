@@ -1,6 +1,6 @@
 from flask import Blueprint, request, jsonify, send_file, Response, send_from_directory
 from flask_cors import cross_origin
-from flask_jwt_extended import jwt_required
+from flask_jwt_extended import jwt_required, get_jwt_identity
 import os
 import io
 import csv
@@ -66,10 +66,34 @@ def receive_live_detections(job_id):
         return jsonify({'error': str(e)}), 400
 
 
-def get_detections_logic(job_id):
+def get_detections_logic(job_id, current_user=None):
     """Shared logic for getting detections"""
+    # Validate user ownership if user is provided
+    if current_user is not None:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        try:
+            cur.execute('SELECT "user" FROM jobs WHERE job_id = %s', (job_id,))
+            job_row = cur.fetchone()
+            if not job_row:
+                logger.error(f"Job {job_id} not found")
+                return jsonify({"error": "Job not found"}), 404
+            # Extract user from row (handles both tuple and dict-like results)
+            job_user = job_row['user'] if isinstance(job_row, dict) else job_row[0]
+            if job_user != current_user:
+                logger.error(f"User {current_user} attempted to access job {job_id} owned by {job_user}")
+                return jsonify({"error": "Unauthorized: Job not found or not authorized"}), 403
+        except Exception as e:
+            logger.error(f"Error validating job ownership: {e}")
+            return jsonify({"error": "Error validating job ownership"}), 500
+        finally:
+            cur.close()
+            conn.close()
+    
+    # Load detections from Supabase
     detections, fps = load_detections(job_id)
     if detections is None:
+        logger.warning(f"Detections file not found for job {job_id}")
         return jsonify({"error": "Detections file not found"}), 404
     return jsonify({"detections": detections, "fps": fps}), 200
 
@@ -77,7 +101,8 @@ def get_detections_logic(job_id):
 @cross_origin()
 @jwt_required()
 def get_detections_from_json(job_id):
-    return get_detections_logic(job_id)
+    current_user = get_jwt_identity()
+    return get_detections_logic(job_id, current_user)
 
 
 def get_heatmap_image_logic(job_id):

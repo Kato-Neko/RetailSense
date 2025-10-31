@@ -164,12 +164,17 @@ const Dashboard = () => {
           // Fetch detections from the new API endpoint - ONLY ONCE
           try {
             const detectionsResponse = await heatmapService.getDetections(job.job_id)
-            console.log("Detections Response:", detectionsResponse)
+            console.log(`Detections Response for job ${job.job_id}:`, detectionsResponse)
 
             if (detectionsResponse && detectionsResponse.detections) {
               const detections = detectionsResponse.detections
               const fps = detectionsResponse.fps
               const startDate = job.start_datetime ? new Date(job.start_datetime) : null
+
+              if (!detections || detections.length === 0) {
+                console.warn(`Job ${job.job_id} has empty detections array`)
+                continue
+              }
 
               detections.forEach((det) => {
                 const trackId = det.track_id
@@ -190,11 +195,18 @@ const Dashboard = () => {
                   monthlyUniqueVisitors[month].add(`${job.job_id}_${trackId}`)
                 }
               })
+              console.log(`Successfully processed ${detections.length} detections for job ${job.job_id}`)
             } else {
-              console.warn(`No detections found for job ${job.job_id}`)
+              console.warn(`No detections found for job ${job.job_id} - response:`, detectionsResponse)
             }
           } catch (error) {
             console.error(`Error fetching detections for job ${job.job_id}:`, error)
+            // Log more details about the error
+            if (error.response) {
+              console.error(`API Error Status: ${error.response.status}, Data:`, error.response.data)
+            } else if (error.message) {
+              console.error(`Error Message: ${error.message}`)
+            }
           }
         }
 
@@ -279,6 +291,11 @@ const Dashboard = () => {
                   const fps = detectionsResponse.fps
                   const startDate = job.start_datetime ? new Date(job.start_datetime) : null
 
+                  if (!detections || detections.length === 0) {
+                    console.warn(`Comparison job ${job.job_id} has empty detections array`)
+                    continue
+                  }
+
                   detections.forEach((det) => {
                     const trackId = det.track_id
                     const timeInSeconds = det.timestamp || (det.frame / fps)
@@ -298,9 +315,15 @@ const Dashboard = () => {
                       compMonthlyVisitors[month].add(`${job.job_id}_${trackId}`)
                     }
                   })
+                  console.log(`Successfully processed ${detections.length} comparison detections for job ${job.job_id}`)
+                } else {
+                  console.warn(`No comparison detections found for job ${job.job_id}`)
                 }
               } catch (error) {
                 console.error(`Error fetching comparison detections for job ${job.job_id}:`, error)
+                if (error.response) {
+                  console.error(`API Error Status: ${error.response.status}, Data:`, error.response.data)
+                }
               }
             }
 

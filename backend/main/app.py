@@ -85,7 +85,9 @@ def direct_heatmap_image(job_id):
 def direct_heatmap_detections(job_id):
     """Direct access to detections without /api prefix"""
     from .api.heatmap import get_detections_logic
-    return get_detections_logic(job_id)
+    from flask_jwt_extended import get_jwt_identity
+    current_user = get_jwt_identity()
+    return get_detections_logic(job_id, current_user)
 
 @app.route('/heatmap_jobs/<job_id>/analysis', methods=['GET', 'OPTIONS'])
 @cross_origin()
