@@ -33,8 +33,11 @@ class StorageManager:
         """
         try:
             with open(local_path, "rb") as f:
+                self.logger.info(f"Uploading to Supabase storage: bucket={self.bucket} path={supabase_path}")
                 self.supabase.storage.from_(self.bucket).upload(
-                    supabase_path, f, {"content-type": content_type}
+                    supabase_path,
+                    f,
+                    {"contentType": content_type, "upsert": True}
                 )
             os.remove(local_path)
             self.logger.info(f"Uploaded and removed local: {local_path} -> {self.bucket}/{supabase_path}")
@@ -50,10 +53,11 @@ class StorageManager:
             supabase_path: Path in Supabase storage
         """
         json_bytes = json.dumps(data).encode("utf-8")
+        self.logger.info(f"Uploading JSON to Supabase storage: bucket={self.bucket} path={supabase_path}")
         self.supabase.storage.from_(self.bucket).upload(
             supabase_path,
             json_bytes,
-            {"content-type": "application/json"}
+            {"contentType": "application/json", "upsert": True}
         )
         self.logger.info(f"Uploaded JSON to Supabase: {self.bucket}/{supabase_path}")
     
@@ -68,10 +72,11 @@ class StorageManager:
         if not success:
             raise Exception("Failed to encode image to JPEG")
         img_bytes = img_encoded.tobytes()
+        self.logger.info(f"Uploading image to Supabase storage: bucket={self.bucket} path={supabase_path}")
         self.supabase.storage.from_(self.bucket).upload(
             supabase_path,
             img_bytes,
-            {"content-type": "image/jpg"}
+            {"contentType": "image/jpeg", "upsert": True}
         )
         self.logger.info(f"Uploaded image to Supabase: {self.bucket}/{supabase_path}")
     
