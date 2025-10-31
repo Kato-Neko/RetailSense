@@ -76,7 +76,7 @@ class StorageManager:
         self.supabase.storage.from_(self.bucket).upload(
             supabase_path,
             img_bytes,
-            {"content-type": "image/jpeg", "x-upsert": "true"}
+            {"content-type": "image/jpg", "x-upsert": "true"}
         )
         self.logger.info(f"Uploaded image to Supabase: {self.bucket}/{supabase_path}")
     
