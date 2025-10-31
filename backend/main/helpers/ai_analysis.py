@@ -95,17 +95,55 @@ def _call_gemini_with_fallback(prompt: str, context: Dict) -> List[str]:
         raise RuntimeError("google-generativeai not installed")
 
     genai.configure(api_key=api_key)
-    # Preferred Pro model; fallback to Flash
-    preferred = os.getenv('GEMINI_MODEL', 'gemini-1.5-pro-latest')
-    fallbacks = [preferred, 'gemini-1.5-flash-latest'] if preferred != 'gemini-1.5-flash-latest' else [preferred]
+    # Preferred model from env; fallbacks based on your list_models() output
+    preferred = os.getenv('GEMINI_MODEL')
+    fallback_order = [
+        # prefer env override first
+        preferred,
+        # 2.x and 1.x families that are widely available
+        'gemini-pro-latest',
+        'gemini-flash-latest',
+        # fully-qualified names for some accounts
+        'models/gemini-pro-latest',
+        'models/gemini-flash-latest',
+    ]
+    # Remove Nones and keep order
+    candidates = [m for m in fallback_order if m]
 
     last_err = None
-    for model_id in fallbacks:
+    for model_id in candidates:
         try:
             model = genai.GenerativeModel(model_id)
-            full_prompt = f"{prompt}\n\nReturn your response as a JSON array only."
-            resp = model.generate_content(full_prompt, generation_config={'temperature': 0.7, 'max_output_tokens': 200})
-            return _parse_ai_response(resp.text, context)
+            full_prompt = (
+                f"{prompt}\n\n"
+                "Return your response as a JSON array only, with no narration."
+            )
+            resp = model.generate_content(
+                full_prompt,
+                generation_config={
+                    'temperature': 0.7,
+                    'max_output_tokens': 200,
+                }
+            )
+            # Robust parsing: avoid resp.text; use candidates/parts
+            if not getattr(resp, 'candidates', None):
+                raise RuntimeError('No candidates returned')
+            for cand in resp.candidates:
+                # finish_reason 2 means blocked; skip
+                if getattr(cand, 'finish_reason', None) == 2:
+                    continue
+                content = getattr(cand, 'content', None)
+                if not content or not getattr(content, 'parts', None):
+                    continue
+                texts: List[str] = []
+                for p in content.parts:
+                    t = getattr(p, 'text', None)
+                    if t:
+                        texts.append(t)
+                if texts:
+                    return _parse_ai_response("\n".join(texts), context)
+            # If we fell through, try next model
+            raise RuntimeError('No valid text parts in candidates')
         except Exception as e:
             last_err = e
             logger.error(f"Gemini call failed for {model_id}: {e}")
