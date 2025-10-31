@@ -1,12 +1,11 @@
 import { useState, useEffect } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Users, BarChart2, Lightbulb, Timer, Map, FileVideo, Calendar, Clock, Target, CheckCircle, Download, Settings } from "lucide-react"
+import { Users, BarChart2, Lightbulb, Timer, Map, FileVideo, Calendar, Clock, Target, CheckCircle, Download } from "lucide-react"
 import { ChartContainer } from "@/components/ui/chart"
 import { BarChart, CartesianGrid, XAxis, YAxis, Tooltip, Bar } from "recharts"
 import { heatmapService } from "../services/api"
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
 import { Button } from "@/components/ui/button"
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { Pagination, PaginationContent, PaginationItem, PaginationLink, PaginationNext, PaginationPrevious } from "@/components/ui/pagination"
 import CustomDateTimeStep from "@/modules/module2/CustomDateTimeStep"
 import CustomConfirmationStep from "@/modules/module2/CustomConfirmationStep"
@@ -411,57 +410,21 @@ export default function ViewHeatmap() {
   };
 
   return (
-    <div className="relative h-[800px] w-full bg-gradient-to-b from-background via-muted to-background dark:from-slate-950 dark:via-slate-900 dark:to-slate-950 py-6 px-1 md:px-0 overflow-hidden">
+    <div className="relative min-h-screen w-full bg-gradient-to-b from-background via-muted to-background dark:from-slate-950 dark:via-slate-900 dark:to-slate-950 py-8 px-1 md:px-0 overflow-x-hidden">
       {/* Soft background blur and gradient effects */}
       <div className="pointer-events-none fixed inset-0 z-0">
         <div className="absolute -top-32 -left-32 w-80 h-80 bg-blue-400/20 dark:bg-blue-700/20 rounded-full blur-3xl"></div>
         <div className="absolute top-1/2 right-0 w-64 h-64 bg-cyan-300/20 dark:bg-cyan-500/20 rounded-full blur-3xl"></div>
         <div className="absolute bottom-0 left-1/2 w-80 h-80 bg-fuchsia-300/10 dark:bg-fuchsia-700/10 rounded-full blur-3xl"></div>
       </div>
-      <div className="container relative z-10 mx-auto max-w-7xl px-2 h-full">
-        <div className="grid w-full h-full">
-          {/* Row 1: History (fixed), Visualization (flex), Settings (optional fixed) */}
-          <div className="flex gap-4 items-start w-full">
-            {/* History container */}
-            <Card className="w-56 shrink-0 h-[calc(100vh-220px)] box-border flex flex-col shadow-xl rounded-xl bg-gradient-to-br from-background/80 to-muted/90">
-              <CardHeader className="pb-2 pt-4"></CardHeader>
-              <CardContent className="h-full flex-1 overflow-y-auto pt-0">
-                {jobHistory.length === 0 ? (
-                  <div className="text-muted-foreground text-center mt-8">No heatmaps found.</div>
-                ) : (
-                  <div className="space-y-2">
-                    {jobHistory.map((job) => (
-                      <div
-                        key={job.job_id}
-                        className={`flex items-center justify-between px-2 py-2 rounded-md cursor-pointer transition-colors ${selectedJob && selectedJob.job_id === job.job_id ? "bg-primary/20 dark:bg-blue-900/40" : "hover:bg-muted/60 dark:hover:bg-slate-800/60"}`}
-                        onClick={() => handleSelectJob(job)}
-                      >
-                        <div className="min-w-0 flex-1 pr-2">
-                          <div className="truncate font-semibold text-foreground text-xs">
-                            {job.input_video_name || job.input_floorplan_name || job.job_id.slice(0, 8) + "..."}
-                          </div>
-                          <div className="text-[11px] text-muted-foreground">
-                            {new Date(job.start_datetime).toLocaleString()} - {new Date(job.end_datetime).toLocaleString()}
-                          </div>
-                        </div>
-                        <button
-                          className="p-1 rounded hover:bg-red-100 dark:hover:bg-red-900"
-                          onClick={(e) => { e.stopPropagation(); handleDeleteJob(job.job_id); }}
-                          title="Delete heatmap"
-                        >
-                          <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3m5 0H6" /></svg>
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-
+      <div className="container relative z-10 mx-auto max-w-7xl px-4 py-4">
+        <div className="grid grid-rows-2 gap-2 w-full" style={{ minHeight: 'calc(100vh - 120px)' }}>
+          {/* Row 1: Visualization & Settings */}
+          <div className="grid grid-cols-4 gap-6 items-start">
             {/* Visualization */}
-            <div className="flex-1 flex items-start justify-center relative w-full h-full">
-              <Card className={`h-[calc(100vh-220px)] box-border flex flex-col shadow-xl rounded-xl bg-gradient-to-br from-background/80 to-muted/90 relative w-full`}>
-                {/* Settings toggle (gear) */}
+            <div className={`flex items-start justify-center relative ${showSettings ? 'col-span-2' : 'col-span-4'} w-full h-full`}>
+              <Card className={`h-[750px] box-border flex flex-col shadow-xl rounded-xl bg-gradient-to-br from-background/80 to-muted/90 relative ${showSettings ? 'w-full max-w-2xl' : 'w-full'}`}>
+                {/* Download Icon Button */}
                 <button
                   className={`absolute top-4 right-4 z-20 transition-colors ${(!heatmapGenerated || !selectedJob) ? 'opacity-50 cursor-not-allowed' : 'hover:bg-cyan-100 dark:hover:bg-cyan-800'}`}
                   onClick={() => { if (heatmapGenerated && selectedJob) setShowSettings(v => !v); }}
@@ -469,13 +432,12 @@ export default function ViewHeatmap() {
                   disabled={!heatmapGenerated || !selectedJob}
                   style={{ background: 'none', padding: 0, border: 'none' }}
                 >
-                  <Settings className="h-8 w-8 text-cyan-500" />
+                  <DownloadTurboIcon />
                 </button>
                 <CardHeader className="pb-2">
                   <CardTitle className="text-lg font-bold text-foreground tracking-tight drop-shadow mb-2 whitespace-nowrap text-center">Heatmap Visualization</CardTitle>
                 </CardHeader>
-                <CardContent className="flex-1 flex flex-col h-full w-full box-border">
-                  {/* Image area */}
+                <CardContent className="flex-1 flex flex-col justify-between items-center h-full w-full box-border">
                   <div className="flex-1 flex items-center justify-center w-full">
                     {(!heatmapGenerated || !selectedJob) ? (
                       <div className="flex flex-col items-center justify-center w-full h-full">
@@ -525,7 +487,7 @@ export default function ViewHeatmap() {
                       />
                     )}
                   </div>
-                  <div className="hidden md:flex w-full flex-col items-center mt-2 mb-4">
+                  <div className="w-full flex flex-col items-center mt-2 mb-4">
                     <span className="text-muted-foreground font-medium mb-1">Traffic Density:</span>
                     <div className="w-64 h-4 rounded bg-gradient-to-r from-blue-600 via-yellow-300 to-red-600 mb-1" />
                     <div className="flex justify-between w-64 text-xs text-muted-foreground">
@@ -539,25 +501,10 @@ export default function ViewHeatmap() {
             </div>
             {/* Settings (conditionally rendered) */}
             {showSettings && (
-              <div className="w-[520px] shrink-0 flex items-start">
-                <Card className="w-full h-[calc(100vh-220px)] box-border flex flex-col shadow-xl rounded-xl bg-gradient-to-br from-blue-400/30 to-background/80">
-                  <CardHeader className="pb-2 items-center relative w-full">
-                    <CardTitle className="text-lg font-bold text-foreground tracking-tight drop-shadow mb-2 whitespace-nowrap text-center w-full">Heatmap Settings</CardTitle>
-                    {/* Export dropdown (top-right) - icon only */}
-                    <div className="absolute right-4 top-2">
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button variant="ghost" size="icon" className="h-8 w-8">
-                            <Download className="h-4 w-4" />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end" className="w-40">
-                          <DropdownMenuItem onClick={handleExportCSV}>Export CSV</DropdownMenuItem>
-                          <DropdownMenuItem onClick={handleExportPDF}>Export PDF</DropdownMenuItem>
-                          <DropdownMenuItem onClick={handleExportImage}>Export JPG</DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    </div>
+              <div className="col-span-2 flex items-start">
+                <Card className="w-full h-[750px] box-border flex flex-col shadow-xl rounded-xl bg-gradient-to-br from-blue-400/30 to-background/80">
+                  <CardHeader className="pb-2 items-center">
+                    <CardTitle className="text-lg font-bold text-foreground tracking-tight drop-shadow mb-2 whitespace-nowrap text-center">Heatmap Settings</CardTitle>
                     {/* Toggle Group */}
                     <div className="flex justify-center w-full mt-4">
                       <ToggleGroup
@@ -581,17 +528,34 @@ export default function ViewHeatmap() {
                     {settingsMode === "standard" && selectedJob && analysis && (
                       <div className="w-full max-w-xl mt-2 mb-2 flex flex-col items-center">
                         <AnalyticsSummaryBox
-                          startDate={selectedJob.start_datetime ? new Date(selectedJob.start_datetime).toISOString().slice(0,10) : 'N/A'}
-                          endDate={selectedJob.end_datetime ? new Date(selectedJob.end_datetime).toISOString().slice(0,10) : 'N/A'}
-                          startTime={selectedJob.start_datetime ? new Date(selectedJob.start_datetime).toLocaleTimeString(undefined, { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' }) : 'N/A'}
-                          endTime={selectedJob.end_datetime ? new Date(selectedJob.end_datetime).toLocaleTimeString(undefined, { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' }) : 'N/A'}
+                          startDate={selectedJob.start_datetime ? new Date(selectedJob.start_datetime).toLocaleDateString(undefined, { month: 'numeric', day: 'numeric', year: 'numeric' }) : 'N/A'}
+                          endDate={selectedJob.end_datetime ? new Date(selectedJob.end_datetime).toLocaleDateString(undefined, { month: 'numeric', day: 'numeric', year: 'numeric' }) : 'N/A'}
+                          startTime={selectedJob.start_datetime ? new Date(selectedJob.start_datetime).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit', second: '2-digit', hour12: true }) : 'N/A'}
+                          endTime={selectedJob.end_datetime ? new Date(selectedJob.end_datetime).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit', second: '2-digit', hour12: true }) : 'N/A'}
                           analysis={analysis}
                           detections={detections}
-                          onExportCSV={handleExportCSV}
-                          onExportPDF={handleExportPDF}
-                          onExportImage={handleExportImage}
                         />
-                        
+                        {/* Export Buttons */}
+                        <div className="flex gap-4 mt-2">
+                          <Button
+                            className="bg-gradient-to-r from-white to-cyan-200 text-black font-semibold shadow-md border border-border py-2 text-sm hover:opacity-90 dark:from-blue-900 dark:to-cyan-800 dark:text-white flex-1"
+                            onClick={handleExportCSV}
+                          >
+                            Export CSV
+                          </Button>
+                          <Button
+                            className="bg-gradient-to-r from-white to-cyan-200 text-black font-semibold shadow-md border border-border py-2 text-sm hover:opacity-90 dark:from-blue-900 dark:to-cyan-800 dark:text-white flex-1"
+                            onClick={handleExportPDF}
+                          >
+                            Export PDF
+                          </Button>
+                          <Button
+                            className="bg-gradient-to-r from-white to-cyan-200 text-black font-semibold shadow-md border border-border py-2 text-sm hover:opacity-90 dark:from-blue-900 dark:to-cyan-800 dark:text-white flex-1"
+                            onClick={handleExportImage}
+                          >
+                            Export JPG
+                          </Button>
+                        </div>
                       </div>
                     )}
                     {settingsMode === "custom" && (
@@ -820,7 +784,134 @@ export default function ViewHeatmap() {
               </div>
             )}
           </div>
-          {/* Row 2 removed (redundant analytics) */}
+          {/* Row 2: Analytics Section */}
+          <Card id="analytics-section" className="w-full h-full bg-gradient-to-br from-background/80 to-muted/90 dark:from-slate-900/80 dark:to-slate-950/90 border border-border shadow-2xl shadow-primary/10 backdrop-blur-xl rounded-xl p-8 flex flex-col">
+            <div className="grid grid-cols-4 grid-rows-2 gap-3 h-full">
+              {/* Heatmap History: col 1, row-span-2 */}
+              <div className="col-span-1 row-span-2 h-full flex flex-col">
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-lg font-bold text-foreground tracking-tight drop-shadow mb-2">Heatmap History</CardTitle>
+                </CardHeader>
+                <CardContent className="h-full flex-1 overflow-y-auto">
+                  {jobHistory.length === 0 ? (
+                    <div className="text-muted-foreground text-center mt-8">No heatmaps found.</div>
+                  ) : (
+                    <div className="space-y-2">
+                      {jobHistory.map((job) => (
+                        <div
+                          key={job.job_id}
+                          className={`flex items-center justify-between px-2 py-2 rounded-md cursor-pointer transition-colors ${selectedJob && selectedJob.job_id === job.job_id ? "bg-primary/20 dark:bg-blue-900/40" : "hover:bg-muted/60 dark:hover:bg-slate-800/60"}`}
+                          onClick={() => handleSelectJob(job)}
+                        >
+                          <div className="min-w-0 flex-1">
+                            <div className="truncate font-semibold text-foreground text-sm">
+                              {job.input_video_name || job.input_floorplan_name || job.job_id.slice(0, 8) + "..."}
+                            </div>
+                            <div className="text-xs text-muted-foreground">
+                              {new Date(job.start_datetime).toLocaleString()} - {new Date(job.end_datetime).toLocaleString()}
+                            </div>
+                          </div>
+                          <button
+                            className="ml-2 p-1 rounded hover:bg-red-100 dark:hover:bg-red-900"
+                            onClick={e => {
+                              e.stopPropagation();
+                              handleDeleteJob(job.job_id);
+                            }}
+                            title="Delete heatmap"
+                          >
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3m5 0H6" /></svg>
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </CardContent>
+              </div>
+              {/* Total Visitors: col 2, row 1 */}
+              <Card className="bg-gradient-to-br from-yellow-400/40 to-background/80 border-none shadow-xl shadow-blue-400/20 backdrop-blur-md py-4 rounded-xl transition-transform hover:scale-[1.02] hover:shadow-blue-400/30 flex flex-col items-center">
+                <CardHeader className="flex flex-row items-center gap-2 justify-center w-full">
+                  <Users className="text-yellow-400 h-7 w-7 mb-2 drop-shadow" />
+                  <CardTitle className="text-base font-semibold text-foreground whitespace-nowrap text-center">Total Visitors</CardTitle>
+                </CardHeader>
+                <CardContent className="flex flex-col items-center justify-center flex-1">
+                  {analysisLoading ? (
+                    <p className="text-yellow-400">Loading...</p>
+                  ) : (
+                    <p className="text-3xl font-bold text-yellow-400">{analysis?.total_visitors ?? 0}</p>
+                  )}
+                </CardContent>
+              </Card>
+              {/* Traffic Distribution: col 3-4, row 1 */}
+              <Card className="bg-gradient-to-br from-cyan-400/40 to-background/80 border-none shadow-xl shadow-cyan-400/20 backdrop-blur-md py-4 rounded-xl transition-transform hover:scale-[1.02] hover:shadow-cyan-400/30 flex flex-col items-center col-span-2 row-span-1">
+                <CardHeader className="flex flex-row items-center gap-2 justify-center w-full">
+                  <BarChart2 className="text-cyan-400 h-7 w-7 mb-2 drop-shadow" />
+                  <CardTitle className="text-base font-semibold text-foreground whitespace-nowrap text-center">Traffic Distribution</CardTitle>
+                </CardHeader>
+                <CardContent className="flex-1 flex items-center w-full">
+                  <ChartContainer config={{ value: { color: '#1976d2', label: 'Visitors' } }} className="w-full h-full">
+                    <BarChart data={[
+                      { name: 'High', value: analysis?.areas?.high?.percentage ?? 0 },
+                      { name: 'Medium', value: analysis?.areas?.medium?.percentage ?? 0 },
+                      { name: 'Low', value: analysis?.areas?.low?.percentage ?? 0 }
+                    ]} margin={{ top: 20, right: 30, left: 0, bottom: 5 }}>
+                      <CartesianGrid strokeDasharray="3 3" />
+                      <XAxis dataKey="name" />
+                      <YAxis unit="%" />
+                      <Tooltip />
+                      <Bar dataKey="value" fill="#1976d2" />
+                    </BarChart>
+                  </ChartContainer>
+                </CardContent>
+              </Card>
+              {/* Recommendations: col 2-3, row 2 */}
+              <div className="col-span-2 row-span-1 h-full flex flex-col bg-gradient-to-br from-green-400/30 to-background/80 border-none shadow-xl shadow-green-400/20 backdrop-blur-md py-4 rounded-xl transition-transform hover:scale-[1.02] hover:shadow-green-400/30">
+                <CardHeader className="flex flex-row items-center gap-2">
+                  <Lightbulb className="text-green-400 h-7 w-7 mb-2 drop-shadow" />
+                  <CardTitle className="text-base font-semibold text-foreground whitespace-nowrap text-center">Recommendations</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <ul className="list-disc pl-5 text-muted-foreground">
+                    {analysis?.recommendations?.length > 0 ? (
+                      analysis.recommendations.map((rec, idx) => (
+                        <li key={`rec-list-${idx}`}>{rec}</li>
+                      ))
+                    ) : (
+                      <li className="text-muted-foreground">No recommendations available.</li>
+                    )}
+                  </ul>
+                </CardContent>
+              </div>
+              {/* Peak Hour/Minute: col 4, row 2 */}
+              <div className="col-span-1 row-span-1 h-full flex flex-col bg-gradient-to-br from-purple-400/30 to-background/80 border-none shadow-xl shadow-purple-400/20 backdrop-blur-md py-4 rounded-xl transition-transform hover:scale-[1.02] hover:shadow-purple-400/30 items-center justify-center">
+                <CardHeader className="flex flex-row items-center gap-2 justify-center">
+                  <Timer className="text-purple-400 h-7 w-7 mb-2 drop-shadow" />
+                  <CardTitle className="text-base font-semibold text-foreground whitespace-nowrap text-center">Peak Hour/Minute</CardTitle>
+                </CardHeader>
+                <CardContent className="flex flex-col items-center justify-center w-full">
+                  {analysisLoading || detectionsLoading ? (
+                    <p className="text-purple-400">Loading...</p>
+                  ) : (peakHoursData && peakHoursData.length > 0) ? (
+                    <>
+                      <ChartContainer className="w-full h-40" config={{ value: { color: '#a78bfa', label: 'Visitors' } }}>
+                        <BarChart data={peakHoursData} margin={{ top: 10, right: 10, left: 0, bottom: 10 }}>
+                          <CartesianGrid strokeDasharray="3 3" />
+                          <XAxis dataKey="x" />
+                          <YAxis allowDecimals={false} />
+                          <Tooltip />
+                          <Bar dataKey="y" fill="#a78bfa" />
+                        </BarChart>
+                      </ChartContainer>
+                      <span className="text-xs text-muted-foreground mt-2">
+                        Peak: {peakHoursData[0].x} min ({peakHoursData[0].y} visitors)
+                      </span>
+                    </>
+                  ) : (
+                    <span className="text-3xl font-bold text-purple-400 mb-1">N/A</span>
+                  )}
+                </CardContent>
+              </div>
+            </div>
+          </Card>
         </div>
       </div>
     </div>

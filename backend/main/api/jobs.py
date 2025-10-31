@@ -358,7 +358,7 @@ def get_job_time_range(job_id):
     })
 
 
-@jobs_bp.route('/heatmap_jobs/live', methods=['POST', 'OPTIONS'], strict_slashes=False)
+@jobs_bp.route('/heatmap_jobs/live', methods=['POST', 'OPTIONS'])
 @cross_origin()
 @jwt_required()
 def create_live_job():
@@ -477,7 +477,7 @@ def create_live_job():
         return jsonify({"error": f"Server error: {str(e)}"}), 500
 
 
-@jobs_bp.route('/heatmap_jobs/<job_id>/live/stop', methods=['POST', 'OPTIONS'], strict_slashes=False)
+@jobs_bp.route('/heatmap_jobs/<job_id>/live/stop', methods=['POST', 'OPTIONS'])
 @cross_origin()
 @jwt_required()
 def stop_live_job(job_id):
@@ -559,7 +559,7 @@ def stop_live_job(job_id):
         return jsonify({"error": f"Server error: {str(e)}"}), 500
 
 
-@jobs_bp.route('/heatmap_jobs/<job_id>/live/status', methods=['GET', 'OPTIONS'], strict_slashes=False)
+@jobs_bp.route('/heatmap_jobs/<job_id>/live/status', methods=['GET', 'OPTIONS'])
 @cross_origin()
 @jwt_required()
 def get_live_job_status(job_id):
