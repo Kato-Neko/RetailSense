@@ -17,6 +17,6 @@ ultralytics==8.0.196
 deep-sort-realtime==1.3.2
 psutil==5.9.6
 reportlab==4.0.4
-google-generativeai>=0.3.0  # For Gemini AI recommendations (optional - free for students)
+google-generativeai>=0.7.0  # For Gemini AI recommendations (student Pro supported)
 # groq>=0.4.0  # For Groq AI recommendations (optional - free, uncomment if using)
 # openai>=1.0.0  # For OpenAI recommendations (optional - paid, uncomment if using)
