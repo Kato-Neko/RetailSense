@@ -15,6 +15,7 @@ from ..core.db import get_db_connection
 from ..core.storage import upload_json_to_supabase, upload_image_to_supabase
 from .tracking import _get_model, _get_tracker
 from .state import get_jobs_store
+import uuid
 
 
 class LiveStreamProcessor:
@@ -38,6 +39,14 @@ class LiveStreamProcessor:
         self.latest_frame_lock = threading.Lock()
         self.last_heatmap_update = time.time()
         self.heatmap_update_interval = 5  # Update heatmap every 5 seconds
+        # Segment recording settings (upload-style processing)
+        self.segment_enabled = True
+        self.segment_duration_sec = 5  # per user: start short at 5 seconds
+        self._segment_writer = None
+        self._segment_start_time = None
+        self._segment_job_id = None
+        self._segment_fps = None
+        self._segment_size = None
         
     def start(self, detection_callback: Optional[Callable] = None):
         """Start processing RTSP stream"""
@@ -165,6 +174,13 @@ class LiveStreamProcessor:
                     except Exception as e:
                         logger.warning(f"Deferred floorplan save failed: {e}")
 
+                # Handle segment recording (upload-style pipeline)
+                try:
+                    if self.segment_enabled:
+                        self._handle_segment_recording(frame)
+                except Exception as e:
+                    logger.error(f"Segment recording error: {e}")
+
                 # Process every Nth frame
                 if self.frame_count % frame_skip == 0:
                     detections = self._detect_and_track_frame(frame, self.frame_count)
@@ -283,6 +299,124 @@ class LiveStreamProcessor:
             
         except Exception as e:
             logger.error(f"Error saving first frame: {e}")
+
+    def _handle_segment_recording(self, frame):
+        """Record short segments and process them via the upload pipeline."""
+        # Initialize writer if needed
+        if self._segment_writer is None:
+            # Start a new segment
+            self._segment_job_id = str(uuid.uuid4())
+            self._segment_start_time = time.time()
+            height, width = frame.shape[:2]
+            self._segment_size = (width, height)
+            self._segment_fps = max(self.fps, 10)
+            segment_upload_dir = os.path.join(UPLOAD_FOLDER, self._segment_job_id)
+            os.makedirs(segment_upload_dir, exist_ok=True)
+            segment_filename = f"segment_{self._segment_job_id}.mp4"
+            segment_path = os.path.join(segment_upload_dir, segment_filename)
+            # FourCC for mp4 (fallback to XVID if mp4v fails)
+            fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+            self._segment_writer = cv2.VideoWriter(segment_path, fourcc, self._segment_fps, self._segment_size)
+            if not self._segment_writer or not self._segment_writer.isOpened():
+                # Fallback
+                fourcc = cv2.VideoWriter_fourcc(*'XVID')
+                self._segment_writer = cv2.VideoWriter(segment_path, fourcc, self._segment_fps, self._segment_size)
+            # Save a floorplan for the segment
+            floorplan_filename = f"floorplan_{self._segment_job_id}.jpg"
+            floorplan_path = os.path.join(segment_upload_dir, floorplan_filename)
+            cv2.imwrite(floorplan_path, frame)
+            try:
+                upload_image_to_supabase(frame, f"{self._segment_job_id}/{floorplan_filename}")
+            except Exception:
+                pass
+            # Create default 4-corner points (normalized) to satisfy upload pipeline
+            points = [
+                {"x": 0.0, "y": 0.0},
+                {"x": 1.0, "y": 0.0},
+                {"x": 1.0, "y": 1.0},
+                {"x": 0.0, "y": 1.0},
+            ]
+            points_filename = f"points_{self._segment_job_id}.json"
+            points_path = os.path.join(segment_upload_dir, points_filename)
+            with open(points_path, 'w') as f:
+                json.dump(points, f)
+            # Prepare jobs store entry and DB row so upload pipeline can run
+            self._register_segment_job(self._segment_job_id, segment_filename, floorplan_filename, points_path)
+
+        # Write current frame
+        if self._segment_writer:
+            try:
+                self._segment_writer.write(frame)
+            except Exception:
+                pass
+
+        # Close and process if duration elapsed
+        if self._segment_start_time and (time.time() - self._segment_start_time) >= self.segment_duration_sec:
+            try:
+                self._finalize_and_process_segment()
+            finally:
+                # Reset to allow next segment to start on next call
+                self._segment_writer = None
+                self._segment_start_time = None
+                self._segment_job_id = None
+
+    def _register_segment_job(self, seg_job_id: str, video_filename: str, floorplan_filename: str, points_path: str):
+        """Add a segment job to memory and DB for processing."""
+        # In-memory job entry
+        jobs = get_jobs_store()
+        seg_upload_dir = os.path.join(UPLOAD_FOLDER, seg_job_id)
+        seg_results_dir = os.path.join(RESULTS_FOLDER, seg_job_id)
+        os.makedirs(seg_results_dir, exist_ok=True)
+        input_video_path = os.path.join(seg_upload_dir, video_filename)
+        input_floorplan_path = os.path.join(seg_upload_dir, floorplan_filename)
+        output_heatmap_image_path = os.path.join(seg_results_dir, f"video_{seg_job_id}_heatmap.jpg")
+        output_processed_video_path = os.path.join(seg_results_dir, f"video_{seg_job_id}.mp4")
+        jobs[seg_job_id] = {
+            'status': 'pending',
+            'message': 'Live segment queued for processing',
+            'input_files': {
+                'video': input_video_path,
+                'floorplan': input_floorplan_path,
+                'points': points_path
+            },
+            'output_files_expected': {
+                'image': output_heatmap_image_path,
+                'video': output_processed_video_path
+            },
+            'time_range': None
+        }
+        # DB row (best-effort)
+        try:
+            conn = get_db_connection()
+            cur = conn.cursor()
+            cur.execute('''
+                INSERT INTO jobs (job_id, "user", input_video_name, input_floorplan_name, status, message, start_datetime, end_datetime, created_at, updated_at, output_heatmap_path, output_video_path, job_type, is_live)
+                VALUES (%s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP, NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, NULL, NULL, %s, %s)
+            ''', (seg_job_id, None, video_filename, floorplan_filename, 'pending', 'Live segment queued for processing', 'live_segment', True))
+            conn.commit()
+            cur.close()
+            conn.close()
+        except Exception as e:
+            logger.warning(f"Failed to insert segment job into DB: {e}")
+
+    def _finalize_and_process_segment(self):
+        """Close writer and dispatch processing for the segment job."""
+        if not self._segment_writer or not self._segment_job_id:
+            return
+        try:
+            self._segment_writer.release()
+        except Exception:
+            pass
+        # Kick off processing thread
+        try:
+            from .video_jobs import process_video_job
+            seg_job_id = self._segment_job_id
+            t = threading.Thread(target=process_video_job, args=(seg_job_id,))
+            t.daemon = True
+            t.start()
+            logger.info(f"Dispatched processing for live segment job {seg_job_id}")
+        except Exception as e:
+            logger.error(f"Failed to dispatch segment processing: {e}")
     
     def _save_detections_batch(self):
         """Save accumulated detections to Supabase"""
