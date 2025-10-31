@@ -37,7 +37,7 @@ class StorageManager:
                 self.supabase.storage.from_(self.bucket).upload(
                     supabase_path,
                     f,
-                    {"contentType": content_type, "upsert": True}
+                    {"contentType": content_type, "upsert": "true"}
                 )
             os.remove(local_path)
             self.logger.info(f"Uploaded and removed local: {local_path} -> {self.bucket}/{supabase_path}")
@@ -57,7 +57,7 @@ class StorageManager:
         self.supabase.storage.from_(self.bucket).upload(
             supabase_path,
             json_bytes,
-            {"contentType": "application/json", "upsert": True}
+            {"contentType": "application/json", "upsert": "true"}
         )
         self.logger.info(f"Uploaded JSON to Supabase: {self.bucket}/{supabase_path}")
     
@@ -76,7 +76,7 @@ class StorageManager:
         self.supabase.storage.from_(self.bucket).upload(
             supabase_path,
             img_bytes,
-            {"contentType": "image/jpeg", "upsert": True}
+            {"contentType": "image/jpeg", "upsert": "true"}
         )
         self.logger.info(f"Uploaded image to Supabase: {self.bucket}/{supabase_path}")
     
