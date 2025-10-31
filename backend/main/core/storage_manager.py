@@ -87,22 +87,12 @@ class StorageManager:
             supabase_path: Path in Supabase storage
             
         Returns:
-            Dictionary with JSON data or None if failed
+            Dictionary with JSON data or None if failed/not found
         """
         try:
-            # First check if the file exists
-            try:
-                info = self.supabase.storage.from_(self.bucket).get_public_url(supabase_path)
-                if not info:
-                    self.logger.warning(f"File not found in Supabase at {self.bucket}/{supabase_path}")
-                    return None
-            except Exception as e:
-                self.logger.warning(f"Error checking file existence in Supabase at {self.bucket}/{supabase_path}: {e}")
-                return None
-
             res = self.supabase.storage.from_(self.bucket).download(supabase_path)
             if res is None:
-                self.logger.warning(f"File download returned None from Supabase at {self.bucket}/{supabase_path}")
+                # File doesn't exist - this is normal for cache misses
                 return None
             
             try:
@@ -111,7 +101,12 @@ class StorageManager:
                 self.logger.error(f"Failed to parse JSON from Supabase at {self.bucket}/{supabase_path}: {e}")
                 return None
         except Exception as e:
-            self.logger.error(f"Failed to download JSON from Supabase at {self.bucket}/{supabase_path}: {e}")
+            # Check if it's a 404/not found error (normal for cache misses)
+            err_str = str(e).lower()
+            if '404' in err_str or 'not found' in err_str:
+                # File doesn't exist - normal case
+                return None
+            self.logger.warning(f"Could not download JSON from Supabase at {self.bucket}/{supabase_path}: {e}")
             return None
     
     def download_image(self, supabase_path: str) -> Optional[np.ndarray]:

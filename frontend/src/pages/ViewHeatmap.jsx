@@ -99,6 +99,7 @@ export default function ViewHeatmap() {
   
   // Cache for analysis to prevent re-fetching
   const analysisCache = useRef({});
+  const pendingRequests = useRef({}); // Track pending requests to prevent duplicates
 
   // Fetch job history on mount
   useEffect(() => {
@@ -159,14 +160,23 @@ export default function ViewHeatmap() {
     }
     
     const jobId = selectedJob.job_id;
+    if (!jobId) return;
     
     // Check cache first
-    if (analysisCache.current[jobId]) {
-      setAnalysis(analysisCache.current[jobId]);
+    const cached = analysisCache.current[jobId];
+    if (cached) {
+      setAnalysis(cached);
       setAnalysisLoading(false);
       return;
     }
     
+    // Prevent duplicate requests - check if already loading this job
+    if (pendingRequests.current[jobId]) {
+      return; // Already loading, wait
+    }
+    
+    // Mark as pending and fetch
+    pendingRequests.current[jobId] = true;
     setAnalysisLoading(true)
     heatmapService.getHeatmapAnalysis(jobId)
       .then(data => {
@@ -177,7 +187,10 @@ export default function ViewHeatmap() {
       .catch(() => {
         setAnalysis(null)
       })
-      .finally(() => setAnalysisLoading(false))
+      .finally(() => {
+        delete pendingRequests.current[jobId];
+        setAnalysisLoading(false);
+      })
   }, [selectedJob?.job_id, isLiveMode])
 
   // Fetch detections if needed (single bin)

@@ -663,8 +663,30 @@ def get_heatmap_analysis_logic(job_id):
     else:
         floorplan_height, floorplan_width = floorplan.shape[:2]
     
+    # Check for cached analysis first
+    from ..core.storage_manager import download_json_from_supabase, upload_json_to_supabase
+    cache_path = f"{job_id}/analysis_cache.json"
+    
+    try:
+        cached_analysis = download_json_from_supabase(cache_path)
+        if cached_analysis:
+            logger.info(f"Using cached analysis for job {job_id}")
+            return jsonify(cached_analysis)
+    except Exception as e:
+        logger.warning(f"Could not load cached analysis for job {job_id}: {e}")
+    
+    # No cache found, run analysis
     detections, fps = load_detections(job_id)
     analysis = analyze_heatmap(img_gray, (floorplan_height, floorplan_width), detections=detections, fps=fps)
+    
+    # Cache the analysis result
+    try:
+        upload_json_to_supabase(analysis, cache_path)
+        logger.info(f"Cached analysis for job {job_id}")
+    except Exception as e:
+        logger.warning(f"Could not cache analysis for job {job_id}: {e}")
+        # Continue anyway - caching is optional
+    
     return jsonify(analysis)
 
 @heatmap_bp.route('/heatmap_jobs/<job_id>/analysis', methods=['GET', 'OPTIONS'])
