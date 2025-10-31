@@ -111,6 +111,7 @@ def _call_gemini_with_fallback(prompt: str, context: Dict) -> List[str]:
     candidates = [m for m in fallback_order if m]
 
     last_err = None
+    quota_exceeded = False
     for model_id in candidates:
         try:
             model = genai.GenerativeModel(model_id)
@@ -146,8 +147,17 @@ def _call_gemini_with_fallback(prompt: str, context: Dict) -> List[str]:
             raise RuntimeError('No valid text parts in candidates')
         except Exception as e:
             last_err = e
+            err_str = str(e).lower()
+            # Check for quota/rate limit errors - stop trying other models
+            if '429' in str(e) or 'quota' in err_str or 'rate limit' in err_str:
+                quota_exceeded = True
+                logger.warning(f"Gemini quota exceeded on {model_id}. Stopping fallback attempts.")
+                break
             logger.error(f"Gemini call failed for {model_id}: {e}")
             continue
+    
+    if quota_exceeded:
+        raise RuntimeError("Gemini API quota exceeded - please check your plan and billing details")
     raise RuntimeError(str(last_err) or "Gemini call failed")
 
 

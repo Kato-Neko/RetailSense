@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Users, BarChart2, Lightbulb, Timer, Map, FileVideo, Calendar, Clock, Target, CheckCircle, Download, Settings } from "lucide-react"
 import { ChartContainer } from "@/components/ui/chart"
@@ -96,6 +96,9 @@ export default function ViewHeatmap() {
 
   const [showSettings, setShowSettings] = useState(false);
   const [isSpinning, setIsSpinning] = useState(false);
+  
+  // Cache for analysis to prevent re-fetching
+  const analysisCache = useRef({});
 
   // Fetch job history on mount
   useEffect(() => {
@@ -148,18 +151,34 @@ export default function ViewHeatmap() {
     return () => clearInterval(interval);
   }, [isLiveMode, location.search]);
 
-  // Fetch analysis when selectedJob changes
+  // Fetch analysis when selectedJob changes (with caching)
   useEffect(() => {
     if (!selectedJob || isLiveMode) {
       setAnalysis(null)
       return
     }
+    
+    const jobId = selectedJob.job_id;
+    
+    // Check cache first
+    if (analysisCache.current[jobId]) {
+      setAnalysis(analysisCache.current[jobId]);
+      setAnalysisLoading(false);
+      return;
+    }
+    
     setAnalysisLoading(true)
-    heatmapService.getHeatmapAnalysis(selectedJob.job_id)
-      .then(data => setAnalysis(data))
-      .catch(() => setAnalysis(null))
+    heatmapService.getHeatmapAnalysis(jobId)
+      .then(data => {
+        // Cache the result
+        analysisCache.current[jobId] = data;
+        setAnalysis(data)
+      })
+      .catch(() => {
+        setAnalysis(null)
+      })
       .finally(() => setAnalysisLoading(false))
-  }, [selectedJob])
+  }, [selectedJob?.job_id, isLiveMode])
 
   // Fetch detections if needed (single bin)
   useEffect(() => {
