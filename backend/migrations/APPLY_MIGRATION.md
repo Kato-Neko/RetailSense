@@ -71,3 +71,4 @@ You should see all 4 columns listed.
 
 Once the migration is complete, restart your backend service and the live streaming feature should work properly.
 
+
