@@ -86,21 +86,25 @@ export default function AnalyticsSummaryBox({ customDateRange, customTimeRange, 
           <div className="w-full flex flex-col items-center justify-center text-center rounded-xl px-3 py-3 md:px-4 md:py-3 min-w-0 max-w-full overflow-hidden">
             <div className="text-base md:text-lg lg:text-xl font-semibold truncate text-foreground leading-tight w-full">{startTimeStr} – {endTimeStr}</div>
             <div className="mt-1 text-xs md:text-sm truncate text-foreground/70 leading-tight w-full">{startDateStr} – {endDateStr}</div>
+            <div className="mt-1 text-[10px] uppercase tracking-wide opacity-60">peak time</div>
           </div>
         </div>
       </div>
 
       {/* Distribution (no label) */}
-      <div className="space-y-6 mt-8 mb-2">
+      <div className="space-y-6 mt-5 mb-2">
         <div className="space-y-3">
           <div className="text-sm flex items-center gap-3"><span className="w-16 text-foreground/70">Low</span><div className="flex-1 h-3 rounded-full bg-white/10"><div className="h-3 rounded-full bg-blue-500" style={{ width: `${low}%` }}></div></div><span className="w-12 text-right text-foreground/80">{low}%</span></div>
           <div className="text-sm flex items-center gap-3"><span className="w-16 text-foreground/70">Medium</span><div className="flex-1 h-3 rounded-full bg-white/10"><div className="h-3 rounded-full bg-amber-500" style={{ width: `${med}%` }}></div></div><span className="w-12 text-right text-foreground/80">{med}%</span></div>
           <div className="text-sm flex items-center gap-3"><span className="w-16 text-foreground/70">High</span><div className="flex-1 h-3 rounded-full bg-white/10"><div className="h-3 rounded-full bg-red-500" style={{ width: `${high}%` }}></div></div><span className="w-12 text-right text-foreground/80">{high}%</span></div>
+          <div className="flex items-center justify-center text-center">
+            <div className="mt-1 text-[10px] uppercase tracking-wide opacity-60">traffic distribution</div>
+          </div>
         </div>
       </div>
 
       {/* Recommendations (no label) */}
-      <div className="space-y-4 mt-8">
+      <div className="space-y-4 mt-3">
         {analysis?.recommendations_source === 'ai' && !!analysis?.recommendations_provider && (
           <div className="flex items-center gap-2 text-xs text-foreground/70">
             <Bot className="h-4 w-4 text-cyan-400" />
@@ -115,13 +119,7 @@ export default function AnalyticsSummaryBox({ customDateRange, customTimeRange, 
             {(showMore ? recs.slice(0, 3) : recs).map((r, i) => (<li key={`rec-${i}`}>{r}</li>))}
           </ul>
         )}
-        {showMore && (
-          <div className="pt-1 text-right">
-            <span className="text-[11px] opacity-70">and more…</span>
-          </div>
-        )}
       </div>
-      {/* Readiness notice removed per request */}
     </div>
   );
 }

@@ -465,7 +465,7 @@ export default function ViewHeatmap() {
               <Card className={`h-[calc(100vh-220px)] box-border flex flex-col shadow-xl rounded-xl bg-gradient-to-br from-background/80 to-muted/90 relative w-full`}>
                 {/* Settings toggle (gear) */}
                 <button
-                  className={`absolute top-4 right-4 z-20 transition-colors ${(!heatmapGenerated || !selectedJob) ? 'opacity-50 cursor-not-allowed' : 'hover:bg-cyan-100 dark:hover:bg-cyan-800'}`}
+                  className={`absolute top-7 right-4 z-20 transition-colors ${(!heatmapGenerated || !selectedJob) ? 'opacity-50 cursor-not-allowed' : 'hover:bg-cyan-100 dark:hover:bg-cyan-800'}`}
                   onClick={() => {
                     if (!heatmapGenerated || !selectedJob) return;
                     setShowSettings(v => !v);
@@ -477,7 +477,8 @@ export default function ViewHeatmap() {
                   disabled={!heatmapGenerated || !selectedJob}
                   style={{ background: 'none', padding: 0, border: 'none' }}
                 >
-                  <Settings className={`h-9 w-9 text-cyan-400 ${typeof isSpinning !== 'undefined' && isSpinning ? 'animate-spin' : ''}`} style={{ animationDuration: '500ms' }} />
+                  <Settings className={`h-6 w-6 ${typeof isSpinning !== 'undefined' && isSpinning ? 'animate-spin' : ''}`} style={{ animationDuration: '500ms' }} />
+                  
                 </button>
                 <CardHeader className="pb-2">
                   <CardTitle className="text-lg font-bold text-foreground tracking-tight drop-shadow mb-2 whitespace-nowrap text-center">Heatmap Visualization</CardTitle>
