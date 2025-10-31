@@ -459,6 +459,25 @@ const LiveStreaming = () => {
 
               {isConnected && (
                 <>
+                <div className="flex items-center justify-between border-t pt-2">
+                  <Label>Job ID</Label>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-muted-foreground font-mono truncate max-w-[200px]" title={jobId || ''}>
+                      {jobId || '—'}
+                    </span>
+                    {jobId && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-6 text-xs"
+                        onClick={() => navigator.clipboard?.writeText(jobId)}
+                        title="Copy Job ID"
+                      >
+                        Copy
+                      </Button>
+                    )}
+                  </div>
+                </div>
                   <div className="flex items-center justify-between border-t pt-2">
                     <Label>Camera Name</Label>
                     <span className="text-sm">{cameraConfig.cameraName || cameraConfig.ipAddress || "Unnamed"}</span>
