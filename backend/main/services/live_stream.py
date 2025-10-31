@@ -47,6 +47,8 @@ class LiveStreamProcessor:
         self._segment_job_id = None
         self._segment_fps = None
         self._segment_size = None
+        # Behavior: stop livestream after the first recorded segment finishes
+        self.stop_after_one_segment = True
         
     def start(self, detection_callback: Optional[Callable] = None):
         """Start processing RTSP stream"""
@@ -417,6 +419,15 @@ class LiveStreamProcessor:
             logger.info(f"Dispatched processing for live segment job {seg_job_id}")
         except Exception as e:
             logger.error(f"Failed to dispatch segment processing: {e}")
+
+        # Optionally stop the livestream after recording one segment so user sees output
+        if self.stop_after_one_segment:
+            try:
+                self._update_status('stopped', 'Recorded 5s segment; processing started. Livestream stopped by configuration.')
+            except Exception:
+                pass
+            # Signal main loop to stop; release capture in finally block
+            self.is_running = False
     
     def _save_detections_batch(self):
         """Save accumulated detections to Supabase"""
