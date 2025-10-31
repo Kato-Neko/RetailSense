@@ -360,9 +360,36 @@ class LiveStreamProcessor:
                 )
                 
                 if blended_img is not None:
-                    # Upload to Supabase
+                    # Upload to Supabase (live artifact)
                     upload_image_to_supabase(blended_img, f"{self.job_id}/live_heatmap.jpg")
-                    logger.info(f"Updated live heatmap for job {self.job_id}")
+                    
+                    # Also persist a local image matching the upload-job path pattern
+                    try:
+                        results_dir = os.path.join(RESULTS_FOLDER, self.job_id)
+                        os.makedirs(results_dir, exist_ok=True)
+                        output_heatmap_image_path = os.path.join(results_dir, f"video_{self.job_id}_heatmap.jpg")
+                        cv2.imwrite(output_heatmap_image_path, blended_img)
+                        
+                        # Update DB output_heatmap_path to align with upload-style history rendering
+                        try:
+                            conn = get_db_connection()
+                            cur = conn.cursor()
+                            # Ensure POSIX-style path in DB (e.g., /project_results/<job_id>/video_<job_id>_heatmap.jpg)
+                            db_output_path = f"/project_results/{self.job_id}/video_{self.job_id}_heatmap.jpg"
+                            cur.execute('''
+                                UPDATE jobs 
+                                SET output_heatmap_path = %s, updated_at = CURRENT_TIMESTAMP
+                                WHERE job_id = %s
+                            ''', (db_output_path, self.job_id))
+                            conn.commit()
+                            cur.close()
+                            conn.close()
+                        except Exception as e_db:
+                            logger.warning(f"Failed to update output_heatmap_path for live job {self.job_id}: {e_db}")
+                        
+                        logger.info(f"Saved live heatmap to {output_heatmap_image_path} and updated DB path")
+                    except Exception as e_local:
+                        logger.warning(f"Failed to persist live heatmap locally for job {self.job_id}: {e_local}")
                     
         except Exception as e:
             logger.error(f"Error updating heatmap: {e}")
