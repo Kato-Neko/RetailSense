@@ -129,12 +129,13 @@ const Dashboard = () => {
         let allCompletedJobs = jobHistory.filter((job) => job.status === "completed")
         
         // Filter by date range when comparison mode is enabled
+        // Use start_datetime (when video was recorded) not created_at (when job was created)
         let completedJobs = allCompletedJobs
         if (comparisonMode) {
           const { currentStart, currentEnd } = getDateRanges()
           completedJobs = allCompletedJobs.filter(job => {
-            const jobCreated = new Date(job.created_at)
-            return jobCreated >= currentStart && jobCreated < currentEnd
+            const jobStartDateTime = job.start_datetime ? new Date(job.start_datetime) : new Date(job.created_at)
+            return jobStartDateTime >= currentStart && jobStartDateTime < currentEnd
           })
         }
         
@@ -164,17 +165,12 @@ const Dashboard = () => {
           // Fetch detections from the new API endpoint - ONLY ONCE
           try {
             const detectionsResponse = await heatmapService.getDetections(job.job_id)
-            console.log(`Detections Response for job ${job.job_id}:`, detectionsResponse)
+            console.log("Detections Response:", detectionsResponse)
 
             if (detectionsResponse && detectionsResponse.detections) {
               const detections = detectionsResponse.detections
               const fps = detectionsResponse.fps
               const startDate = job.start_datetime ? new Date(job.start_datetime) : null
-
-              if (!detections || detections.length === 0) {
-                console.warn(`Job ${job.job_id} has empty detections array`)
-                continue
-              }
 
               detections.forEach((det) => {
                 const trackId = det.track_id
@@ -195,18 +191,11 @@ const Dashboard = () => {
                   monthlyUniqueVisitors[month].add(`${job.job_id}_${trackId}`)
                 }
               })
-              console.log(`Successfully processed ${detections.length} detections for job ${job.job_id}`)
             } else {
-              console.warn(`No detections found for job ${job.job_id} - response:`, detectionsResponse)
+              console.warn(`No detections found for job ${job.job_id}`)
             }
           } catch (error) {
             console.error(`Error fetching detections for job ${job.job_id}:`, error)
-            // Log more details about the error
-            if (error.response) {
-              console.error(`API Error Status: ${error.response.status}, Data:`, error.response.data)
-            } else if (error.message) {
-              console.error(`Error Message: ${error.message}`)
-            }
           }
         }
 
@@ -271,9 +260,10 @@ const Dashboard = () => {
           const { comparisonStart, comparisonEnd } = getDateRanges()
           
           // Filter jobs for comparison period
+          // Use start_datetime (when video was recorded) not created_at (when job was created)
           const comparisonJobs = allCompletedJobs.filter(job => {
-            const jobCreated = new Date(job.created_at)
-            return jobCreated >= comparisonStart && jobCreated < comparisonEnd
+            const jobStartDateTime = job.start_datetime ? new Date(job.start_datetime) : new Date(job.created_at)
+            return jobStartDateTime >= comparisonStart && jobStartDateTime < comparisonEnd
           })
           
           if (comparisonJobs.length > 0) {
@@ -290,11 +280,6 @@ const Dashboard = () => {
                   const detections = detectionsResponse.detections
                   const fps = detectionsResponse.fps
                   const startDate = job.start_datetime ? new Date(job.start_datetime) : null
-
-                  if (!detections || detections.length === 0) {
-                    console.warn(`Comparison job ${job.job_id} has empty detections array`)
-                    continue
-                  }
 
                   detections.forEach((det) => {
                     const trackId = det.track_id
@@ -315,15 +300,9 @@ const Dashboard = () => {
                       compMonthlyVisitors[month].add(`${job.job_id}_${trackId}`)
                     }
                   })
-                  console.log(`Successfully processed ${detections.length} comparison detections for job ${job.job_id}`)
-                } else {
-                  console.warn(`No comparison detections found for job ${job.job_id}`)
                 }
               } catch (error) {
                 console.error(`Error fetching comparison detections for job ${job.job_id}:`, error)
-                if (error.response) {
-                  console.error(`API Error Status: ${error.response.status}, Data:`, error.response.data)
-                }
               }
             }
 
@@ -651,12 +630,12 @@ const Dashboard = () => {
                 <div className="text-xs text-muted-foreground">Growth Rate</div>
               </div>
               <div className="text-center">
-                <div className="text-lg font-bold text-blue-400">Current: {stats.totalVisitors}</div>
-                <div className="text-xs text-muted-foreground">Total Visitors</div>
+                <div className="text-lg font-bold text-yellow-400">Current: {stats.peakHour}</div>
+                <div className="text-xs text-muted-foreground">Peak Hour</div>
               </div>
               <div className="text-center">
-                <div className="text-lg font-bold text-slate-400">Previous: {comparisonStats.totalVisitors}</div>
-                <div className="text-xs text-muted-foreground">Total Visitors</div>
+                <div className="text-lg font-bold text-slate-400">Previous: {comparisonStats.peakHour}</div>
+                <div className="text-xs text-muted-foreground">Peak Hour</div>
               </div>
             </div>
           </Card>
