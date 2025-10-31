@@ -667,25 +667,63 @@ def get_heatmap_analysis_logic(job_id):
     from ..core.storage_manager import download_json_from_supabase, upload_json_to_supabase
     cache_path = f"{job_id}/analysis_cache.json"
     
-    try:
-        cached_analysis = download_json_from_supabase(cache_path)
-        if cached_analysis:
-            logger.info(f"Using cached analysis for job {job_id}")
-            return jsonify(cached_analysis)
-    except Exception as e:
-        logger.warning(f"Could not load cached analysis for job {job_id}: {e}")
+    use_ai = os.getenv('USE_AI_RECOMMENDATIONS', 'false').lower() == 'true'
+    force_refresh = request.args.get('refresh', 'false').lower() == 'true'
     
-    # No cache found, run analysis
+    # STEP 1: Check for cached AI analysis
+    # Always use cached AI analysis if available (only bypass for rule-based cache or manual refresh)
+    if not force_refresh:
+        try:
+            cached_analysis = download_json_from_supabase(cache_path)
+            if cached_analysis:
+                cache_source = cached_analysis.get('recommendations_source')
+                
+                # If cache has AI-generated recommendations → always use it
+                if cache_source == 'ai' and cached_analysis.get('recommendations_provider'):
+                    logger.info(f"Using cached AI analysis for job {job_id} (source: {cached_analysis.get('recommendations_provider')})")
+                    return jsonify(cached_analysis)
+                
+                # If cache has rule-based recommendations and AI is enabled → skip cache to retry AI
+                # This allows retrying AI when quota resets, rather than using stale rule-based cache
+                if use_ai and cache_source == 'rule':
+                    logger.info(f"Cache contains rule-based recommendations for job {job_id}, skipping cache to retry AI")
+                # If AI is disabled, rule-based cache is fine to use
+                elif not use_ai:
+                    logger.info(f"Using cached analysis for job {job_id} (AI disabled)")
+                    return jsonify(cached_analysis)
+        except Exception as e:
+            logger.warning(f"Could not load cached analysis for job {job_id}: {e}")
+    
+    # STEP 2: No valid cache found, run fresh analysis
+    logger.info(f"Running fresh analysis for job {job_id}")
     detections, fps = load_detections(job_id)
     analysis = analyze_heatmap(img_gray, (floorplan_height, floorplan_width), detections=detections, fps=fps)
     
-    # Cache the analysis result
-    try:
-        upload_json_to_supabase(analysis, cache_path)
-        logger.info(f"Cached analysis for job {job_id}")
-    except Exception as e:
-        logger.warning(f"Could not cache analysis for job {job_id}: {e}")
-        # Continue anyway - caching is optional
+    # STEP 3: Cache result only if AI recommendations were successfully generated
+    # This ensures:
+    # - AI analysis is cached and reused for future requests
+    # - Rule-based fallback is NOT cached, allowing AI to retry on next request
+    should_cache = False
+    if use_ai:
+        # Only cache if AI successfully generated recommendations
+        if analysis.get('recommendations_source') == 'ai' and analysis.get('recommendations_provider'):
+            should_cache = True
+            logger.info(f"AI recommendations generated for job {job_id}, caching for future use")
+        else:
+            should_cache = False
+            logger.info(f"AI failed or quota exceeded for job {job_id}, using rule-based fallback (not caching to allow retry)")
+    else:
+        # If AI is disabled, always cache (rule-based is the expected result)
+        should_cache = True
+        logger.info(f"AI disabled for job {job_id}, caching rule-based recommendations")
+    
+    if should_cache:
+        try:
+            upload_json_to_supabase(analysis, cache_path)
+            logger.info(f"Successfully cached analysis for job {job_id}")
+        except Exception as e:
+            logger.warning(f"Could not cache analysis for job {job_id}: {e}")
+            # Continue anyway - caching is optional
     
     return jsonify(analysis)
 
