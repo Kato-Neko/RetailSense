@@ -6,6 +6,7 @@ import { BarChart, CartesianGrid, XAxis, YAxis, Tooltip, Bar } from "recharts"
 import { heatmapService } from "../services/api"
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
 import { Button } from "@/components/ui/button"
+import { AnimatePresence, motion } from "framer-motion"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { Pagination, PaginationContent, PaginationItem, PaginationLink, PaginationNext, PaginationPrevious } from "@/components/ui/pagination"
 import CustomDateTimeStep from "@/modules/module2/CustomDateTimeStep"
@@ -94,6 +95,7 @@ export default function ViewHeatmap() {
   const navigate = useNavigate();
 
   const [showSettings, setShowSettings] = useState(false);
+  const [isSpinning, setIsSpinning] = useState(false);
 
   // Fetch job history on mount
   useEffect(() => {
@@ -464,12 +466,18 @@ export default function ViewHeatmap() {
                 {/* Settings toggle (gear) */}
                 <button
                   className={`absolute top-4 right-4 z-20 transition-colors ${(!heatmapGenerated || !selectedJob) ? 'opacity-50 cursor-not-allowed' : 'hover:bg-cyan-100 dark:hover:bg-cyan-800'}`}
-                  onClick={() => { if (heatmapGenerated && selectedJob) setShowSettings(v => !v); }}
+                  onClick={() => {
+                    if (!heatmapGenerated || !selectedJob) return;
+                    setShowSettings(v => !v);
+                    // spin the gear briefly on toggle
+                    try { setIsSpinning(true); } catch {}
+                    setTimeout(() => { try { setIsSpinning(false); } catch {} }, 500);
+                  }}
                   title="Show Heatmap Settings"
                   disabled={!heatmapGenerated || !selectedJob}
                   style={{ background: 'none', padding: 0, border: 'none' }}
                 >
-                  <Settings className="h-8 w-8 text-cyan-500" />
+                  <Settings className={`h-9 w-9 text-cyan-400 ${typeof isSpinning !== 'undefined' && isSpinning ? 'animate-spin' : ''}`} style={{ animationDuration: '500ms' }} />
                 </button>
                 <CardHeader className="pb-2">
                   <CardTitle className="text-lg font-bold text-foreground tracking-tight drop-shadow mb-2 whitespace-nowrap text-center">Heatmap Visualization</CardTitle>
@@ -538,8 +546,16 @@ export default function ViewHeatmap() {
               </Card>
             </div>
             {/* Settings (conditionally rendered) */}
+            <AnimatePresence>
             {showSettings && (
-              <div className="w-[520px] shrink-0 flex items-start">
+              <motion.div
+                key="settings-panel"
+                initial={{ x: 56 }}
+                animate={{ x: 0 }}
+                exit={{ x: 56 }}
+                transition={{ type: 'spring', stiffness: 280, damping: 24 }}
+                className="w-[520px] shrink-0 flex items-start"
+              >
                 <Card className="w-full h-[calc(100vh-220px)] box-border flex flex-col shadow-xl rounded-xl bg-gradient-to-br from-blue-400/30 to-background/80">
                   <CardHeader className="pb-2 items-center relative w-full">
                     <CardTitle className="text-lg font-bold text-foreground tracking-tight drop-shadow mb-2 whitespace-nowrap text-center w-full">Heatmap Settings</CardTitle>
@@ -817,8 +833,9 @@ export default function ViewHeatmap() {
                     )}
                   </CardContent>
                 </Card>
-              </div>
+              </motion.div>
             )}
+            </AnimatePresence>
           </div>
           {/* Row 2 removed (redundant analytics) */}
         </div>

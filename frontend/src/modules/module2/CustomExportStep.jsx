@@ -1,5 +1,5 @@
 import { Button } from "@/components/ui/button"
-import { Download, CheckCircle, Calendar, Clock, BarChart2, Timer, Lightbulb } from "lucide-react"
+import { Download, CheckCircle, Calendar, Clock, BarChart2, Timer, Lightbulb, Bot } from "lucide-react"
 
 // Add a helper to bin detections by time and count unique visitors
 function getVisitorBins(detections, startMinute, endMinute, numBins = 5) {
@@ -101,6 +101,13 @@ export default function AnalyticsSummaryBox({ customDateRange, customTimeRange, 
 
       {/* Recommendations (no label) */}
       <div className="space-y-4 mt-8">
+        {analysis?.recommendations_source === 'ai' && !!analysis?.recommendations_provider && (
+          <div className="flex items-center gap-2 text-xs text-foreground/70">
+            <Bot className="h-4 w-4 text-cyan-400" />
+            <span>AI-generated recommendations</span>
+            <span className="opacity-60">• {String(analysis.recommendations_provider).toUpperCase()}</span>
+          </div>
+        )}
         {recs.length === 0 ? (
           <div className="text-sm text-foreground/70">No recommendations available.</div>
         ) : (

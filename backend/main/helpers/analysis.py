@@ -91,6 +91,7 @@ def analyze_heatmap(heatmap, floorplan_shape, detections=None, fps=None):
     if AI_AVAILABLE and use_ai:
         recommendations = generate_ai_recommendations(areas, total_visitors, peak_hours, provider=ai_provider)
         recommendations_source = 'ai'
+        recommendations_provider = ai_provider or 'auto'
     else:
         # Fallback to rule-based recommendations
         recommendations = []
@@ -103,11 +104,13 @@ def analyze_heatmap(heatmap, floorplan_shape, detections=None, fps=None):
         if not recommendations:
             recommendations.append("Monitor traffic patterns over time to identify optimization opportunities")
         recommendations_source = 'rule'
+        recommendations_provider = None
 
     return {
         'areas': areas,
         'recommendations': recommendations,
         'recommendations_source': recommendations_source,
+        'recommendations_provider': recommendations_provider,
         'peak_hours': peak_hours,
         'total_visitors': total_visitors
     }
