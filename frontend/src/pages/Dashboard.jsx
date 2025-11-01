@@ -497,83 +497,426 @@ const Dashboard = () => {
   const userEmail = 'N/A'; // Replace with actual value if available
   const dateRange = 'N/A'; // Replace with actual value if available
 
-  // Export chart data as CSV (summary stats + chart data, excluding 'fill' and 'dotColor')
+  // Helper function to format date range
+  const formatDateRange = (start, end) => {
+    const formatDate = (date) => {
+      return date.toLocaleDateString('en-US', { 
+        year: 'numeric', 
+        month: 'short', 
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+      })
+    }
+    return `${formatDate(start)} - ${formatDate(end)}`
+  }
+
+  // Helper functions for statistical calculations
+  const calculateStats = (data, visitorKey = 'visitors') => {
+    if (!data || data.length === 0) {
+      return {
+        average: 0,
+        min: 0,
+        max: 0,
+        median: 0,
+        sum: 0,
+        count: 0
+      }
+    }
+    
+    const values = data.map(d => d[visitorKey] || 0).filter(v => typeof v === 'number')
+    if (values.length === 0) {
+      return { average: 0, min: 0, max: 0, median: 0, sum: 0, count: 0 }
+    }
+    
+    const sorted = [...values].sort((a, b) => a - b)
+    const sum = values.reduce((acc, val) => acc + val, 0)
+    const average = sum / values.length
+    const min = sorted[0]
+    const max = sorted[sorted.length - 1]
+    const median = sorted.length % 2 === 0
+      ? (sorted[sorted.length / 2 - 1] + sorted[sorted.length / 2]) / 2
+      : sorted[Math.floor(sorted.length / 2)]
+    
+    return { average, min, max, median, sum, count: values.length }
+  }
+
+  // Helper function to find busiest and quietest periods
+  const findPeriods = (data, visitorKey = 'visitors', labelKey) => {
+    if (!data || data.length === 0) {
+      return { busiest: null, quietest: null }
+    }
+    
+    let busiest = data[0]
+    let quietest = data[0]
+    
+    data.forEach(item => {
+      const value = item[visitorKey] || 0
+      if (value > (busiest[visitorKey] || 0)) busiest = item
+      if (value < (quietest[visitorKey] || 0)) quietest = item
+    })
+    
+    const busiestLabel = labelKey ? busiest[labelKey] : (busiest.hour || busiest.day || busiest.month || 'N/A')
+    const quietestLabel = labelKey ? quietest[labelKey] : (quietest.hour || quietest.day || quietest.month || 'N/A')
+    
+    return {
+      busiest: { label: busiestLabel, value: busiest[visitorKey] || 0 },
+      quietest: { label: quietestLabel, value: quietest[visitorKey] || 0 }
+    }
+  }
+
+  // Helper function to calculate trend
+  const calculateTrend = (data, visitorKey = 'visitors') => {
+    if (!data || data.length < 2) return 'Insufficient data'
+    
+    const values = data.map(d => d[visitorKey] || 0)
+    const firstHalf = values.slice(0, Math.floor(values.length / 2))
+    const secondHalf = values.slice(Math.floor(values.length / 2))
+    
+    const firstAvg = firstHalf.reduce((a, b) => a + b, 0) / firstHalf.length
+    const secondAvg = secondHalf.reduce((a, b) => a + b, 0) / secondHalf.length
+    
+    const change = ((secondAvg - firstAvg) / (firstAvg || 1)) * 100
+    
+    if (change > 5) return `Increasing (+${change.toFixed(1)}%)`
+    if (change < -5) return `Decreasing (${change.toFixed(1)}%)`
+    return `Stable (${change.toFixed(1)}%)`
+  }
+
+  // Helper function to get chart period label
+  const getChartPeriodLabel = () => {
+    const now = new Date()
+    if (activeChart === "daily") {
+      const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+      return formatDateRange(today, now)
+    } else if (activeChart === "weekly") {
+      const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000)
+      return formatDateRange(weekAgo, now)
+    } else if (activeChart === "monthly") {
+      const monthStart = new Date(now.getFullYear(), now.getMonth(), 1)
+      return formatDateRange(monthStart, now)
+    }
+    return 'N/A'
+  }
+
+  // Export chart data as CSV (Option 2: Statistical Analysis Export)
   const exportCSV = () => {
     let data = [];
-    if (activeChart === 'daily') data = dailyLineData;
-    else if (activeChart === 'weekly') data = weeklyLineData;
-    else if (activeChart === 'monthly') data = monthlyLineData;
+    let labelKey = '';
+    if (activeChart === 'daily') {
+      data = dailyLineData;
+      labelKey = 'hour';
+    } else if (activeChart === 'weekly') {
+      data = weeklyLineData;
+      labelKey = 'day';
+    } else if (activeChart === 'monthly') {
+      data = monthlyLineData;
+      labelKey = 'month';
+    }
     if (!data.length) return toast.error('No data to export.');
+    
+    // Calculate statistics
+    const stats_calc = calculateStats(data);
+    const periods = findPeriods(data, 'visitors', labelKey);
+    const trend = calculateTrend(data);
+    const periodLabel = getChartPeriodLabel();
+    const { currentStart, currentEnd } = getDateRanges();
+    
     // Exclude 'fill' and 'dotColor' fields
     const header = Object.keys(data[0]).filter(h => h !== 'fill' && h !== 'dotColor');
     const csvRows = [];
-    // Add export date/time as first row
-    const exportDate = new Date().toLocaleString();
-    csvRows.push('Exported At,' + exportDate);
-    // Add summary stats as next rows
+    
+    // === SECTION 1: REPORT HEADER ===
+    csvRows.push('='.repeat(50));
+    csvRows.push('FOOT TRAFFIC ANALYTICS REPORT');
+    csvRows.push('='.repeat(50));
+    csvRows.push('');
+    csvRows.push('Report Generated,' + new Date().toLocaleString());
+    csvRows.push('Chart Type,' + activeChart.charAt(0).toUpperCase() + activeChart.slice(1));
+    csvRows.push('Comparison Mode,' + (comparisonMode ? 'Enabled' : 'Disabled'));
+    csvRows.push('Data Period,' + periodLabel);
+    csvRows.push('');
+    
+    // === SECTION 2: SUMMARY STATISTICS ===
+    csvRows.push('='.repeat(50));
+    csvRows.push('SUMMARY STATISTICS');
+    csvRows.push('='.repeat(50));
     csvRows.push('Total Visitors,' + stats.totalVisitors);
-    csvRows.push('Peak Hour,' + stats.peakHour);
+    csvRows.push('Peak Period,' + stats.peakHour);
     csvRows.push('Processed Videos,' + stats.processedVideos);
     csvRows.push('Generated Heatmaps,' + stats.generatedHeatmaps);
-    csvRows.push(''); // Empty row
+    csvRows.push('');
+    
+    // === SECTION 3: COMPARISON ANALYSIS (if enabled) ===
+    if (comparisonMode) {
+      csvRows.push('='.repeat(50));
+      csvRows.push('COMPARISON ANALYSIS');
+      csvRows.push('='.repeat(50));
+      const visitorChange = stats.totalVisitors - comparisonStats.totalVisitors;
+      const growthRate = comparisonStats.totalVisitors > 0 
+        ? ((stats.totalVisitors - comparisonStats.totalVisitors) / comparisonStats.totalVisitors * 100).toFixed(1)
+        : '0.0';
+      csvRows.push('Visitor Change,' + (visitorChange > 0 ? '+' : '') + visitorChange);
+      csvRows.push('Growth Rate,' + growthRate + '%');
+      csvRows.push('Previous Peak Hour,' + comparisonStats.peakHour);
+      csvRows.push('Previous Total Visitors,' + comparisonStats.totalVisitors);
+      const comparisonRange = formatDateRange(getDateRanges().comparisonStart, getDateRanges().comparisonEnd);
+      csvRows.push('Comparison Period,' + comparisonRange);
+      csvRows.push('');
+    }
+    
+    // === SECTION 4: STATISTICAL ANALYSIS ===
+    csvRows.push('='.repeat(50));
+    csvRows.push('STATISTICAL ANALYSIS');
+    csvRows.push('='.repeat(50));
+    csvRows.push('Average Visitors,' + stats_calc.average.toFixed(2));
+    csvRows.push('Minimum Visitors,' + stats_calc.min);
+    csvRows.push('Maximum Visitors,' + stats_calc.max);
+    csvRows.push('Median Visitors,' + stats_calc.median.toFixed(2));
+    csvRows.push('Total Visitor Count,' + stats_calc.sum);
+    csvRows.push('Data Points,' + stats_calc.count);
+    csvRows.push('');
+    
+    // === SECTION 5: TIME ANALYSIS ===
+    csvRows.push('='.repeat(50));
+    csvRows.push('TIME ANALYSIS');
+    csvRows.push('='.repeat(50));
+    if (periods.busiest) {
+      csvRows.push('Busiest Period,' + periods.busiest.label + ' (' + periods.busiest.value + ' visitors)');
+    }
+    if (periods.quietest) {
+      csvRows.push('Quietest Period,' + periods.quietest.label + ' (' + periods.quietest.value + ' visitors)');
+    }
+    csvRows.push('Trend Indicator,' + trend);
+    csvRows.push('');
+    
+    // === SECTION 6: RAW CHART DATA ===
+    csvRows.push('='.repeat(50));
+    csvRows.push('RAW CHART DATA');
+    csvRows.push('='.repeat(50));
     csvRows.push(header.join(','));
     data.forEach(row => {
       csvRows.push(header.map(h => row[h]).join(','));
     });
+    
     const csvContent = csvRows.join('\n');
     const blob = new Blob([csvContent], { type: 'text/csv' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `foot_traffic_${activeChart}.csv`;
+    a.download = `foot_traffic_${activeChart}_${new Date().toISOString().split('T')[0]}.csv`;
     a.click();
     URL.revokeObjectURL(url);
+    toast.success('CSV exported successfully!');
   };
 
-  // Export chart as PDF (summary stats + chart image, using dom-to-image to avoid color issues)
+  // Export chart as PDF (Option 2: Statistical Analysis Export)
   const exportPDF = async () => {
     const chartCard = document.getElementById('foot-traffic-chart-card');
     if (!chartCard) return toast.error('Chart not found.');
     const chartArea = chartCard.querySelector('.ChartContainer') || chartCard;
     try {
+      // Get data and calculate statistics
+      let data = [];
+      let labelKey = '';
+      if (activeChart === 'daily') {
+        data = dailyLineData;
+        labelKey = 'hour';
+      } else if (activeChart === 'weekly') {
+        data = weeklyLineData;
+        labelKey = 'day';
+      } else if (activeChart === 'monthly') {
+        data = monthlyLineData;
+        labelKey = 'month';
+      }
+      if (!data.length) return toast.error('No data to export.');
+      
+      const stats_calc = calculateStats(data);
+      const periods = findPeriods(data, 'visitors', labelKey);
+      const trend = calculateTrend(data);
+      const periodLabel = getChartPeriodLabel();
+      
       // Use dom-to-image to get a PNG of the chart
       const imgData = await domtoimage.toPng(chartArea, { bgcolor: '#fff' });
       const pdf = new jsPDF({ orientation: 'landscape', unit: 'pt', format: 'a4' });
       const pageWidth = pdf.internal.pageSize.getWidth();
       const pageHeight = pdf.internal.pageSize.getHeight();
+      
       let y = 40;
-      pdf.setFontSize(18);
-      pdf.text('Foot Traffic Analytics', 40, y);
-      // Add export date/time below the title
-      pdf.setFontSize(11);
+      const margin = 40;
+      const lineHeight = 18;
+      const sectionSpacing = 25;
+      
+      // === PAGE 1: EXECUTIVE SUMMARY ===
+      pdf.setFontSize(20);
+      pdf.setFont('helvetica', 'bold');
+      pdf.text('Foot Traffic Analytics Report', margin, y);
+      
+      pdf.setFontSize(10);
+      pdf.setFont('helvetica', 'normal');
       const exportDate = new Date().toLocaleString();
-      y += 18;
-      pdf.text(`Exported At: ${exportDate}`, 40, y);
-      pdf.setFontSize(12);
-      y += 22;
-      pdf.text(`Total Visitors: ${stats.totalVisitors}`, 40, y);
-      y += 20;
-      pdf.text(`Peak Hour: ${stats.peakHour}`, 40, y);
-      y += 20;
-      pdf.text(`Processed Videos: ${stats.processedVideos}`, 40, y);
-      y += 20;
-      pdf.text(`Generated Heatmaps: ${stats.generatedHeatmaps}`, 40, y);
-      y += 20;
+      y += lineHeight;
+      pdf.text(`Report Generated: ${exportDate}`, margin, y);
+      y += lineHeight * 0.5;
+      pdf.text(`Chart Type: ${activeChart.charAt(0).toUpperCase() + activeChart.slice(1)}`, margin, y);
+      y += lineHeight * 0.5;
+      pdf.text(`Comparison Mode: ${comparisonMode ? 'Enabled' : 'Disabled'}`, margin, y);
+      y += lineHeight * 0.5;
+      pdf.text(`Data Period: ${periodLabel}`, margin, y);
+      
+      y += sectionSpacing;
+      pdf.setFontSize(14);
+      pdf.setFont('helvetica', 'bold');
+      pdf.text('Executive Summary', margin, y);
+      
+      y += lineHeight * 1.5;
+      pdf.setFontSize(11);
+      pdf.setFont('helvetica', 'normal');
+      pdf.text(`Total Visitors: ${stats.totalVisitors}`, margin, y);
+      y += lineHeight;
+      pdf.text(`Peak Period: ${stats.peakHour}`, margin, y);
+      y += lineHeight;
+      
+      // Comparison stats if enabled
+      if (comparisonMode) {
+        const visitorChange = stats.totalVisitors - comparisonStats.totalVisitors;
+        const growthRate = comparisonStats.totalVisitors > 0 
+          ? ((stats.totalVisitors - comparisonStats.totalVisitors) / comparisonStats.totalVisitors * 100).toFixed(1)
+          : '0.0';
+        y += lineHeight * 0.5;
+        pdf.setFont('helvetica', 'bold');
+        pdf.text('Comparison Analysis:', margin, y);
+        y += lineHeight;
+        pdf.setFont('helvetica', 'normal');
+        pdf.text(`Visitor Change: ${visitorChange > 0 ? '+' : ''}${visitorChange}`, margin, y);
+        y += lineHeight;
+        pdf.text(`Growth Rate: ${growthRate}%`, margin, y);
+        y += lineHeight;
+        pdf.text(`Previous Peak Hour: ${comparisonStats.peakHour}`, margin, y);
+        y += lineHeight;
+        pdf.text(`Previous Total Visitors: ${comparisonStats.totalVisitors}`, margin, y);
+      }
+      
+      y += sectionSpacing;
+      pdf.setFontSize(14);
+      pdf.setFont('helvetica', 'bold');
+      pdf.text('Key Statistics', margin, y);
+      
+      y += lineHeight * 1.5;
+      pdf.setFontSize(11);
+      pdf.setFont('helvetica', 'normal');
+      pdf.text(`Average: ${stats_calc.average.toFixed(2)} visitors`, margin, y);
+      y += lineHeight;
+      pdf.text(`Minimum: ${stats_calc.min} visitors`, margin, y);
+      y += lineHeight;
+      pdf.text(`Maximum: ${stats_calc.max} visitors`, margin, y);
+      y += lineHeight;
+      pdf.text(`Median: ${stats_calc.median.toFixed(2)} visitors`, margin, y);
+      y += lineHeight;
+      
+      if (periods.busiest) {
+        pdf.text(`Busiest Period: ${periods.busiest.label} (${periods.busiest.value} visitors)`, margin, y);
+        y += lineHeight;
+      }
+      if (periods.quietest) {
+        pdf.text(`Quietest Period: ${periods.quietest.label} (${periods.quietest.value} visitors)`, margin, y);
+        y += lineHeight;
+      }
+      pdf.text(`Trend: ${trend}`, margin, y);
+      
+      y += sectionSpacing;
+      
       // Add chart image
       const img = new window.Image();
       img.src = imgData;
       img.onload = () => {
-        let imgWidth = pageWidth - 80;
+        let imgWidth = pageWidth - (margin * 2);
         let imgHeight = (img.height * imgWidth) / img.width;
-
+        
         // If the image is too tall for the page, scale it down
-        if (imgHeight > pageHeight - y - 40) {
-          imgHeight = pageHeight - y - 40;
+        const maxHeight = pageHeight - y - 40;
+        if (imgHeight > maxHeight) {
+          imgHeight = maxHeight;
           imgWidth = (img.width * imgHeight) / img.height;
         }
-
-        pdf.addImage(img, 'PNG', 40, y, imgWidth, imgHeight);
-        pdf.save(`foot_traffic_${activeChart}.pdf`);
+        
+        pdf.addImage(img, 'PNG', margin, y, imgWidth, imgHeight);
+        
+        // === PAGE 2: DETAILED ANALYSIS ===
+        pdf.addPage();
+        y = 40;
+        pdf.setFontSize(18);
+        pdf.setFont('helvetica', 'bold');
+        pdf.text('Detailed Analysis', margin, y);
+        
+        y += sectionSpacing;
+        pdf.setFontSize(12);
+        pdf.setFont('helvetica', 'bold');
+        pdf.text('Statistical Breakdown', margin, y);
+        
+        y += lineHeight * 1.5;
+        pdf.setFontSize(10);
+        pdf.setFont('helvetica', 'normal');
+        pdf.text(`Total Visitor Count: ${stats_calc.sum}`, margin, y);
+        y += lineHeight;
+        pdf.text(`Number of Data Points: ${stats_calc.count}`, margin, y);
+        y += lineHeight;
+        pdf.text(`Standard Deviation: ${(() => {
+          const variance = data.reduce((acc, d) => {
+            const diff = (d.visitors || 0) - stats_calc.average;
+            return acc + (diff * diff);
+          }, 0) / data.length;
+          return Math.sqrt(variance).toFixed(2);
+        })()}`, margin, y);
+        
+        y += sectionSpacing;
+        pdf.setFontSize(12);
+        pdf.setFont('helvetica', 'bold');
+        pdf.text('Time Analysis', margin, y);
+        
+        y += lineHeight * 1.5;
+        pdf.setFontSize(10);
+        pdf.setFont('helvetica', 'normal');
+        if (periods.busiest) {
+          pdf.text(`Peak Traffic Time: ${periods.busiest.label}`, margin, y);
+          y += lineHeight;
+          pdf.text(`  - Visitor Count: ${periods.busiest.value}`, margin + 10, y);
+          y += lineHeight * 1.2;
+        }
+        if (periods.quietest) {
+          pdf.text(`Lowest Traffic Time: ${periods.quietest.label}`, margin, y);
+          y += lineHeight;
+          pdf.text(`  - Visitor Count: ${periods.quietest.value}`, margin + 10, y);
+          y += lineHeight * 1.2;
+        }
+        pdf.text(`Overall Trend: ${trend}`, margin, y);
+        
+        if (comparisonMode) {
+          y += sectionSpacing;
+          pdf.setFontSize(12);
+          pdf.setFont('helvetica', 'bold');
+          pdf.text('Period Comparison', margin, y);
+          
+          y += lineHeight * 1.5;
+          pdf.setFontSize(10);
+          pdf.setFont('helvetica', 'normal');
+          const visitorChange = stats.totalVisitors - comparisonStats.totalVisitors;
+          const growthRate = comparisonStats.totalVisitors > 0 
+            ? ((stats.totalVisitors - comparisonStats.totalVisitors) / comparisonStats.totalVisitors * 100).toFixed(1)
+            : '0.0';
+          pdf.text(`Current Period Total: ${stats.totalVisitors} visitors`, margin, y);
+          y += lineHeight;
+          pdf.text(`Previous Period Total: ${comparisonStats.totalVisitors} visitors`, margin, y);
+          y += lineHeight;
+          pdf.text(`Change: ${visitorChange > 0 ? '+' : ''}${visitorChange} visitors (${growthRate}%)`, margin, y);
+          y += lineHeight;
+          pdf.text(`Current Peak: ${stats.peakHour}`, margin, y);
+          y += lineHeight;
+          pdf.text(`Previous Peak: ${comparisonStats.peakHour}`, margin, y);
+        }
+        
+        pdf.save(`foot_traffic_${activeChart}_${new Date().toISOString().split('T')[0]}.pdf`);
+        toast.success('PDF exported successfully!');
       };
     } catch (err) {
       toast.error('Failed to export PDF');
@@ -582,16 +925,16 @@ const Dashboard = () => {
   };
 
   return (
-    <div className="relative min-h-screen h-screen w-full bg-background dark:bg-gradient-to-br dark:from-slate-950 dark:via-slate-900 dark:to-slate-950 py-4 px-1 md:px-0 overflow-hidden flex flex-col">
+    <div className="relative h-[800px] w-full bg-background dark:bg-gradient-to-br dark:from-slate-950 dark:via-slate-900 dark:to-slate-950 py-7 px-1 md:px-0 overflow-x-hidden">
       {/* Soft background blur and gradient effects */}
       <div className="pointer-events-none fixed inset-0 z-0">
         <div className="absolute -top-32 -left-32 w-80 h-80 bg-blue-400/20 dark:bg-blue-700/20 rounded-full blur-3xl"></div>
         <div className="absolute top-1/2 right-0 w-64 h-64 bg-cyan-300/20 dark:bg-cyan-500/20 rounded-full blur-3xl"></div>
         <div className="absolute bottom-0 left-1/2 w-80 h-80 bg-fuchsia-300/10 dark:bg-fuchsia-700/10 rounded-full blur-3xl"></div>
       </div>
-      <div className="container relative z-10 mx-auto max-w-6xl flex-1 flex flex-col overflow-hidden">
+      <div className="container relative z-10 mx-auto max-w-6xl h-[400px]">
       {/* Stats Grid */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-3 flex-shrink-0">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-5 mb-8">
           <Card className="bg-gradient-to-br from-primary/30 to-background/80 border-none shadow-xl shadow-primary/20 backdrop-blur-md flex flex-col items-center py-5 rounded-xl transition-transform hover:scale-[1.02] hover:shadow-primary/30">
             <Users className="text-primary h-7 w-7 mb-2 drop-shadow" />
             <span className="text-2xl font-extrabold text-foreground drop-shadow-lg">{isLoading ? "..." : stats.totalVisitors}</span>
@@ -615,7 +958,7 @@ const Dashboard = () => {
       </div>
         {/* Comparison Stats Banner */}
         {comparisonMode && (
-          <Card className="bg-gradient-to-br from-slate-800/80 to-slate-900/90 dark:from-slate-800/80 dark:to-slate-900/90 border border-slate-600 mb-3 p-3 flex-shrink-0">
+          <Card className="bg-gradient-to-br from-slate-800/80 to-slate-900/90 dark:from-slate-800/80 dark:to-slate-900/90 border border-slate-600 mb-4 p-4">
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
               <div className="text-center">
                 {(() => {
@@ -656,12 +999,12 @@ const Dashboard = () => {
           </Card>
         )}
         {/* Section Divider */}
-        <div className="w-full h-px bg-border bg-gradient-to-r from-primary/20 via-muted/10 to-cyan-400/20 mb-3 flex-shrink-0" />
+        <div className="w-full h-px bg-border bg-gradient-to-r from-primary/20 via-muted/10 to-cyan-400/20 mb-7" />
       {/* Main Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 flex-1 min-h-0 overflow-hidden">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-7 h-[400px]">
         {/* Chart Card */}
-          <Card id="foot-traffic-chart-card" className="col-span-2 bg-gradient-to-br from-background/80 to-muted/90 dark:from-slate-900/80 dark:to-slate-950/90 border border-border shadow-2xl shadow-primary/10 backdrop-blur-xl rounded-xl flex flex-col min-h-0">
-            <CardHeader className="pb-2 flex-shrink-0">
+          <Card id="foot-traffic-chart-card" className="col-span-2 bg-gradient-to-br from-background/80 to-muted/90 dark:from-slate-900/80 dark:to-slate-950/90 border border-border shadow-2xl shadow-primary/10 backdrop-blur-xl rounded-xl">
+            <CardHeader className="pb-2">
               <div className="flex items-center justify-between mb-2">
                 <div className="flex items-center gap-3">
                   <CardTitle className="text-lg font-bold text-foreground tracking-tight drop-shadow">Foot Traffic Analytics</CardTitle>
@@ -735,7 +1078,7 @@ const Dashboard = () => {
                 </ToggleGroup>
               </div>
             </CardHeader>
-            <CardContent className="flex-1 flex items-center justify-center min-h-0">
+            <CardContent className="h-85 flex items-center justify-center">
             {isLoading ? (
               <div className="text-muted-foreground">Loading chart data...</div>
             ) : (
@@ -745,6 +1088,10 @@ const Dashboard = () => {
                     visitors: {
                       color: turboColors[turboColors.length - 1],
                       label: "Visitors",
+                    },
+                    current: {
+                      color: "#ff7a36",
+                      label: "Current",
                     },
                     comparison: {
                       color: "#94a3b8",
@@ -889,7 +1236,7 @@ const Dashboard = () => {
               </CardContent>
             </Card>
         {/* Actions & Recent Activity Card */}
-          <Card className="bg-gradient-to-br from-background/80 to-muted/90 dark:from-slate-900/80 dark:to-slate-950/90 border border-border shadow-xl shadow-primary/10 backdrop-blur-xl rounded-xl flex flex-col min-h-0 overflow-hidden">
+          <Card className="bg-gradient-to-br from-background/80 to-muted/90 dark:from-slate-900/80 dark:to-slate-950/90 border border-border shadow-xl shadow-primary/10 backdrop-blur-xl rounded-xl flex flex-col">
         <CardHeader>
               <CardTitle className="text-base font-bold text-foreground tracking-tight drop-shadow mb-2">Quick Actions</CardTitle>
         </CardHeader>
