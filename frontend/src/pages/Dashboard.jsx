@@ -81,11 +81,14 @@ const Dashboard = () => {
     const now = new Date()
     
     if (activeChart === "daily") {
-      // Last 24 hours vs previous 24 hours
-      const currentStart = new Date(now.getTime() - 24 * 60 * 60 * 1000)
+      // Today vs yesterday (same hours of day)
+      const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+      const currentStart = today
       const currentEnd = now
-      const comparisonStart = new Date(now.getTime() - 48 * 60 * 60 * 1000)
-      const comparisonEnd = new Date(now.getTime() - 24 * 60 * 60 * 1000)
+      const yesterday = new Date(today.getTime() - 24 * 60 * 60 * 1000)
+      const yesterdayEnd = new Date(yesterday.getTime() + (now.getTime() - today.getTime()))
+      const comparisonStart = yesterday
+      const comparisonEnd = yesterdayEnd
       return { currentStart, currentEnd, comparisonStart, comparisonEnd }
     } else if (activeChart === "weekly") {
       // Last 7 days vs previous 7 days
@@ -402,14 +405,14 @@ const Dashboard = () => {
     }))
   }, [weeklyData, turboColors])
 
-  const monthlyBarData = useMemo(() => {
+  const monthlyLineData = useMemo(() => {
     if (!monthlyData.length) return []
     const values = monthlyData.map(d => d.visitors)
     const min = Math.min(...values)
     const max = Math.max(...values)
     return monthlyData.map((d) => ({
       ...d,
-      fill: getTurboColor(d.visitors, min, max),
+      dotColor: getTurboColor(d.visitors, min, max),
     }))
   }, [monthlyData, turboColors])
 
@@ -418,12 +421,12 @@ const Dashboard = () => {
     if (!comparisonMode) {
       if (activeChart === "daily") return dailyLineData
       if (activeChart === "weekly") return weeklyLineData
-      if (activeChart === "monthly") return monthlyBarData
+      if (activeChart === "monthly") return monthlyLineData
       return []
     }
 
     // Merge data for comparison mode
-    const currentData = activeChart === "daily" ? dailyLineData : activeChart === "weekly" ? weeklyLineData : monthlyBarData
+    const currentData = activeChart === "daily" ? dailyLineData : activeChart === "weekly" ? weeklyLineData : monthlyLineData
     const compData = activeChart === "daily" ? comparisonData.daily : activeChart === "weekly" ? comparisonData.weekly : comparisonData.monthly
     
     // Merge by index
@@ -437,7 +440,7 @@ const Dashboard = () => {
     })
     
     return merged
-  }, [comparisonMode, activeChart, dailyLineData, weeklyLineData, monthlyBarData, comparisonData])
+  }, [comparisonMode, activeChart, dailyLineData, weeklyLineData, monthlyLineData, comparisonData])
 
   // Helper to create a turbo-gradient SVG path for the line chart
   function TurboLinePath({ data, xAccessor, yAccessor, colorAccessor }) {
@@ -499,7 +502,7 @@ const Dashboard = () => {
     let data = [];
     if (activeChart === 'daily') data = dailyLineData;
     else if (activeChart === 'weekly') data = weeklyLineData;
-    else if (activeChart === 'monthly') data = monthlyBarData;
+    else if (activeChart === 'monthly') data = monthlyLineData;
     if (!data.length) return toast.error('No data to export.');
     // Exclude 'fill' and 'dotColor' fields
     const header = Object.keys(data[0]).filter(h => h !== 'fill' && h !== 'dotColor');
@@ -615,27 +618,39 @@ const Dashboard = () => {
           <Card className="bg-gradient-to-br from-slate-800/80 to-slate-900/90 dark:from-slate-800/80 dark:to-slate-900/90 border border-slate-600 mb-4 p-4">
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
               <div className="text-center">
-                <div className="text-2xl font-bold text-cyan-400">
-                  {(stats.totalVisitors - comparisonStats.totalVisitors > 0 ? '+' : '')}
-                  {stats.totalVisitors - comparisonStats.totalVisitors}
-                </div>
+                {(() => {
+                  const visitorChange = stats.totalVisitors - comparisonStats.totalVisitors;
+                  const isNegative = visitorChange < 0;
+                  return (
+                    <div className={`text-2xl font-bold ${isNegative ? 'text-red-400' : 'text-cyan-400'}`}>
+                      {(visitorChange > 0 ? '+' : '')}
+                      {visitorChange}
+                    </div>
+                  );
+                })()}
                 <div className="text-xs text-muted-foreground">Visitor Change</div>
               </div>
               <div className="text-center">
-                <div className="text-2xl font-bold text-yellow-400">
-                  {comparisonStats.totalVisitors > 0 
-                    ? ((stats.totalVisitors - comparisonStats.totalVisitors) / comparisonStats.totalVisitors * 100).toFixed(1)
-                    : '0.0'}%
-                </div>
+                {(() => {
+                  const growthRate = comparisonStats.totalVisitors > 0 
+                    ? ((stats.totalVisitors - comparisonStats.totalVisitors) / comparisonStats.totalVisitors * 100)
+                    : 0;
+                  const isNegative = growthRate < 0;
+                  return (
+                    <div className={`text-2xl font-bold ${isNegative ? 'text-red-400' : 'text-yellow-400'}`}>
+                      {growthRate.toFixed(1)}%
+                    </div>
+                  );
+                })()}
                 <div className="text-xs text-muted-foreground">Growth Rate</div>
               </div>
               <div className="text-center">
-                <div className="text-lg font-bold text-yellow-400">Current: {stats.peakHour}</div>
-                <div className="text-xs text-muted-foreground">Peak Hour</div>
+                <div className="text-lg font-bold text-slate-400">Previous: {comparisonStats.peakHour}</div>
+                <div className="text-xs text-muted-foreground">Previous Peak Hour</div>
               </div>
               <div className="text-center">
-                <div className="text-lg font-bold text-slate-400">Previous: {comparisonStats.peakHour}</div>
-                <div className="text-xs text-muted-foreground">Peak Hour</div>
+                <div className="text-lg font-bold text-slate-400">Previous: {comparisonStats.totalVisitors}</div>
+                <div className="text-xs text-muted-foreground">Previous Total Visitors</div>
               </div>
             </div>
           </Card>
@@ -822,21 +837,48 @@ const Dashboard = () => {
                     </ReLineChart>
                   )}
                   {activeChart === "monthly" && (
-                    <ReBarChart data={mergedData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                    <ReLineChart data={mergedData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                      <defs>
+                        <linearGradient id="turbo-gradient-monthly" x1="0" y1="0" x2="1" y2="0">
+                          {monthlyLineData.map((d, i) => (
+                            <stop
+                              key={i}
+                              offset={`${(i / (monthlyLineData.length - 1)) * 100}%`}
+                              stopColor={d.dotColor}
+                            />
+                          ))}
+                        </linearGradient>
+                      </defs>
                       <CartesianGrid strokeDasharray="3 3" stroke="#334155" vertical={false} />
                       <XAxis dataKey="month" stroke="#ff6f00" tick={{ fontSize: 12, fill: '#ff6f00' }} />
                       <YAxis stroke="#ff6f00" tick={{ fontSize: 12, fill: '#ff6f00' }} label={{ value: 'Visitors', angle: -90, position: 'insideLeft', fill: '#ff6f00', fontSize: 14, dy: -10 }} />
                       <ChartTooltip content={<ChartTooltipContent />} />
-                      <Bar dataKey={comparisonMode ? "current" : "visitors"} name={comparisonMode ? "Current Period" : "Visitors"} radius={[6, 6, 0, 0]}>
-                        {mergedData.map((entry, idx) => (
-                          <Cell key={idx} fill={entry.fill} />
-                        ))}
-                      </Bar>
+                      <Line
+                        type="monotone" 
+                        dataKey={comparisonMode ? "current" : "visitors"} 
+                        stroke="url(#turbo-gradient-monthly)"
+                        strokeWidth={2.5}
+                        dot={false}
+                        activeDot={({ cx, cy, payload, index }) => (
+                          <circle key={"dot-active-" + index} cx={cx} cy={cy} r={7} fill={payload.dotColor} stroke="#fff" strokeWidth={2} />
+                        )}
+                        isAnimationActive={true}
+                        connectNulls
+                      />
                       {comparisonMode && (
-                        <Bar dataKey="comparison" name="Previous Period" radius={[6, 6, 0, 0]} fill="#94a3b8" />
+                        <Line 
+                          type="monotone" 
+                          dataKey="comparison" 
+                          stroke="#94a3b8"
+                          strokeWidth={2}
+                          strokeDasharray="5 5"
+                          dot={false}
+                          activeDot={{ r: 6 }}
+                          name="Previous Period"
+                        />
                       )}
                       <ChartLegend content={<ChartLegendContent />} />
-                </ReBarChart>
+                    </ReLineChart>
                   )}
                 </ChartContainer>
                 )}
