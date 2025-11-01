@@ -721,7 +721,142 @@ const Dashboard = () => {
     pdf.rect(x, y, width, height, 'S');
   }
 
-  // Export chart as PDF (Professional Report Layout matching image design)
+  // Helper function to draw a simple bar chart in PDF
+  const drawBarChart = (pdf, x, y, width, height, data, xKey, yKey, title) => {
+    if (!data || data.length === 0) return;
+    
+    // Draw title
+    pdf.setFontSize(10);
+    pdf.setFont('helvetica', 'bold');
+    pdf.text(title, x + 10, y + 15);
+    
+    const chartPadding = 40;
+    const chartX = x + chartPadding;
+    const chartY = y + 25; // Start below title
+    const chartWidth = width - (chartPadding * 2);
+    const chartHeight = height - chartPadding - 25; // Adjust for title
+    
+    // Calculate max value for scaling
+    const maxValue = Math.max(...data.map(d => d[yKey] || 0), 1);
+    const barWidth = chartWidth / data.length;
+    const barSpacing = barWidth * 0.1;
+    const actualBarWidth = barWidth - barSpacing;
+    
+    // Draw bars
+    data.forEach((item, idx) => {
+      const barHeight = ((item[yKey] || 0) / maxValue) * chartHeight;
+      const barX = chartX + (idx * barWidth) + barSpacing / 2;
+      const barY = chartY + chartHeight - barHeight;
+      
+      // Bar color based on value
+      const intensity = (item[yKey] || 0) / maxValue;
+      const blue = Math.round(25 + (230 - 25) * intensity);
+      pdf.setFillColor(25, 118, 210);
+      pdf.rect(barX, barY, actualBarWidth, barHeight, 'F');
+    });
+    
+    // Draw axes
+    pdf.setDrawColor(100, 100, 100);
+    pdf.setLineWidth(0.5);
+    // X-axis
+    pdf.line(chartX, chartY + chartHeight, chartX + chartWidth, chartY + chartHeight);
+    // Y-axis
+    pdf.line(chartX, chartY, chartX, chartY + chartHeight);
+    
+    // Draw labels
+    pdf.setFontSize(7);
+    pdf.setFont('helvetica', 'normal');
+    pdf.setTextColor(100, 100, 100);
+    data.forEach((item, idx) => {
+      const labelX = chartX + (idx * barWidth) + (barWidth / 2);
+      pdf.text(item[xKey], labelX, chartY + chartHeight + 8, { align: 'center' });
+    });
+    
+    // Y-axis labels
+    const numTicks = 5;
+    for (let i = 0; i <= numTicks; i++) {
+      const tickValue = (maxValue / numTicks) * i;
+      const tickY = chartY + chartHeight - ((i / numTicks) * chartHeight);
+      pdf.text(Math.round(tickValue).toString(), chartX - 5, tickY, { align: 'right' });
+      pdf.line(chartX - 3, tickY, chartX, tickY);
+    }
+    
+    pdf.setTextColor(0, 0, 0);
+  }
+
+  // Helper function to draw a simple line chart in PDF
+  const drawLineChart = (pdf, x, y, width, height, data, xKey, yKey, title) => {
+    if (!data || data.length < 2) return;
+    
+    // Draw title
+    pdf.setFontSize(10);
+    pdf.setFont('helvetica', 'bold');
+    pdf.text(title, x + 10, y + 15);
+    
+    const chartPadding = 40;
+    const chartX = x + chartPadding;
+    const chartY = y + 25; // Start below title
+    const chartWidth = width - (chartPadding * 2);
+    const chartHeight = height - chartPadding - 25; // Adjust for title
+    
+    // Calculate max value for scaling
+    const maxValue = Math.max(...data.map(d => d[yKey] || 0), 1);
+    const pointSpacing = chartWidth / (data.length - 1);
+    
+    // Draw line
+    pdf.setDrawColor(25, 118, 210);
+    pdf.setLineWidth(2);
+    const points = data.map((item, idx) => {
+      const pointX = chartX + (idx * pointSpacing);
+      const pointY = chartY + chartHeight - ((item[yKey] || 0) / maxValue) * chartHeight;
+      return { x: pointX, y: pointY };
+    });
+    
+    for (let i = 0; i < points.length - 1; i++) {
+      pdf.line(points[i].x, points[i].y, points[i + 1].x, points[i + 1].y);
+    }
+    
+    // Draw points
+    pdf.setFillColor(25, 118, 210);
+    points.forEach((point) => {
+      pdf.circle(point.x, point.y, 2, 'F');
+    });
+    
+    // Draw axes
+    pdf.setDrawColor(100, 100, 100);
+    pdf.setLineWidth(0.5);
+    // X-axis
+    pdf.line(chartX, chartY + chartHeight, chartX + chartWidth, chartY + chartHeight);
+    // Y-axis
+    pdf.line(chartX, chartY, chartX, chartY + chartHeight);
+    
+    // Draw labels
+    pdf.setFontSize(7);
+    pdf.setFont('helvetica', 'normal');
+    pdf.setTextColor(100, 100, 100);
+    
+    // Show every Nth label to avoid crowding
+    const labelInterval = Math.ceil(data.length / 6);
+    data.forEach((item, idx) => {
+      if (idx % labelInterval === 0 || idx === data.length - 1) {
+        const labelX = chartX + (idx * pointSpacing);
+        pdf.text(item[xKey], labelX, chartY + chartHeight + 8, { align: 'center' });
+      }
+    });
+    
+    // Y-axis labels
+    const numTicks = 5;
+    for (let i = 0; i <= numTicks; i++) {
+      const tickValue = (maxValue / numTicks) * i;
+      const tickY = chartY + chartHeight - ((i / numTicks) * chartHeight);
+      pdf.text(Math.round(tickValue).toString(), chartX - 5, tickY, { align: 'right' });
+      pdf.line(chartX - 3, tickY, chartX, tickY);
+    }
+    
+    pdf.setTextColor(0, 0, 0);
+  }
+
+  // Export chart as PDF (Professional Report Layout - Vertical/Portrait Layout)
   const exportPDF = async () => {
     try {
       // Get data and calculate statistics
@@ -757,271 +892,262 @@ const Dashboard = () => {
         ? ((stats.totalVisitors - comparisonStats.totalVisitors) / comparisonStats.totalVisitors * 100).toFixed(1)
         : '0.0';
       
-      // Get chart images - need both weekly bar chart and hourly line chart
-      const chartCard = document.getElementById('foot-traffic-chart-card');
-      if (!chartCard) return toast.error('Chart not found.');
-      const chartArea = chartCard.querySelector('.ChartContainer') || chartCard;
-      const mainChartImg = await domtoimage.toPng(chartArea, { bgcolor: '#fff' });
-      
-      // Create additional charts for side-by-side display
-      // For now, we'll use the main chart for both, but structure the layout properly
-      
-      const pdf = new jsPDF({ orientation: 'landscape', unit: 'pt', format: 'a4' });
+      // Create PDF in portrait orientation
+      const pdf = new jsPDF({ orientation: 'portrait', unit: 'pt', format: 'a4' });
       const pageWidth = pdf.internal.pageSize.getWidth();
       const pageHeight = pdf.internal.pageSize.getHeight();
       
-      const margin = 30;
-      let y = 25;
-      const cardHeight = 65;
-      const cardSpacing = 15;
-      const cardWidth = (pageWidth - (margin * 2) - (cardSpacing * 3)) / 4;
-      const sectionSpacing = 25;
-      const lineHeight = 12;
+      const margin = 40;
+      let y = 30;
+      const cardHeight = 70;
+      const cardSpacing = 12;
+      const sectionSpacing = 22;
+      const lineHeight = 13;
       
       // === HEADER ===
-      pdf.setFontSize(20);
+      pdf.setFontSize(22);
       pdf.setFont('helvetica', 'bold');
       pdf.text('Foot Traffic Analytics Report', pageWidth / 2, y, { align: 'center' });
       
-      y += 20;
+      y += 22;
       pdf.setFontSize(9);
       pdf.setFont('helvetica', 'normal');
+      pdf.setTextColor(100, 100, 100);
       const exportDate = new Date().toLocaleString();
       pdf.text(`Report Generated: ${exportDate}`, margin, y);
-      pdf.text(`Chart Type: ${activeChart.charAt(0).toUpperCase() + activeChart.slice(1)}`, margin + 200, y);
-      pdf.text(`Comparison Mode: ${comparisonMode ? 'Enabled' : 'Disabled'}`, margin + 400, y);
-      y += lineHeight;
+      y += lineHeight * 0.8;
+      pdf.text(`Chart Type: ${activeChart.charAt(0).toUpperCase() + activeChart.slice(1)} | Comparison Mode: ${comparisonMode ? 'Enabled' : 'Disabled'}`, margin, y);
+      y += lineHeight * 0.8;
       pdf.text(`Data Period: ${periodLabel}`, margin, y, { maxWidth: pageWidth - (margin * 2) });
+      pdf.setTextColor(0, 0, 0);
       
-      y += sectionSpacing;
+      y += sectionSpacing + 5;
       
       // === EXECUTIVE SUMMARY - 4 Cards in a row ===
-      pdf.setFontSize(11);
+      pdf.setFontSize(12);
       pdf.setFont('helvetica', 'bold');
       pdf.text('Executive Summary', margin, y);
-      y += 15;
+      y += 18;
+      
+      const cardWidth = (pageWidth - (margin * 2) - (cardSpacing * 3)) / 4;
       
       // Card 1: Total Visitors
-      drawCard(pdf, margin, y, cardWidth, cardHeight, [245, 247, 250], [220, 223, 230]);
-      pdf.setFontSize(22);
+      drawCard(pdf, margin, y, cardWidth, cardHeight, [250, 250, 255], [210, 213, 220]);
+      pdf.setFontSize(24);
       pdf.setFont('helvetica', 'bold');
-      pdf.text(String(stats.totalVisitors), margin + cardWidth / 2, y + 25, { align: 'center' });
+      pdf.text(String(stats.totalVisitors), margin + cardWidth / 2, y + 32, { align: 'center' });
       pdf.setFontSize(8);
       pdf.setFont('helvetica', 'normal');
-      pdf.text('Current period', margin + cardWidth / 2, y + 40, { align: 'center' });
+      pdf.setTextColor(100, 100, 100);
+      pdf.text('Current period', margin + cardWidth / 2, y + 50, { align: 'center' });
+      pdf.setTextColor(0, 0, 0);
       
       // Card 2: Peak Period
-      drawCard(pdf, margin + cardWidth + cardSpacing, y, cardWidth, cardHeight, [245, 247, 250], [220, 223, 230]);
-      pdf.setFontSize(16);
+      drawCard(pdf, margin + cardWidth + cardSpacing, y, cardWidth, cardHeight, [250, 250, 255], [210, 213, 220]);
+      pdf.setFontSize(18);
       pdf.setFont('helvetica', 'bold');
-      pdf.text(stats.peakHour, margin + cardWidth + cardSpacing + cardWidth / 2, y + 25, { align: 'center' });
+      pdf.text(stats.peakHour, margin + cardWidth + cardSpacing + cardWidth / 2, y + 32, { align: 'center' });
       pdf.setFontSize(8);
       pdf.setFont('helvetica', 'normal');
-      pdf.text('Highest traffic window', margin + cardWidth + cardSpacing + cardWidth / 2, y + 40, { align: 'center' });
+      pdf.setTextColor(100, 100, 100);
+      pdf.text('Highest traffic window', margin + cardWidth + cardSpacing + cardWidth / 2, y + 50, { align: 'center' });
+      pdf.setTextColor(0, 0, 0);
       
       // Card 3: Visitor Change (only if comparison mode)
       if (comparisonMode) {
-        drawCard(pdf, margin + (cardWidth + cardSpacing) * 2, y, cardWidth, cardHeight, [220, 252, 231], [180, 230, 200]);
-        pdf.setFontSize(22);
+        drawCard(pdf, margin + (cardWidth + cardSpacing) * 2, y, cardWidth, cardHeight, [220, 252, 231], [160, 220, 180]);
+        pdf.setFontSize(24);
         pdf.setFont('helvetica', 'bold');
         pdf.setTextColor(34, 197, 94); // Green color
-        pdf.text(`${visitorChange > 0 ? '+' : ''}${visitorChange}`, margin + (cardWidth + cardSpacing) * 2 + cardWidth / 2, y + 25, { align: 'center' });
+        pdf.text(`${visitorChange > 0 ? '+' : ''}${visitorChange}`, margin + (cardWidth + cardSpacing) * 2 + cardWidth / 2, y + 32, { align: 'center' });
         pdf.setFontSize(8);
         pdf.setFont('helvetica', 'normal');
+        pdf.setTextColor(100, 100, 100);
+        pdf.text('vs previous period', margin + (cardWidth + cardSpacing) * 2 + cardWidth / 2, y + 50, { align: 'center' });
         pdf.setTextColor(0, 0, 0);
-        pdf.text('vs previous period', margin + (cardWidth + cardSpacing) * 2 + cardWidth / 2, y + 40, { align: 'center' });
       }
       
       // Card 4: Growth Rate (only if comparison mode)
       if (comparisonMode) {
-        drawCard(pdf, margin + (cardWidth + cardSpacing) * 3, y, cardWidth, cardHeight, [220, 252, 231], [180, 230, 200]);
-        pdf.setFontSize(20);
+        drawCard(pdf, margin + (cardWidth + cardSpacing) * 3, y, cardWidth, cardHeight, [220, 252, 231], [160, 220, 180]);
+        pdf.setFontSize(22);
         pdf.setFont('helvetica', 'bold');
         pdf.setTextColor(34, 197, 94); // Green color
-        pdf.text(`${growthRate}%`, margin + (cardWidth + cardSpacing) * 3 + cardWidth / 2, y + 25, { align: 'center' });
+        pdf.text(`${growthRate}%`, margin + (cardWidth + cardSpacing) * 3 + cardWidth / 2, y + 32, { align: 'center' });
         pdf.setFontSize(8);
         pdf.setFont('helvetica', 'normal');
+        pdf.setTextColor(100, 100, 100);
+        pdf.text('Period over period', margin + (cardWidth + cardSpacing) * 3 + cardWidth / 2, y + 50, { align: 'center' });
         pdf.setTextColor(0, 0, 0);
-        pdf.text('Period over period', margin + (cardWidth + cardSpacing) * 3 + cardWidth / 2, y + 40, { align: 'center' });
       }
       
       y += cardHeight + sectionSpacing;
       
-      // === KEY STATISTICS - 3 Columns ===
-      pdf.setFontSize(11);
+      // === KEY STATISTICS - 3 Columns with improved spacing ===
+      pdf.setFontSize(12);
       pdf.setFont('helvetica', 'bold');
       pdf.text('Key Statistics', margin, y);
-      y += 15;
+      y += 18;
       
       const colWidth = (pageWidth - (margin * 2) - (cardSpacing * 2)) / 3;
       const col1X = margin;
       const col2X = margin + colWidth + cardSpacing;
       const col3X = margin + (colWidth + cardSpacing) * 2;
-      const boxHeight = 120;
+      const boxHeight = 140; // Increased height for better spacing
       
       // Column 1: Distribution
-      drawCard(pdf, col1X, y, colWidth, boxHeight, [245, 247, 250], [220, 223, 230]);
-      pdf.setFontSize(10);
+      drawCard(pdf, col1X, y, colWidth, boxHeight, [250, 250, 255], [210, 213, 220]);
+      pdf.setFontSize(11);
       pdf.setFont('helvetica', 'bold');
-      pdf.text('Distribution', col1X + 10, y + 15);
-      pdf.setFontSize(9);
+      pdf.text('Distribution', col1X + 12, y + 18);
+      pdf.setFontSize(9.5);
       pdf.setFont('helvetica', 'normal');
-      let colY = y + 30;
-      pdf.text(`Average: ${stats_calc.average.toFixed(2)}`, col1X + 10, colY);
-      colY += lineHeight;
-      pdf.text(`Median: ${stats_calc.median.toFixed(2)}`, col1X + 10, colY);
-      colY += lineHeight;
-      pdf.text(`Minimum: ${stats_calc.min}`, col1X + 10, colY);
-      colY += lineHeight;
-      pdf.text(`Maximum: ${stats_calc.max}`, col1X + 10, colY);
+      let colY = y + 38;
+      const itemSpacing = 16; // Better spacing between items
+      pdf.text(`Average: ${stats_calc.average.toFixed(2)}`, col1X + 12, colY);
+      colY += itemSpacing;
+      pdf.text(`Median: ${stats_calc.median.toFixed(2)}`, col1X + 12, colY);
+      colY += itemSpacing;
+      pdf.text(`Minimum: ${stats_calc.min}`, col1X + 12, colY);
+      colY += itemSpacing;
+      pdf.text(`Maximum: ${stats_calc.max}`, col1X + 12, colY);
       
       // Column 2: Peak Activity
-      drawCard(pdf, col2X, y, colWidth, boxHeight, [245, 247, 250], [220, 223, 230]);
-      pdf.setFontSize(10);
+      drawCard(pdf, col2X, y, colWidth, boxHeight, [250, 250, 255], [210, 213, 220]);
+      pdf.setFontSize(11);
       pdf.setFont('helvetica', 'bold');
-      pdf.text('Peak Activity', col2X + 10, y + 15);
-      pdf.setFontSize(9);
+      pdf.text('Peak Activity', col2X + 12, y + 18);
+      pdf.setFontSize(9.5);
       pdf.setFont('helvetica', 'normal');
-      colY = y + 30;
+      colY = y + 38;
       if (periods.busiest) {
-        pdf.text(`Busiest Day: ${periods.busiest.label}`, col2X + 10, colY);
-        colY += lineHeight;
-        pdf.text(`Peak Visitors: ${periods.busiest.value}`, col2X + 10, colY);
-        colY += lineHeight * 1.5;
+        pdf.text(`Busiest Day: ${periods.busiest.label}`, col2X + 12, colY);
+        colY += itemSpacing;
+        pdf.text(`Peak Visitors: ${periods.busiest.value}`, col2X + 12, colY);
+        colY += itemSpacing + 4;
       }
       if (periods.quietest) {
-        pdf.text(`Quietest Day: ${periods.quietest.label}`, col2X + 10, colY);
-        colY += lineHeight;
-        pdf.text(`Low Visitors: ${periods.quietest.value}`, col2X + 10, colY);
+        pdf.text(`Quietest Day: ${periods.quietest.label}`, col2X + 12, colY);
+        colY += itemSpacing;
+        pdf.text(`Low Visitors: ${periods.quietest.value}`, col2X + 12, colY);
       }
       
       // Column 3: Statistical Metrics
-      drawCard(pdf, col3X, y, colWidth, boxHeight, [245, 247, 250], [220, 223, 230]);
-      pdf.setFontSize(10);
+      drawCard(pdf, col3X, y, colWidth, boxHeight, [250, 250, 255], [210, 213, 220]);
+      pdf.setFontSize(11);
       pdf.setFont('helvetica', 'bold');
-      pdf.text('Statistical Metrics', col3X + 10, y + 15);
-      pdf.setFontSize(9);
+      pdf.text('Statistical Metrics', col3X + 12, y + 18);
+      pdf.setFontSize(9.5);
       pdf.setFont('helvetica', 'normal');
-      colY = y + 30;
-      pdf.text(`Std. Deviation: ${standardDev}`, col3X + 10, colY);
-      colY += lineHeight;
-      pdf.text(`Data Points: ${stats_calc.count}`, col3X + 10, colY);
-      colY += lineHeight * 1.5;
+      colY = y + 38;
+      pdf.text(`Std. Deviation: ${standardDev}`, col3X + 12, colY);
+      colY += itemSpacing;
+      pdf.text(`Data Points: ${stats_calc.count}`, col3X + 12, colY);
+      colY += itemSpacing + 4;
       pdf.setTextColor(34, 197, 94); // Green for trend
-      pdf.text(`Trend: ${trend}`, col3X + 10, colY);
+      pdf.setFont('helvetica', 'bold');
+      pdf.text(`Trend: ${trend}`, col3X + 12, colY);
+      pdf.setFont('helvetica', 'normal');
       pdf.setTextColor(0, 0, 0);
       
       y += boxHeight + sectionSpacing;
       
       // === CHARTS - Two side by side ===
       const chartWidth = (pageWidth - (margin * 2) - cardSpacing) / 2;
-      const chartHeight = 180;
+      const chartHeight = 160;
       
       // Chart 1: Weekly Foot Traffic (Bar Chart)
-      drawCard(pdf, margin, y, chartWidth, chartHeight, [255, 255, 255], [220, 223, 230]);
-      pdf.setFontSize(10);
-      pdf.setFont('helvetica', 'bold');
-      pdf.text('Weekly Foot Traffic (Visitor distribution by day of week)', margin + 10, y + 15);
+      drawCard(pdf, margin, y, chartWidth, chartHeight, [255, 255, 255], [210, 213, 220]);
+      drawBarChart(pdf, margin, y, chartWidth, chartHeight, weeklyData, 'day', 'visitors', 'Weekly Foot Traffic (Visitor distribution by day of week)');
       
       // Chart 2: Traffic by Time Period (Line Chart)
-      drawCard(pdf, margin + chartWidth + cardSpacing, y, chartWidth, chartHeight, [255, 255, 255], [220, 223, 230]);
-      pdf.setFontSize(10);
-      pdf.setFont('helvetica', 'bold');
-      pdf.text('Traffic by Time Period (Visitor count across different hours)', margin + chartWidth + cardSpacing + 10, y + 15);
+      drawCard(pdf, margin + chartWidth + cardSpacing, y, chartWidth, chartHeight, [255, 255, 255], [210, 213, 220]);
+      // Use trafficData for hourly line chart (sample every 4 hours to reduce clutter)
+      const hourlyDataSample = trafficData.filter((_, idx) => idx % 2 === 0 || idx === trafficData.length - 1);
+      drawLineChart(pdf, margin + chartWidth + cardSpacing, y, chartWidth, chartHeight, hourlyDataSample, 'hour', 'visitors', 'Traffic by Time Period (Visitor count across different hours)');
       
-      // Add main chart image to the first chart box
-      const img = new window.Image();
-      img.src = mainChartImg;
-      img.onload = () => {
-        const imgScale = Math.min((chartWidth - 20) / img.width, (chartHeight - 35) / img.height);
-        const imgWidth = img.width * imgScale;
-        const imgHeight = img.height * imgScale;
-        const imgX = margin + (chartWidth - imgWidth) / 2;
-        const imgY = y + 25;
-        pdf.addImage(mainChartImg, 'PNG', imgX, imgY, imgWidth, imgHeight);
-        
-        // Add same chart to second box (for now - could create separate hourly chart)
-        pdf.addImage(mainChartImg, 'PNG', margin + chartWidth + cardSpacing + (chartWidth - imgWidth) / 2, imgY, imgWidth, imgHeight);
-        
-        y += chartHeight + sectionSpacing;
-        
-        // === DETAILED ANALYSIS - 3 Columns ===
-        pdf.setFontSize(11);
+      y += chartHeight + sectionSpacing;
+      
+      // === DETAILED ANALYSIS - 3 Columns ===
+      pdf.setFontSize(12);
+      pdf.setFont('helvetica', 'bold');
+      pdf.text('Detailed Analysis', margin, y);
+      y += 18;
+      
+      const detailBoxHeight = 110;
+      
+      // Column 1: Statistical Breakdown
+      drawCard(pdf, col1X, y, colWidth, detailBoxHeight, [250, 250, 255], [210, 213, 220]);
+      pdf.setFontSize(10.5);
+      pdf.setFont('helvetica', 'bold');
+      pdf.text('Statistical Breakdown', col1X + 12, y + 18);
+      pdf.setFontSize(9.5);
+      pdf.setFont('helvetica', 'normal');
+      colY = y + 36;
+      pdf.text(`Total Visitor Count: ${stats_calc.sum}`, col1X + 12, colY);
+      colY += itemSpacing;
+      pdf.text(`Number of Data Points: ${stats_calc.count}`, col1X + 12, colY);
+      colY += itemSpacing;
+      pdf.text(`Standard Deviation: ${standardDev}`, col1X + 12, colY);
+      
+      // Column 2: Time Analysis
+      drawCard(pdf, col2X, y, colWidth, detailBoxHeight, [250, 250, 255], [210, 213, 220]);
+      pdf.setFontSize(10.5);
+      pdf.setFont('helvetica', 'bold');
+      pdf.text('Time Analysis', col2X + 12, y + 18);
+      pdf.setFontSize(9.5);
+      pdf.setFont('helvetica', 'normal');
+      colY = y + 36;
+      if (periods.busiest) {
+        pdf.text(`Peak Traffic Time: ${periods.busiest.label}`, col2X + 12, colY);
+        colY += itemSpacing;
+        pdf.text(`  - Visitor Count: ${periods.busiest.value}`, col2X + 15, colY);
+        colY += itemSpacing;
+      }
+      if (periods.quietest) {
+        pdf.text(`Lowest Traffic Time: ${periods.quietest.label}`, col2X + 12, colY);
+        colY += itemSpacing;
+        pdf.text(`  - Visitor Count: ${periods.quietest.value}`, col2X + 15, colY);
+        colY += itemSpacing;
+      }
+      pdf.setTextColor(34, 197, 94);
+      pdf.setFont('helvetica', 'bold');
+      pdf.text(`Overall Trend: ${trend}`, col2X + 12, colY);
+      pdf.setFont('helvetica', 'normal');
+      pdf.setTextColor(0, 0, 0);
+      
+      // Column 3: Period Comparison (only if comparison mode)
+      if (comparisonMode) {
+        drawCard(pdf, col3X, y, colWidth, detailBoxHeight, [250, 250, 255], [210, 213, 220]);
+        pdf.setFontSize(10.5);
         pdf.setFont('helvetica', 'bold');
-        pdf.text('Detailed Analysis', margin, y);
-        y += 15;
-        
-        const detailBoxHeight = 100;
-        
-        // Column 1: Statistical Breakdown
-        drawCard(pdf, col1X, y, colWidth, detailBoxHeight, [245, 247, 250], [220, 223, 230]);
-        pdf.setFontSize(10);
-        pdf.setFont('helvetica', 'bold');
-        pdf.text('Statistical Breakdown', col1X + 10, y + 15);
-        pdf.setFontSize(9);
+        pdf.text('Period Comparison', col3X + 12, y + 18);
+        pdf.setFontSize(9.5);
         pdf.setFont('helvetica', 'normal');
-        colY = y + 30;
-        pdf.text(`Total Visitor Count: ${stats_calc.sum}`, col1X + 10, colY);
-        colY += lineHeight;
-        pdf.text(`Number of Data Points: ${stats_calc.count}`, col1X + 10, colY);
-        colY += lineHeight;
-        pdf.text(`Standard Deviation: ${standardDev}`, col1X + 10, colY);
-        
-        // Column 2: Time Analysis
-        drawCard(pdf, col2X, y, colWidth, detailBoxHeight, [245, 247, 250], [220, 223, 230]);
-        pdf.setFontSize(10);
-        pdf.setFont('helvetica', 'bold');
-        pdf.text('Time Analysis', col2X + 10, y + 15);
-        pdf.setFontSize(9);
-        pdf.setFont('helvetica', 'normal');
-        colY = y + 30;
-        if (periods.busiest) {
-          pdf.text(`Peak Traffic Time: ${periods.busiest.label}`, col2X + 10, colY);
-          colY += lineHeight;
-          pdf.text(`  - Visitor Count: ${periods.busiest.value}`, col2X + 10, colY);
-          colY += lineHeight * 1.2;
-        }
-        if (periods.quietest) {
-          pdf.text(`Lowest Traffic Time: ${periods.quietest.label}`, col2X + 10, colY);
-          colY += lineHeight;
-          pdf.text(`  - Visitor Count: ${periods.quietest.value}`, col2X + 10, colY);
-        }
-        colY += lineHeight * 1.2;
+        colY = y + 36;
+        pdf.text(`Current Period Total: ${stats.totalVisitors} visitors`, col3X + 12, colY);
+        colY += itemSpacing;
+        pdf.text(`Previous Period Total: ${comparisonStats.totalVisitors} visitors`, col3X + 12, colY);
+        colY += itemSpacing;
         pdf.setTextColor(34, 197, 94);
-        pdf.text(`Overall Trend: ${trend}`, col2X + 10, colY);
+        pdf.setFont('helvetica', 'bold');
+        pdf.text(`Change: ${visitorChange > 0 ? '+' : ''}${visitorChange} (${growthRate}%)`, col3X + 12, colY);
+        pdf.setFont('helvetica', 'normal');
         pdf.setTextColor(0, 0, 0);
-        
-        // Column 3: Period Comparison (only if comparison mode)
-        if (comparisonMode) {
-          drawCard(pdf, col3X, y, colWidth, detailBoxHeight, [245, 247, 250], [220, 223, 230]);
-          pdf.setFontSize(10);
-          pdf.setFont('helvetica', 'bold');
-          pdf.text('Period Comparison', col3X + 10, y + 15);
-          pdf.setFontSize(9);
-          pdf.setFont('helvetica', 'normal');
-          colY = y + 30;
-          pdf.text(`Current Period Total: ${stats.totalVisitors} visitors`, col3X + 10, colY);
-          colY += lineHeight;
-          pdf.text(`Previous Period Total: ${comparisonStats.totalVisitors} visitors`, col3X + 10, colY);
-          colY += lineHeight;
-          pdf.setTextColor(34, 197, 94);
-          pdf.text(`Change: ${visitorChange > 0 ? '+' : ''}${visitorChange} (${growthRate}%)`, col3X + 10, colY);
-          pdf.setTextColor(0, 0, 0);
-        }
-        
-        y += detailBoxHeight + 15;
-        
-        // === FOOTER ===
-        pdf.setFontSize(8);
-        pdf.setFont('helvetica', 'italic');
-        pdf.setTextColor(128, 128, 128);
-        pdf.text('Report includes comprehensive foot traffic analysis with trend indicators and comparative metrics.', margin, y, { maxWidth: pageWidth - (margin * 2) });
-        y += lineHeight;
-        pdf.text(`Generated on ${exportDate}`, margin, y);
-        
-        pdf.save(`foot_traffic_${activeChart}_${new Date().toISOString().split('T')[0]}.pdf`);
-        toast.success('PDF exported successfully!');
-      };
+      }
+      
+      y += detailBoxHeight + 15;
+      
+      // === FOOTER ===
+      pdf.setFontSize(8);
+      pdf.setFont('helvetica', 'italic');
+      pdf.setTextColor(128, 128, 128);
+      pdf.text('Report includes comprehensive foot traffic analysis with trend indicators and comparative metrics.', margin, y, { maxWidth: pageWidth - (margin * 2) });
+      y += lineHeight;
+      pdf.text(`Generated on ${exportDate}`, margin, y);
+      
+      pdf.save(`foot_traffic_${activeChart}_${new Date().toISOString().split('T')[0]}.pdf`);
+      toast.success('PDF exported successfully!');
     } catch (err) {
       toast.error('Failed to export PDF');
       console.error(err);
@@ -1072,7 +1198,7 @@ const Dashboard = () => {
                     <div className={`text-2xl font-bold ${isNegative ? 'text-red-400' : 'text-cyan-400'}`}>
                       {(visitorChange > 0 ? '+' : '')}
                       {visitorChange}
-                    </div>
+                </div>
                   );
                 })()}
                 <div className="text-xs text-muted-foreground">Visitor Change</div>
@@ -1086,7 +1212,7 @@ const Dashboard = () => {
                   return (
                     <div className={`text-2xl font-bold ${isNegative ? 'text-red-400' : 'text-yellow-400'}`}>
                       {growthRate.toFixed(1)}%
-                    </div>
+                </div>
                   );
                 })()}
                 <div className="text-xs text-muted-foreground">Growth Rate</div>
