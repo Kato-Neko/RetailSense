@@ -582,16 +582,16 @@ const Dashboard = () => {
   };
 
   return (
-    <div className="relative h-[800px] w-full bg-background dark:bg-gradient-to-br dark:from-slate-950 dark:via-slate-900 dark:to-slate-950 py-7 px-1 md:px-0 overflow-x-hidden">
+    <div className="relative min-h-screen h-screen w-full bg-background dark:bg-gradient-to-br dark:from-slate-950 dark:via-slate-900 dark:to-slate-950 py-4 px-1 md:px-0 overflow-hidden flex flex-col">
       {/* Soft background blur and gradient effects */}
       <div className="pointer-events-none fixed inset-0 z-0">
         <div className="absolute -top-32 -left-32 w-80 h-80 bg-blue-400/20 dark:bg-blue-700/20 rounded-full blur-3xl"></div>
         <div className="absolute top-1/2 right-0 w-64 h-64 bg-cyan-300/20 dark:bg-cyan-500/20 rounded-full blur-3xl"></div>
         <div className="absolute bottom-0 left-1/2 w-80 h-80 bg-fuchsia-300/10 dark:bg-fuchsia-700/10 rounded-full blur-3xl"></div>
       </div>
-      <div className="container relative z-10 mx-auto max-w-6xl h-[400px]">
+      <div className="container relative z-10 mx-auto max-w-6xl flex-1 flex flex-col overflow-hidden">
       {/* Stats Grid */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-5 mb-8">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-3 flex-shrink-0">
           <Card className="bg-gradient-to-br from-primary/30 to-background/80 border-none shadow-xl shadow-primary/20 backdrop-blur-md flex flex-col items-center py-5 rounded-xl transition-transform hover:scale-[1.02] hover:shadow-primary/30">
             <Users className="text-primary h-7 w-7 mb-2 drop-shadow" />
             <span className="text-2xl font-extrabold text-foreground drop-shadow-lg">{isLoading ? "..." : stats.totalVisitors}</span>
@@ -615,7 +615,7 @@ const Dashboard = () => {
       </div>
         {/* Comparison Stats Banner */}
         {comparisonMode && (
-          <Card className="bg-gradient-to-br from-slate-800/80 to-slate-900/90 dark:from-slate-800/80 dark:to-slate-900/90 border border-slate-600 mb-4 p-4">
+          <Card className="bg-gradient-to-br from-slate-800/80 to-slate-900/90 dark:from-slate-800/80 dark:to-slate-900/90 border border-slate-600 mb-3 p-3 flex-shrink-0">
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
               <div className="text-center">
                 {(() => {
@@ -645,23 +645,23 @@ const Dashboard = () => {
                 <div className="text-xs text-muted-foreground">Growth Rate</div>
               </div>
               <div className="text-center">
-                <div className="text-lg font-bold text-slate-400">Previous: {comparisonStats.peakHour}</div>
+                <div className="text-lg font-bold text-slate-400">{comparisonStats.peakHour}</div>
                 <div className="text-xs text-muted-foreground">Previous Peak Hour</div>
               </div>
               <div className="text-center">
-                <div className="text-lg font-bold text-slate-400">Previous: {comparisonStats.totalVisitors}</div>
+                <div className="text-lg font-bold text-slate-400">{comparisonStats.totalVisitors}</div>
                 <div className="text-xs text-muted-foreground">Previous Total Visitors</div>
               </div>
             </div>
           </Card>
         )}
         {/* Section Divider */}
-        <div className="w-full h-px bg-border bg-gradient-to-r from-primary/20 via-muted/10 to-cyan-400/20 mb-7" />
+        <div className="w-full h-px bg-border bg-gradient-to-r from-primary/20 via-muted/10 to-cyan-400/20 mb-3 flex-shrink-0" />
       {/* Main Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-7 h-[400px]">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 flex-1 min-h-0 overflow-hidden">
         {/* Chart Card */}
-          <Card id="foot-traffic-chart-card" className="col-span-2 bg-gradient-to-br from-background/80 to-muted/90 dark:from-slate-900/80 dark:to-slate-950/90 border border-border shadow-2xl shadow-primary/10 backdrop-blur-xl rounded-xl">
-            <CardHeader className="pb-2">
+          <Card id="foot-traffic-chart-card" className="col-span-2 bg-gradient-to-br from-background/80 to-muted/90 dark:from-slate-900/80 dark:to-slate-950/90 border border-border shadow-2xl shadow-primary/10 backdrop-blur-xl rounded-xl flex flex-col min-h-0">
+            <CardHeader className="pb-2 flex-shrink-0">
               <div className="flex items-center justify-between mb-2">
                 <div className="flex items-center gap-3">
                   <CardTitle className="text-lg font-bold text-foreground tracking-tight drop-shadow">Foot Traffic Analytics</CardTitle>
@@ -735,7 +735,7 @@ const Dashboard = () => {
                 </ToggleGroup>
               </div>
             </CardHeader>
-            <CardContent className="h-85 flex items-center justify-center">
+            <CardContent className="flex-1 flex items-center justify-center min-h-0">
             {isLoading ? (
               <div className="text-muted-foreground">Loading chart data...</div>
             ) : (
@@ -745,6 +745,10 @@ const Dashboard = () => {
                     visitors: {
                       color: turboColors[turboColors.length - 1],
                       label: "Visitors",
+                    },
+                    comparison: {
+                      color: "#94a3b8",
+                      label: "Previous Period",
                     },
                   }}
                 >
@@ -785,7 +789,7 @@ const Dashboard = () => {
                           strokeWidth={2}
                           strokeDasharray="5 5"
                           dot={false}
-                          activeDot={{ r: 6 }}
+                          activeDot={{ r: 6, fill: "#94a3b8", stroke: "#fff", strokeWidth: 2 }}
                           name="Previous Period"
                         />
                       )}
@@ -829,7 +833,7 @@ const Dashboard = () => {
                           strokeWidth={2}
                           strokeDasharray="5 5"
                           dot={false}
-                          activeDot={{ r: 6 }}
+                          activeDot={{ r: 6, fill: "#94a3b8", stroke: "#fff", strokeWidth: 2 }}
                           name="Previous Period"
                         />
                       )}
@@ -873,7 +877,7 @@ const Dashboard = () => {
                           strokeWidth={2}
                           strokeDasharray="5 5"
                           dot={false}
-                          activeDot={{ r: 6 }}
+                          activeDot={{ r: 6, fill: "#94a3b8", stroke: "#fff", strokeWidth: 2 }}
                           name="Previous Period"
                         />
                       )}
@@ -885,7 +889,7 @@ const Dashboard = () => {
               </CardContent>
             </Card>
         {/* Actions & Recent Activity Card */}
-          <Card className="bg-gradient-to-br from-background/80 to-muted/90 dark:from-slate-900/80 dark:to-slate-950/90 border border-border shadow-xl shadow-primary/10 backdrop-blur-xl rounded-xl flex flex-col">
+          <Card className="bg-gradient-to-br from-background/80 to-muted/90 dark:from-slate-900/80 dark:to-slate-950/90 border border-border shadow-xl shadow-primary/10 backdrop-blur-xl rounded-xl flex flex-col min-h-0 overflow-hidden">
         <CardHeader>
               <CardTitle className="text-base font-bold text-foreground tracking-tight drop-shadow mb-2">Quick Actions</CardTitle>
         </CardHeader>
