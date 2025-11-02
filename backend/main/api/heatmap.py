@@ -1,12 +1,14 @@
 from flask import Blueprint, request, jsonify, send_file, Response, send_from_directory
 from flask_cors import cross_origin
-from flask_jwt_extended import jwt_required
+from flask_jwt_extended import jwt_required, get_jwt_identity
 import os
 import io
 import csv
 import cv2
+import psycopg2.extras
 
 from ..core.config import RESULTS_FOLDER, UPLOAD_FOLDER, logger
+from ..core.config import to_manila_iso
 from ..core.db import get_db_connection
 from ..core.storage import download_image_from_supabase, download_image_bytes_from_supabase
 from ..helpers.detections import load_detections
@@ -1090,3 +1092,97 @@ def get_live_camera_stream(job_id):
         except Exception as e2:
             logger.error(f"Error creating error stream: {e2}")
             return jsonify({"error": str(e)}), 500
+
+
+@heatmap_bp.route('/heatmap_jobs/<job_id>/live/status', methods=['GET', 'OPTIONS'])
+@cross_origin()
+@jwt_required()
+def get_live_job_status(job_id):
+    """Get status of a live streaming job"""
+    try:
+        current_user = get_jwt_identity()
+
+        # Always get processor status first to ensure fast response
+        from ..services.live_stream import get_live_job_processor
+        processor = get_live_job_processor(job_id)
+        is_running = processor.is_running if processor else False
+        frame_count = processor.frame_count if processor else 0
+        heatmap_last_updated = None
+        heatmap_interval_seconds = None
+        floorplan_present = False
+        if processor:
+            try:
+                heatmap_last_updated = processor.last_heatmap_update
+                heatmap_interval_seconds = getattr(processor, 'heatmap_update_interval', None)
+                import os
+                floorplan_present = bool(processor.floorplan_path and os.path.exists(processor.floorplan_path))
+            except Exception:
+                heatmap_last_updated = None
+                heatmap_interval_seconds = None
+                floorplan_present = False
+
+        # Try to augment with DB data, but do not block longer than a short timeout
+        job_row = None
+        db_unavailable = False
+        try:
+            conn = get_db_connection()
+            with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
+                # Set a short statement timeout (PostgreSQL) to avoid long hangs
+                try:
+                    cur.execute("SET LOCAL statement_timeout = 3000")
+                except Exception:
+                    pass
+
+                cur.execute("SELECT * FROM jobs WHERE job_id = %s", (job_id,))
+                job_row = cur.fetchone()
+        except Exception:
+            # Database unavailable/slow; proceed with processor-only data
+            db_unavailable = True
+
+        if not job_row and not processor:
+            return jsonify({"error": "Job not found"}), 404
+
+        # Authorization check only if we had DB data
+        if job_row and job_row['user'] != current_user:
+            return jsonify({"error": "Unauthorized"}), 403
+
+        # Defaults when DB is unavailable
+        status_val = 'live' if is_running else 'connecting' if processor else 'unknown'
+        message_val = 'Streaming' if is_running else 'Connecting...' if processor else 'N/A'
+        camera_name_val = None
+        rtsp_url_val = None
+        is_live_val = True if processor else False
+        created_at_val = None
+        updated_at_val = None
+
+        if job_row:
+            status_val = job_row['status']
+            message_val = job_row['message']
+            camera_name_val = job_row.get('camera_name')
+            rtsp_url_val = job_row.get('rtsp_url')
+            is_live_val = job_row.get('is_live', is_live_val)
+            created_at_val = to_manila_iso(job_row['created_at']) if job_row['created_at'] else None
+            updated_at_val = to_manila_iso(job_row['updated_at']) if job_row['updated_at'] else None
+
+        response_data = {
+            "job_id": job_id,
+            "status": status_val,
+            "message": message_val,
+            "camera_name": camera_name_val,
+            "rtsp_url": rtsp_url_val,
+            "is_live": is_live_val,
+            "is_running": is_running,
+            "frame_count": frame_count,
+            "created_at": created_at_val,
+            "updated_at": updated_at_val,
+            "heatmap_last_updated": heatmap_last_updated,
+            "heatmap_interval_seconds": heatmap_interval_seconds,
+            "floorplan_present": floorplan_present,
+            "db_unavailable": db_unavailable
+        }
+
+        return jsonify(response_data), 200
+        
+    except Exception as e:
+        logger.error(f"Error getting live job status: {e}", exc_info=True)
+        return jsonify({"error": f"Server error: {str(e)}"}), 500

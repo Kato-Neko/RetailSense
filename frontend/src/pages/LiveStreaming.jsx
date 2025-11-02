@@ -137,14 +137,14 @@ const LiveStreaming = () => {
           const heatmapUrl = heatmapService.getLiveHeatmapImageUrl(jobId)
           setHeatmapUrl(`${heatmapUrl}?t=${Date.now()}`)
 
-          // If live heatmap is available (HTTP 200), redirect to View Heatmap for consistent UX
-          try {
-            const checkUrl = heatmapService.getLiveHeatmapImageUrl(jobId) + `?check=${Date.now()}`
-            const res = await fetch(checkUrl, { method: 'GET' })
-            if (res.ok) {
-              navigate(`/view-heatmap?jobId=${encodeURIComponent(jobId)}&live=1`, { replace: false })
-            }
-          } catch {}
+          // // If live heatmap is available (HTTP 200), redirect to View Heatmap for consistent UX
+          // try {
+          //   const checkUrl = heatmapService.getLiveHeatmapImageUrl(jobId) + `?check=${Date.now()}`
+          //   const res = await fetch(checkUrl, { method: 'GET' })
+          //   if (res.ok) {
+          //     navigate(`/view-heatmap?jobId=${encodeURIComponent(jobId)}&live=1`, { replace: false })
+          //   }
+          // } catch {}
         } else if (status.status === 'error') {
           setStreamStatus("error")
         } else if (status.status === 'stopped') {
@@ -722,4 +722,3 @@ const LiveStreaming = () => {
 }
 
 export default LiveStreaming
-
