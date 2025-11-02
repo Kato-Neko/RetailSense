@@ -40,6 +40,8 @@ class LiveStreamProcessor:
         self.latest_frame = None
         self.latest_frame_lock = threading.Lock()
         self.last_heatmap_update = time.time()
+        self.last_frame_time = None # To be exposed in status
+        self.heatmap_update_interval = 60  # seconds
         
     def start(self, detection_callback: Optional[Callable] = None):
         """Start processing RTSP stream"""
@@ -153,13 +155,14 @@ class LiveStreamProcessor:
             
             frame_skip = 5  # Process every 5th frame for performance
             last_detection_save = time.time()
-            last_frame_time = time.time() # Track time of the last successful frame read
+            self.last_frame_time = time.time() # Track time of the last successful frame read
+            self.last_heatmap_update = time.time() # Reset heatmap timer on start
             
             while self.is_running:
                 ret, frame = self.cap.read()
                 if not ret:
                     # If no frame received for 10 seconds, assume stream is stalled
-                    if time.time() - last_frame_time > 10:
+                    if time.time() - self.last_frame_time > 10:
                         self.logger.error("RTSP stream stalled. No frames received for 10 seconds. Stopping.")
                         self._update_status('error', 'Camera stream stalled or disconnected.')
                         break # Exit the processing loop
@@ -170,7 +173,7 @@ class LiveStreamProcessor:
                 # Store latest frame for live feed
                 with self.latest_frame_lock:
                     self.latest_frame = frame.copy()
-                last_frame_time = time.time() # Update time of last successful frame read
+                self.last_frame_time = time.time() # Update time of last successful frame read
                 
                 # Ensure floorplan exists: if missing, save current frame as floorplan
                 if not self.floorplan_path or not os.path.exists(self.floorplan_path):
@@ -203,6 +206,11 @@ class LiveStreamProcessor:
                         if len(self.detections_buffer) >= 100 or (time.time() - last_detection_save) > 10:
                             self._save_detections_batch()
                             last_detection_save = time.time()
+
+                        # Periodically update the live heatmap
+                        if time.time() - self.last_heatmap_update > self.heatmap_update_interval:
+                            self._update_heatmap()
+                            self.last_heatmap_update = time.time()
                 
                 self.frame_count += 1
                 
@@ -260,9 +268,9 @@ class LiveStreamProcessor:
                 # Convert to format expected by DeepSort: ([x1, y1, x2, y2], conf, class)
                 tracker_detections = []
                 for det in detections:
-                    bbox = det['bbox']
-                    # Convert to integers as expected by tracker
-                    tracker_detections.append(([int(bbox[0]), int(bbox[1]), int(bbox[2]), int(bbox[3])], det['confidence'], 0))  # Class 0 = person
+                    # Bbox for tracker should be on the RESIZED frame
+                    x1, y1, x2, y2 = det['bbox']
+                    tracker_detections.append(([int(x1 * scale_factor), int(y1 * scale_factor), int(x2 * scale_factor), int(y2 * scale_factor)], det['confidence'], 0))
                 
                 # Update tracker
                 tracks = self.tracker.update_tracks(tracker_detections, frame=resized_frame)
@@ -274,9 +282,14 @@ class LiveStreamProcessor:
                     if not track.is_confirmed():
                         continue
                     if track_index < len(detections):
-                        ltrb = track.to_ltrb()
+                        # The tracker's bbox is on the resized frame, scale it back up
+                        ltrb_resized = track.to_ltrb()
+                        x1_orig = ltrb_resized[0] / scale_factor
+                        y1_orig = ltrb_resized[1] / scale_factor
+                        x2_orig = ltrb_resized[2] / scale_factor
+                        y2_orig = ltrb_resized[3] / scale_factor
                         tracked_detections.append({
-                            'bbox': [float(ltrb[0]), float(ltrb[1]), float(ltrb[2]), float(ltrb[3])],
+                            'bbox': [float(x1_orig), float(y1_orig), float(x2_orig), float(y2_orig)],
                             'confidence': detections[track_index]['confidence'],
                             'frame': frame_number,
                             'track_id': track.track_id

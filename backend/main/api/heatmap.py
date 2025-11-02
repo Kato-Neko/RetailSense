@@ -1108,19 +1108,25 @@ def get_live_job_status(job_id):
         processor = get_live_job_processor(job_id)
         is_running = processor.is_running if processor else False
         frame_count = processor.frame_count if processor else 0
+        has_frame = False
         heatmap_last_updated = None
         heatmap_interval_seconds = None
         floorplan_present = False
+        last_frame_time = None
+
         if processor:
             try:
+                with processor.latest_frame_lock:
+                    has_frame = processor.latest_frame is not None
                 heatmap_last_updated = processor.last_heatmap_update
                 heatmap_interval_seconds = getattr(processor, 'heatmap_update_interval', None)
+                last_frame_time = getattr(processor, 'last_frame_time', None)
                 import os
                 floorplan_present = bool(processor.floorplan_path and os.path.exists(processor.floorplan_path))
             except Exception:
+                has_frame = False
                 heatmap_last_updated = None
                 heatmap_interval_seconds = None
-                floorplan_present = False
 
         # Try to augment with DB data, but do not block longer than a short timeout
         job_row = None
@@ -1174,10 +1180,12 @@ def get_live_job_status(job_id):
             "is_live": is_live_val,
             "is_running": is_running,
             "frame_count": frame_count,
+            "has_frame": has_frame,
             "created_at": created_at_val,
             "updated_at": updated_at_val,
             "heatmap_last_updated": heatmap_last_updated,
             "heatmap_interval_seconds": heatmap_interval_seconds,
+            "last_frame_time": last_frame_time,
             "floorplan_present": floorplan_present,
             "db_unavailable": db_unavailable
         }
