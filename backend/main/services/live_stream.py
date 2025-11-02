@@ -153,10 +153,16 @@ class LiveStreamProcessor:
             
             frame_skip = 5  # Process every 5th frame for performance
             last_detection_save = time.time()
+            last_frame_time = time.time() # Track time of the last successful frame read
             
             while self.is_running:
                 ret, frame = self.cap.read()
                 if not ret:
+                    # If no frame received for 10 seconds, assume stream is stalled
+                    if time.time() - last_frame_time > 10:
+                        self.logger.error("RTSP stream stalled. No frames received for 10 seconds. Stopping.")
+                        self._update_status('error', 'Camera stream stalled or disconnected.')
+                        break # Exit the processing loop
                     self.logger.warning("Failed to read frame from stream, retrying...")
                     time.sleep(0.1)
                     continue
@@ -164,6 +170,7 @@ class LiveStreamProcessor:
                 # Store latest frame for live feed
                 with self.latest_frame_lock:
                     self.latest_frame = frame.copy()
+                last_frame_time = time.time() # Update time of last successful frame read
                 
                 # Ensure floorplan exists: if missing, save current frame as floorplan
                 if not self.floorplan_path or not os.path.exists(self.floorplan_path):

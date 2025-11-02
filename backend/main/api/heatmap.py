@@ -968,6 +968,7 @@ def get_live_camera_stream(job_id):
             
             # Stream while processor exists (not just while running, to show last frame)
             while True:
+                processor = get_live_job_processor(job_id) # Re-fetch processor on each iteration
                 try:
                     current_time = time.time()
                     if current_time - last_frame_time < frame_interval:
@@ -975,7 +976,7 @@ def get_live_camera_stream(job_id):
                         continue
                     
                     # Re-check processor exists (it might have been removed)
-                    if not processor:
+                    if not processor: # This check is now reliable
                         error_img = np.zeros((480, 640, 3), dtype=np.uint8)
                         cv2.putText(error_img, 'Stream ended', (50, 200),
                                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
