@@ -37,7 +37,6 @@ class LiveStreamProcessor:
         self.latest_frame = None
         self.latest_frame_lock = threading.Lock()
         self.last_heatmap_update = time.time()
-        self.heatmap_update_interval = 5  # Update heatmap every 5 seconds
         
     def start(self, detection_callback: Optional[Callable] = None):
         """Start processing RTSP stream"""
@@ -58,6 +57,11 @@ class LiveStreamProcessor:
         if self.cap:
             self.cap.release()
             self.cap = None
+        
+        # --- MODIFICATION: Trigger a single final update on stop ---
+        logger.info(f"Executing final save and heatmap update for job {self.job_id}...")
+        self._save_detections_batch()  # Save any remaining detections
+        self._update_heatmap()         # Generate and save the final heatmap
         logger.info(f"Stopped live stream processing for job {self.job_id}")
         
     def _process_stream(self, detection_callback: Optional[Callable]):
@@ -189,11 +193,6 @@ class LiveStreamProcessor:
                         if len(self.detections_buffer) >= 100 or (time.time() - last_detection_save) > 10:
                             self._save_detections_batch()
                             last_detection_save = time.time()
-                    
-                    # Update heatmap periodically
-                    if (time.time() - self.last_heatmap_update) > self.heatmap_update_interval:
-                        self._update_heatmap()
-                        self.last_heatmap_update = time.time()
                 
                 self.frame_count += 1
                 
@@ -362,7 +361,7 @@ class LiveStreamProcessor:
                 if blended_img is not None:
                     # Upload to Supabase
                     upload_image_to_supabase(blended_img, f"{self.job_id}/live_heatmap.jpg")
-                    logger.info(f"Updated live heatmap for job {self.job_id}")
+                    logger.info(f"Generated and uploaded final live heatmap for job {self.job_id}")
 
                     # Mirror uploaded-job artifact behavior: persist a local image and update DB path
                     try:
@@ -374,17 +373,16 @@ class LiveStreamProcessor:
                         # Update DB output_heatmap_path to a stable, upload-style path
                         try:
                             conn = get_db_connection()
-                            cur = conn.cursor()
-                            # Use POSIX-style path as other code expects (served by result/image endpoint)
-                            db_output_path = f"/project_results/{self.job_id}/video_{self.job_id}_heatmap.jpg"
-                            cur.execute('''
-                                UPDATE jobs 
-                                SET output_heatmap_path = %s, updated_at = CURRENT_TIMESTAMP
-                                WHERE job_id = %s
-                            ''', (db_output_path, self.job_id))
-                            conn.commit()
-                            cur.close()
-                            conn.close()
+                            with conn.cursor() as cur:
+                                # Use the absolute local path, consistent with video_jobs.py
+                                logger.info(f"Updating database for job {self.job_id} with heatmap path: {output_heatmap_image_path}")
+                                cur.execute('''
+                                    UPDATE jobs 
+                                    SET output_heatmap_path = %s, updated_at = CURRENT_TIMESTAMP
+                                    WHERE job_id = %s
+                                ''', (output_heatmap_image_path, self.job_id))
+                                conn.commit()
+                                logger.info(f"Successfully updated output_heatmap_path for live job {self.job_id}")
                         except Exception as e_db:
                             logger.warning(f"Failed to update output_heatmap_path for live job {self.job_id}: {e_db}")
                     except Exception as e_local:
@@ -444,4 +442,3 @@ def get_latest_frame(job_id: str) -> Optional[bytes]:
         except Exception as e:
             logger.error(f"Error encoding frame: {e}")
             return None
-
