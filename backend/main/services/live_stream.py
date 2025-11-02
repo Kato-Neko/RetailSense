@@ -220,8 +220,15 @@ class LiveStreamProcessor:
     def _detect_and_track_frame(self, frame, frame_number: int) -> List[Dict[str, Any]]:
         """Run detection and tracking on a single frame"""
         try:
+            # --- FIX: Resize frame for performance and stability ---
+            # High-resolution frames can cause crashes on resource-constrained environments.
+            # We resize to a smaller width, maintaining aspect ratio, similar to video_jobs.
+            max_width = 480  # A reasonable size for live processing
+            original_height, original_width = frame.shape[:2]
+            scale_factor = max_width / original_width
+            resized_frame = cv2.resize(frame, (max_width, int(original_height * scale_factor)))
             # Run YOLO detection
-            results = self.model(frame, verbose=False)
+            results = self.model(resized_frame, verbose=False, imgsz=max_width, conf=0.4)
             detections = []
             
             # Process detections (filter for persons only)
@@ -231,13 +238,16 @@ class LiveStreamProcessor:
                     # Filter for person class (class 0 in COCO dataset)
                     if int(box.cls) == 0:  # Person class
                         x1, y1, x2, y2 = box.xyxy[0].cpu().numpy()
+                        # Scale bounding box back to original frame size
+                        x1_orig, y1_orig, x2_orig, y2_orig = x1 / scale_factor, y1 / scale_factor, x2 / scale_factor, y2 / scale_factor
+
                         conf = float(box.conf[0].cpu().numpy())
                         
                         if conf > 0.25:  # Confidence threshold
                             detections.append({
-                                'bbox': [float(x1), float(y1), float(x2), float(y2)],
+                                'bbox': [float(x1_orig), float(y1_orig), float(x2_orig), float(y2_orig)],
                                 'confidence': conf,
-                                'frame': frame_number
+                                'frame': frame_number,
                             })
             
             # Update tracker
@@ -250,13 +260,14 @@ class LiveStreamProcessor:
                     tracker_detections.append(([int(bbox[0]), int(bbox[1]), int(bbox[2]), int(bbox[3])], det['confidence'], 0))  # Class 0 = person
                 
                 # Update tracker
-                tracks = self.tracker.update_tracks(tracker_detections, frame=frame)
+                tracks = self.tracker.update_tracks(tracker_detections, frame=resized_frame)
                 
                 # Add track IDs to detections
                 tracked_detections = []
                 track_index = 0
                 for track in tracks:
-                    if track.is_confirmed() and track_index < len(detections):
+                    if not track.is_confirmed() or track_index >= len(detections):
+                        continue
                         ltrb = track.to_ltrb()
                         tracked_detections.append({
                             'bbox': [float(ltrb[0]), float(ltrb[1]), float(ltrb[2]), float(ltrb[3])],
