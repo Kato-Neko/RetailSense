@@ -220,6 +220,11 @@ class LiveStreamProcessor:
     def _detect_and_track_frame(self, frame, frame_number: int) -> List[Dict[str, Any]]:
         """Run detection and tracking on a single frame"""
         try:
+            # --- Add explicit check to prevent resize error on None frames ---
+            if frame is None:
+                self.logger.warning(f"Attempted to process a None frame at frame number {frame_number}. Skipping.")
+                return []
+
             # --- FIX: Resize frame for performance and stability ---
             # High-resolution frames can cause crashes on resource-constrained environments.
             # We resize to a smaller width, maintaining aspect ratio, similar to video_jobs.
@@ -266,8 +271,9 @@ class LiveStreamProcessor:
                 tracked_detections = []
                 track_index = 0
                 for track in tracks:
-                    if not track.is_confirmed() or track_index >= len(detections):
+                    if not track.is_confirmed():
                         continue
+                    if track_index < len(detections):
                         ltrb = track.to_ltrb()
                         tracked_detections.append({
                             'bbox': [float(ltrb[0]), float(ltrb[1]), float(ltrb[2]), float(ltrb[3])],
@@ -275,7 +281,7 @@ class LiveStreamProcessor:
                             'frame': frame_number,
                             'track_id': track.track_id
                         })
-                        track_index += 1
+                    track_index += 1
                 
                 return tracked_detections if tracked_detections else detections
             
