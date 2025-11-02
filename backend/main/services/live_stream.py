@@ -4,13 +4,14 @@ Live stream processing service for RTSP camera feeds.
 
 import os
 import cv2
+import logging
 import time
 import threading
 import json
 from typing import Optional, Callable, Dict, Any, List
 from datetime import datetime
 
-from ..core.config import logger, UPLOAD_FOLDER, RESULTS_FOLDER
+from ..core.config import UPLOAD_FOLDER, RESULTS_FOLDER
 from ..core.db import get_db_connection
 from ..core.storage import upload_json_to_supabase, upload_image_to_supabase
 from .tracking import _get_model, _get_tracker
@@ -18,6 +19,8 @@ from .state import get_jobs_store
 
 
 class LiveStreamProcessor:
+    logger = logging.getLogger(__name__)
+
     """Processes RTSP stream and performs real-time detection/tracking"""
     
     def __init__(self, rtsp_url: str, job_id: str, camera_name: str, floorplan_path: Optional[str] = None, points_path: Optional[str] = None):
@@ -41,14 +44,14 @@ class LiveStreamProcessor:
     def start(self, detection_callback: Optional[Callable] = None):
         """Start processing RTSP stream"""
         if self.is_running:
-            logger.warning(f"Stream {self.job_id} is already running")
+            self.logger.warning(f"Stream {self.job_id} is already running")
             return False
             
         self.is_running = True
         self.thread = threading.Thread(target=self._process_stream, args=(detection_callback,))
         self.thread.daemon = True
         self.thread.start()
-        logger.info(f"Started live stream processing for job {self.job_id}")
+        self.logger.info(f"Started live stream processing for job {self.job_id}")
         return True
         
     def stop(self):
@@ -59,10 +62,10 @@ class LiveStreamProcessor:
             self.cap = None
         
         # --- MODIFICATION: Trigger a single final update on stop ---
-        logger.info(f"Executing final save and heatmap update for job {self.job_id}...")
+        self.logger.info(f"Executing final save and heatmap update for job {self.job_id}...")
         self._save_detections_batch()  # Save any remaining detections
         self._update_heatmap()         # Generate and save the final heatmap
-        logger.info(f"Stopped live stream processing for job {self.job_id}")
+        self.logger.info(f"Stopped live stream processing for job {self.job_id}")
         
     def _process_stream(self, detection_callback: Optional[Callable]):
         """Main stream processing loop"""
@@ -72,7 +75,7 @@ class LiveStreamProcessor:
             self.tracker = _get_tracker()
             
             # Open RTSP stream
-            logger.info(f"Attempting to open RTSP stream: {self.rtsp_url}")
+            self.logger.info(f"Attempting to open RTSP stream: {self.rtsp_url}")
             
             # Set RTSP transport options for better compatibility
             try:
@@ -81,12 +84,12 @@ class LiveStreamProcessor:
                 # Set timeout for RTSP connection
                 self.cap.set(cv2.CAP_PROP_OPEN_TIMEOUT_MSEC, 10000)  # 10 second timeout
             except Exception as e:
-                logger.error(f"Error creating VideoCapture: {e}")
+                self.logger.error(f"Error creating VideoCapture: {e}")
                 self.cap = None
             
             if not self.cap:
                 error_msg = f"Failed to create VideoCapture for {self.rtsp_url}"
-                logger.error(error_msg)
+                self.logger.error(error_msg)
                 self._update_status('error', error_msg)
                 # Store error placeholder
                 import numpy as np
@@ -104,8 +107,8 @@ class LiveStreamProcessor:
             
             if not self.cap.isOpened():
                 error_msg = f"Failed to open RTSP stream: {self.rtsp_url}. This may be because Railway cannot access local network IPs."
-                logger.error(error_msg)
-                logger.warning("If using a local IP (192.168.x.x), Railway cloud cannot access it. Use a public IP or VPN tunnel.")
+                self.logger.error(error_msg)
+                self.logger.warning("If using a local IP (192.168.x.x), Railway cloud cannot access it. Use a public IP or VPN tunnel.")
                 self._update_status('error', 'Failed to connect to camera stream')
                 # Store a placeholder frame with helpful message
                 import numpy as np
@@ -125,7 +128,7 @@ class LiveStreamProcessor:
             width = int(self.cap.get(cv2.CAP_PROP_FRAME_WIDTH))
             height = int(self.cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
             
-            logger.info(f"Stream opened successfully: {width}x{height} @ {self.fps}fps")
+            self.logger.info(f"Stream opened successfully: {width}x{height} @ {self.fps}fps")
             self._update_status('live', f'Streaming from {self.camera_name}')
             
             # Read first frame immediately to populate latest_frame
@@ -133,13 +136,13 @@ class LiveStreamProcessor:
             if ret and first_frame is not None:
                 with self.latest_frame_lock:
                     self.latest_frame = first_frame.copy()
-                logger.info("First frame captured successfully")
+                self.logger.info("First frame captured successfully")
                 
                 # Extract first frame for floorplan if needed
                 if not self.floorplan_path:
                     self._save_first_frame(first_frame)
             else:
-                logger.warning("Failed to read first frame from stream")
+                self.logger.warning("Failed to read first frame from stream")
                 # Store placeholder
                 import numpy as np
                 placeholder = np.zeros((480, 640, 3), dtype=np.uint8)
@@ -154,7 +157,7 @@ class LiveStreamProcessor:
             while self.is_running:
                 ret, frame = self.cap.read()
                 if not ret:
-                    logger.warning("Failed to read frame from stream, retrying...")
+                    self.logger.warning("Failed to read frame from stream, retrying...")
                     time.sleep(0.1)
                     continue
                 
@@ -167,7 +170,7 @@ class LiveStreamProcessor:
                     try:
                         self._save_first_frame(frame)
                     except Exception as e:
-                        logger.warning(f"Deferred floorplan save failed: {e}")
+                        self.logger.warning(f"Deferred floorplan save failed: {e}")
 
                 # Process every Nth frame
                 if self.frame_count % frame_skip == 0:
@@ -187,7 +190,7 @@ class LiveStreamProcessor:
                             try:
                                 detection_callback(detections)
                             except Exception as e:
-                                logger.error(f"Error in detection callback: {e}")
+                                self.logger.error(f"Error in detection callback: {e}")
                         
                         # Save detections in batches
                         if len(self.detections_buffer) >= 100 or (time.time() - last_detection_save) > 10:
@@ -200,7 +203,7 @@ class LiveStreamProcessor:
                 time.sleep(0.01)
                 
         except Exception as e:
-            logger.error(f"Error in stream processing: {e}", exc_info=True)
+            self.logger.error(f"Error in stream processing: {e}", exc_info=True)
             self._update_status('error', f'Stream processing error: {str(e)}')
         finally:
             if self.cap:
@@ -261,7 +264,7 @@ class LiveStreamProcessor:
             return detections
             
         except Exception as e:
-            logger.error(f"Error in detection/tracking: {e}")
+            self.logger.error(f"Error in detection/tracking: {e}")
             return []
     
     def _save_first_frame(self, frame):
@@ -278,10 +281,10 @@ class LiveStreamProcessor:
             upload_image_to_supabase(frame, f"{self.job_id}/{floorplan_filename}")
             
             self.floorplan_path = floorplan_path
-            logger.info(f"Saved first frame as floorplan: {floorplan_path}")
+            self.logger.info(f"Saved first frame as floorplan: {floorplan_path}")
             
         except Exception as e:
-            logger.error(f"Error saving first frame: {e}")
+            self.logger.error(f"Error saving first frame: {e}")
     
     def _save_detections_batch(self):
         """Save accumulated detections to Supabase"""
@@ -311,13 +314,13 @@ class LiveStreamProcessor:
                 }
             
             upload_json_to_supabase(detections_data, existing_path)
-            logger.info(f"Saved {len(self.detections_buffer)} detections to Supabase")
+            self.logger.info(f"Saved {len(self.detections_buffer)} detections to Supabase")
             
             # Clear buffer
             self.detections_buffer = []
             
         except Exception as e:
-            logger.error(f"Error saving detections batch: {e}")
+            self.logger.error(f"Error saving detections batch: {e}")
     
     def _update_heatmap(self):
         """Update heatmap from accumulated detections"""
@@ -347,7 +350,7 @@ class LiveStreamProcessor:
                     os.makedirs(os.path.dirname(floorplan_path), exist_ok=True)
                     cv2.imwrite(floorplan_path, floorplan_img)
                 else:
-                    logger.warning("No floorplan available for heatmap update")
+                    self.logger.warning("No floorplan available for heatmap update")
                     return
             
             # Create heatmap
@@ -361,35 +364,35 @@ class LiveStreamProcessor:
                 if blended_img is not None:
                     # Upload to Supabase
                     upload_image_to_supabase(blended_img, f"{self.job_id}/live_heatmap.jpg")
-                    logger.info(f"Generated and uploaded final live heatmap for job {self.job_id}")
+                    self.logger.info(f"Generated and uploaded final live heatmap for job {self.job_id}")
 
                     # Mirror uploaded-job artifact behavior: persist a local image and update DB path
                     try:
                         results_dir = os.path.join(RESULTS_FOLDER, self.job_id)
                         os.makedirs(results_dir, exist_ok=True)
-                        output_heatmap_image_path = os.path.join(results_dir, f"video_{self.job_id}_heatmap.jpg")
+                        output_heatmap_image_path = os.path.join(results_dir, f"live_{self.job_id}_heatmap.jpg")
                         cv2.imwrite(output_heatmap_image_path, blended_img)
 
                         # Update DB output_heatmap_path to a stable, upload-style path
                         try:
                             conn = get_db_connection()
                             with conn.cursor() as cur:
-                                # Use the absolute local path, consistent with video_jobs.py
-                                logger.info(f"Updating database for job {self.job_id} with heatmap path: {output_heatmap_image_path}")
+                                # Use the absolute local path, consistent with video_jobs.py, and set video path to None
+                                self.logger.info(f"Updating database for job {self.job_id} with heatmap path: {output_heatmap_image_path}")
                                 cur.execute('''
                                     UPDATE jobs 
-                                    SET output_heatmap_path = %s, updated_at = CURRENT_TIMESTAMP
+                                    SET output_heatmap_path = %s, output_video_path = NULL, updated_at = CURRENT_TIMESTAMP
                                     WHERE job_id = %s
                                 ''', (output_heatmap_image_path, self.job_id))
                                 conn.commit()
-                                logger.info(f"Successfully updated output_heatmap_path for live job {self.job_id}")
+                                self.logger.info(f"Successfully updated output_heatmap_path for live job {self.job_id}")
                         except Exception as e_db:
-                            logger.warning(f"Failed to update output_heatmap_path for live job {self.job_id}: {e_db}")
+                            self.logger.warning(f"Failed to update output_heatmap_path for live job {self.job_id}: {e_db}")
                     except Exception as e_local:
-                        logger.warning(f"Failed to persist live heatmap locally for job {self.job_id}: {e_local}")
+                        self.logger.warning(f"Failed to persist live heatmap locally for job {self.job_id}: {e_local}")
                     
         except Exception as e:
-            logger.error(f"Error updating heatmap: {e}")
+            self.logger.error(f"Error updating heatmap: {e}")
     
     def _update_status(self, status: str, message: str):
         """Update job status in database"""
@@ -412,7 +415,7 @@ class LiveStreamProcessor:
                 jobs[self.job_id]['message'] = message
                 
         except Exception as e:
-            logger.error(f"Error updating status: {e}")
+            self.logger.error(f"Error updating status: {e}")
 
 
 def get_live_job_processor(job_id: str) -> Optional[LiveStreamProcessor]:
@@ -440,5 +443,5 @@ def get_latest_frame(job_id: str) -> Optional[bytes]:
             _, buffer = cv2.imencode('.jpg', processor.latest_frame, [cv2.IMWRITE_JPEG_QUALITY, 85])
             return buffer.tobytes()
         except Exception as e:
-            logger.error(f"Error encoding frame: {e}")
+            logging.getLogger(__name__).error(f"Error encoding frame: {e}")
             return None
