@@ -1,21 +1,41 @@
 from typing import Dict, Any
 
-_jobs_store: Dict[str, Dict[str, Any]] = {}
-_custom_heatmap_progress: Dict[str, float] = {}
+
+class InMemoryJobsState:
+    """In-memory state holder for jobs and custom heatmap progress."""
+
+    def __init__(self) -> None:
+        self._jobs_store: Dict[str, Dict[str, Any]] = {}
+        self._custom_heatmap_progress: Dict[str, float] = {}
+
+    def attach_jobs_store(self, store: Dict[str, Dict[str, Any]]):
+        self._jobs_store = store
+
+    def get_jobs_store(self) -> Dict[str, Dict[str, Any]]:
+        return self._jobs_store
+
+    def set_custom_progress(self, job_id: str, progress: float) -> None:
+        self._custom_heatmap_progress[job_id] = progress
+
+    def get_custom_progress(self, job_id: str) -> float:
+        return self._custom_heatmap_progress.get(job_id, 0.0)
+
+
+# Singleton instance and backward-compatible function wrappers
+_state_singleton = InMemoryJobsState()
 
 
 def attach_jobs_store(store: Dict[str, Dict[str, Any]]):
-    global _jobs_store
-    _jobs_store = store
+    return _state_singleton.attach_jobs_store(store)
 
 
 def get_jobs_store() -> Dict[str, Dict[str, Any]]:
-    return _jobs_store
+    return _state_singleton.get_jobs_store()
 
 
 def set_custom_progress(job_id: str, progress: float) -> None:
-    _custom_heatmap_progress[job_id] = progress
+    return _state_singleton.set_custom_progress(job_id, progress)
 
 
 def get_custom_progress(job_id: str) -> float:
-    return _custom_heatmap_progress.get(job_id, 0.0)
+    return _state_singleton.get_custom_progress(job_id)
