@@ -725,16 +725,21 @@ const Dashboard = () => {
   const drawBarChart = (pdf, x, y, width, height, data, xKey, yKey, title) => {
     if (!data || data.length === 0) return;
     
-    // Draw title
+    // Draw title with wrapping to prevent overflow
     pdf.setFontSize(10);
     pdf.setFont('helvetica', 'bold');
-    pdf.text(title, x + 10, y + 15);
+    const maxTitleWidth = width - 20; // Leave 10pt margin on each side
+    const titleLines = pdf.splitTextToSize(title, maxTitleWidth);
+    let titleY = y + 12;
+    titleLines.forEach((line, idx) => {
+      pdf.text(line, x + 10, titleY + (idx * 12));
+    });
     
     const chartPadding = 40;
     const chartX = x + chartPadding;
-    const chartY = y + 25; // Start below title
+    const chartY = y + 25 + (titleLines.length - 1) * 12; // Adjust based on number of title lines
     const chartWidth = width - (chartPadding * 2);
-    const chartHeight = height - chartPadding - 25; // Adjust for title
+    const chartHeight = height - chartPadding - 25 - (titleLines.length - 1) * 12; // Adjust for title
     
     // Calculate max value for scaling
     const maxValue = Math.max(...data.map(d => d[yKey] || 0), 1);
@@ -788,16 +793,21 @@ const Dashboard = () => {
   const drawLineChart = (pdf, x, y, width, height, data, xKey, yKey, title) => {
     if (!data || data.length < 2) return;
     
-    // Draw title
+    // Draw title with wrapping to prevent overflow
     pdf.setFontSize(10);
     pdf.setFont('helvetica', 'bold');
-    pdf.text(title, x + 10, y + 15);
+    const maxTitleWidth = width - 20; // Leave 10pt margin on each side
+    const titleLines = pdf.splitTextToSize(title, maxTitleWidth);
+    let titleY = y + 12;
+    titleLines.forEach((line, idx) => {
+      pdf.text(line, x + 10, titleY + (idx * 12));
+    });
     
     const chartPadding = 40;
     const chartX = x + chartPadding;
-    const chartY = y + 25; // Start below title
+    const chartY = y + 25 + (titleLines.length - 1) * 12; // Adjust based on number of title lines
     const chartWidth = width - (chartPadding * 2);
-    const chartHeight = height - chartPadding - 25; // Adjust for title
+    const chartHeight = height - chartPadding - 25 - (titleLines.length - 1) * 12; // Adjust for title
     
     // Calculate max value for scaling
     const maxValue = Math.max(...data.map(d => d[yKey] || 0), 1);
@@ -955,10 +965,17 @@ const Dashboard = () => {
       
       // Card 3: Visitor Change (only if comparison mode)
       if (comparisonMode) {
-        drawCard(pdf, margin + (cardWidth + cardSpacing) * 2, y, cardWidth, cardHeight, [220, 252, 231], [160, 220, 180]);
+        const isNegative = visitorChange < 0;
+        drawCard(pdf, margin + (cardWidth + cardSpacing) * 2, y, cardWidth, cardHeight, 
+          isNegative ? [254, 242, 242] : [220, 252, 231], 
+          isNegative ? [248, 113, 113] : [160, 220, 180]);
         pdf.setFontSize(24);
         pdf.setFont('helvetica', 'bold');
-        pdf.setTextColor(34, 197, 94); // Green color
+        if (isNegative) {
+          pdf.setTextColor(239, 68, 68); // Red for negative
+        } else {
+          pdf.setTextColor(34, 197, 94); // Green for positive
+        }
         pdf.text(`${visitorChange > 0 ? '+' : ''}${visitorChange}`, margin + (cardWidth + cardSpacing) * 2 + cardWidth / 2, y + 32, { align: 'center' });
         pdf.setFontSize(8);
         pdf.setFont('helvetica', 'normal');
@@ -969,10 +986,18 @@ const Dashboard = () => {
       
       // Card 4: Growth Rate (only if comparison mode)
       if (comparisonMode) {
-        drawCard(pdf, margin + (cardWidth + cardSpacing) * 3, y, cardWidth, cardHeight, [220, 252, 231], [160, 220, 180]);
+        const growthRateNum = parseFloat(growthRate);
+        const isNegative = growthRateNum < 0;
+        drawCard(pdf, margin + (cardWidth + cardSpacing) * 3, y, cardWidth, cardHeight, 
+          isNegative ? [254, 242, 242] : [220, 252, 231], 
+          isNegative ? [248, 113, 113] : [160, 220, 180]);
         pdf.setFontSize(22);
         pdf.setFont('helvetica', 'bold');
-        pdf.setTextColor(34, 197, 94); // Green color
+        if (isNegative) {
+          pdf.setTextColor(239, 68, 68); // Red for negative
+        } else {
+          pdf.setTextColor(34, 197, 94); // Green for positive
+        }
         pdf.text(`${growthRate}%`, margin + (cardWidth + cardSpacing) * 3 + cardWidth / 2, y + 32, { align: 'center' });
         pdf.setFontSize(8);
         pdf.setFont('helvetica', 'normal');
@@ -1044,7 +1069,15 @@ const Dashboard = () => {
       colY += itemSpacing;
       pdf.text(`Data Points: ${stats_calc.count}`, col3X + 12, colY);
       colY += itemSpacing + 4;
-      pdf.setTextColor(34, 197, 94); // Green for trend
+      // Check if trend is negative (Decreasing or contains negative percentage)
+      const trendMatch1 = trend.match(/\(([-+]?\d+\.?\d*)%\)/);
+      const trendValue1 = trendMatch1 ? parseFloat(trendMatch1[1]) : 0;
+      const isTrendNegative1 = trend.includes('Decreasing') || trendValue1 < 0;
+      if (isTrendNegative1) {
+        pdf.setTextColor(239, 68, 68); // Red for negative
+      } else {
+        pdf.setTextColor(34, 197, 94); // Green for positive
+      }
       pdf.setFont('helvetica', 'bold');
       pdf.text(`Trend: ${trend}`, col3X + 12, colY);
       pdf.setFont('helvetica', 'normal');
@@ -1056,15 +1089,27 @@ const Dashboard = () => {
       const chartWidth = (pageWidth - (margin * 2) - cardSpacing) / 2;
       const chartHeight = 160;
       
+      // Calculate data for chart titles
+      // Total visitors for weekly chart
+      const weeklyTotalVisitors = weeklyData.reduce((sum, d) => sum + (d.visitors || 0), 0);
+      
+      // Find peak hour window for time period chart
+      const peakHourIdx = trafficData.reduce((maxIdx, curr, idx) => 
+        (curr.visitors || 0) > (trafficData[maxIdx].visitors || 0) ? idx : maxIdx, 0
+      );
+      const peakHourWindow = `${peakHourIdx.toString().padStart(2, "0")}:00 - ${(peakHourIdx + 1).toString().padStart(2, "0")}:00`;
+      
       // Chart 1: Weekly Foot Traffic (Bar Chart)
       drawCard(pdf, margin, y, chartWidth, chartHeight, [255, 255, 255], [210, 213, 220]);
-      drawBarChart(pdf, margin, y, chartWidth, chartHeight, weeklyData, 'day', 'visitors', 'Weekly Foot Traffic (Visitor distribution by day of week)');
+      const weeklyTitle = `Current Weekly Foot Traffic (Visitor distribution by day of week): ${weeklyTotalVisitors} total visitors`;
+      drawBarChart(pdf, margin, y, chartWidth, chartHeight, weeklyData, 'day', 'visitors', weeklyTitle);
       
       // Chart 2: Traffic by Time Period (Line Chart)
       drawCard(pdf, margin + chartWidth + cardSpacing, y, chartWidth, chartHeight, [255, 255, 255], [210, 213, 220]);
       // Use trafficData for hourly line chart (sample every 4 hours to reduce clutter)
       const hourlyDataSample = trafficData.filter((_, idx) => idx % 2 === 0 || idx === trafficData.length - 1);
-      drawLineChart(pdf, margin + chartWidth + cardSpacing, y, chartWidth, chartHeight, hourlyDataSample, 'hour', 'visitors', 'Traffic by Time Period (Visitor count across different hours)');
+      const timeTitle = `Current Traffic by Time Period (Visitor count across different hours): ${peakHourWindow}`;
+      drawLineChart(pdf, margin + chartWidth + cardSpacing, y, chartWidth, chartHeight, hourlyDataSample, 'hour', 'visitors', timeTitle);
       
       y += chartHeight + sectionSpacing;
       
@@ -1110,7 +1155,15 @@ const Dashboard = () => {
         pdf.text(`  - Visitor Count: ${periods.quietest.value}`, col2X + 15, colY);
         colY += itemSpacing;
       }
-      pdf.setTextColor(34, 197, 94);
+      // Check if trend is negative (Decreasing or contains negative percentage)
+      const trendMatch2 = trend.match(/\(([-+]?\d+\.?\d*)%\)/);
+      const trendValue2 = trendMatch2 ? parseFloat(trendMatch2[1]) : 0;
+      const isTrendNegative2 = trend.includes('Decreasing') || trendValue2 < 0;
+      if (isTrendNegative2) {
+        pdf.setTextColor(239, 68, 68); // Red for negative
+      } else {
+        pdf.setTextColor(34, 197, 94); // Green for positive
+      }
       pdf.setFont('helvetica', 'bold');
       pdf.text(`Overall Trend: ${trend}`, col2X + 12, colY);
       pdf.setFont('helvetica', 'normal');
@@ -1129,7 +1182,12 @@ const Dashboard = () => {
         colY += itemSpacing;
         pdf.text(`Previous Period Total: ${comparisonStats.totalVisitors} visitors`, col3X + 12, colY);
         colY += itemSpacing;
-        pdf.setTextColor(34, 197, 94);
+        const isNegativeChange = visitorChange < 0;
+        if (isNegativeChange) {
+          pdf.setTextColor(239, 68, 68); // Red for negative
+        } else {
+          pdf.setTextColor(34, 197, 94); // Green for positive
+        }
         pdf.setFont('helvetica', 'bold');
         pdf.text(`Change: ${visitorChange > 0 ? '+' : ''}${visitorChange} (${growthRate}%)`, col3X + 12, colY);
         pdf.setFont('helvetica', 'normal');
