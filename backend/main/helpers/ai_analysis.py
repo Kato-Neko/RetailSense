@@ -10,82 +10,77 @@ from typing import Dict, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
-def generate_ai_recommendations(
-    areas: Dict,
-    total_visitors: int,
-    peak_hours: List[Dict],
-    provider: Optional[str] = None
-) -> Tuple[List[str], bool]:
-    """
-    Generate AI-powered recommendations based on heatmap analysis.
+class AIRecommendationsService:
+    """Generates AI-powered or rule-based recommendations for heatmap analytics."""
 
-    Returns (recommendations, used_ai)
-    """
-    # Auto-detect provider if not specified
-    if provider is None:
-        if os.getenv('GROQ_API_KEY'):
-            provider = 'groq'
-        elif os.getenv('GEMINI_API_KEY'):
-            provider = 'gemini'
-        elif os.getenv('OPENAI_API_KEY'):
-            provider = 'openai'
-        else:
-            logger.info("No AI API keys found, using rule-based recommendations")
-            return _generate_rule_based_recommendations(areas, total_visitors), False
+    def generate_ai_recommendations(
+        self,
+        areas: Dict,
+        total_visitors: int,
+        peak_hours: List[Dict],
+        provider: Optional[str] = None
+    ) -> Tuple[List[str], bool]:
+        """Generate recommendations using available AI provider, with rule-based fallback."""
+        if provider is None:
+            if os.getenv('GROQ_API_KEY'):
+                provider = 'groq'
+            elif os.getenv('GEMINI_API_KEY'):
+                provider = 'gemini'
+            elif os.getenv('OPENAI_API_KEY'):
+                provider = 'openai'
+            else:
+                logger.info("No AI API keys found, using rule-based recommendations")
+                return self._generate_rule_based_recommendations(areas, total_visitors), False
 
-    # Prepare context
-    context = {
-        "traffic_distribution": {
-            "high_density_percentage": areas.get('high', {}).get('percentage', 0),
-            "medium_density_percentage": areas.get('medium', {}).get('percentage', 0),
-            "low_density_percentage": areas.get('low', {}).get('percentage', 0),
-        },
-        "total_visitors": total_visitors,
-        "peak_periods": peak_hours,
-        "high_density_regions_count": len(areas.get('high', {}).get('regions', [])),
-        "low_density_regions_count": len(areas.get('low', {}).get('regions', []))
-    }
+        context = {
+            "traffic_distribution": {
+                "high_density_percentage": areas.get('high', {}).get('percentage', 0),
+                "medium_density_percentage": areas.get('medium', {}).get('percentage', 0),
+                "low_density_percentage": areas.get('low', {}).get('percentage', 0),
+            },
+            "total_visitors": total_visitors,
+            "peak_periods": peak_hours,
+            "high_density_regions_count": len(areas.get('high', {}).get('regions', [])),
+            "low_density_regions_count": len(areas.get('low', {}).get('regions', []))
+        }
 
-    # Create prompt
-    prompt = _build_prompt(context, total_visitors, peak_hours)
+        prompt = self._build_prompt(context, total_visitors, peak_hours)
 
-    # Try different providers
-    try:
-        if provider == 'groq':
-            recs = _call_groq(prompt, context)
-            return recs, True
-        if provider == 'gemini':
-            recs = _call_gemini_with_fallback(prompt, context)
-            return recs, True
-        if provider == 'openai':
-            recs = _call_openai(prompt, context)
-            return recs, True
-    except Exception as e:
-        logger.error(f"AI provider '{provider}' failed: {e}")
+        try:
+            if provider == 'groq':
+                recs = self._call_groq(prompt, context)
+                return recs, True
+            if provider == 'gemini':
+                recs = self._call_gemini_with_fallback(prompt, context)
+                return recs, True
+            if provider == 'openai':
+                recs = self._call_openai(prompt, context)
+                return recs, True
+        except Exception as e:
+            logger.error(f"AI provider '{provider}' failed: {e}")
 
-    # Fallback
-    return _generate_rule_based_recommendations(areas, total_visitors), False
+        return self._generate_rule_based_recommendations(areas, total_visitors), False
 
 
-def _build_prompt(context: Dict, total_visitors: int, peak_hours: List[Dict]) -> str:
-    return (
-        f"You are a retail analytics expert analyzing foot traffic heatmap data.\n\n"
-        f"Traffic Distribution:\n"
-        f"- High density areas: {context['traffic_distribution']['high_density_percentage']}%\n"
-        f"- Medium density areas: {context['traffic_distribution']['medium_density_percentage']}%\n"
-        f"- Low density areas: {context['traffic_distribution']['low_density_percentage']}%\n\n"
-        f"Additional Metrics:\n"
-        f"- Total unique visitors: {total_visitors}\n"
-        f"- Number of high-density regions: {context['high_density_regions_count']}\n"
-        f"- Number of low-density regions: {context['low_density_regions_count']}\n"
-        f"- Peak traffic periods: {len(peak_hours)} periods identified\n\n"
-        f"Generate 2-3 actionable, specific recommendations for optimizing store layout and customer flow.\n"
-        f"Be concise (one sentence each).\n\n"
-        f"Return ONLY a JSON array of recommendation strings, no other text."
-    )
+    def _build_prompt(self, context: Dict, total_visitors: int, peak_hours: List[Dict]) -> str:
+        return (
+            f"You are a retail analytics expert analyzing foot traffic heatmap data.\n\n"
+            f"Traffic Distribution:\n"
+            f"- High density areas: {context['traffic_distribution']['high_density_percentage']}%\n"
+            f"- Medium density areas: {context['traffic_distribution']['medium_density_percentage']}%\n"
+            f"- Low density areas: {context['traffic_distribution']['low_density_percentage']}%\n\n"
+            f"Additional Metrics:\n"
+            f"- Total unique visitors: {total_visitors}\n"
+            f"- Number of high-density regions: {context['high_density_regions_count']}\n"
+            f"- Number of low-density regions: {context['low_density_regions_count']}\n"
+            f"- Peak traffic periods: {len(peak_hours)} periods identified\n\n"
+            f"Generate 2-3 actionable, specific recommendations for optimizing store layout and customer flow.\n"
+            f"Be concise (one sentence each).\n\n"
+            f"Return ONLY a JSON array of recommendation strings, no other text."
+        )
 
 
-def _call_gemini_with_fallback(prompt: str, context: Dict) -> List[str]:
+    def _call_gemini_with_fallback(self, prompt: str, context: Dict) -> List[str]:
     api_key = os.getenv('GEMINI_API_KEY')
     if not api_key:
         raise RuntimeError("GEMINI_API_KEY not set")
@@ -142,7 +137,7 @@ def _call_gemini_with_fallback(prompt: str, context: Dict) -> List[str]:
                     if t:
                         texts.append(t)
                 if texts:
-                    return _parse_ai_response("\n".join(texts), context)
+                    return self._parse_ai_response("\n".join(texts), context)
             # If we fell through, try next model
             raise RuntimeError('No valid text parts in candidates')
         except Exception as e:
@@ -161,7 +156,7 @@ def _call_gemini_with_fallback(prompt: str, context: Dict) -> List[str]:
     raise RuntimeError(str(last_err) or "Gemini call failed")
 
 
-def _call_groq(prompt: str, context: Dict) -> List[str]:
+    def _call_groq(self, prompt: str, context: Dict) -> List[str]:
     api_key = os.getenv('GROQ_API_KEY')
     if not api_key:
         raise RuntimeError("GROQ_API_KEY not set")
@@ -181,10 +176,10 @@ def _call_groq(prompt: str, context: Dict) -> List[str]:
         max_tokens=200,
         response_format={"type": "json_object"}
     )
-    return _parse_ai_response(response.choices[0].message.content, context)
+    return self._parse_ai_response(response.choices[0].message.content, context)
 
 
-def _call_openai(prompt: str, context: Dict) -> List[str]:
+    def _call_openai(self, prompt: str, context: Dict) -> List[str]:
     api_key = os.getenv('OPENAI_API_KEY')
     if not api_key:
         raise RuntimeError("OPENAI_API_KEY not set")
@@ -203,10 +198,10 @@ def _call_openai(prompt: str, context: Dict) -> List[str]:
         max_tokens=200,
         response_format={"type": "json_object"}
     )
-    return _parse_ai_response(response.choices[0].message.content, context)
+    return self._parse_ai_response(response.choices[0].message.content, context)
 
 
-def _parse_ai_response(content: str, context: Dict) -> List[str]:
+    def _parse_ai_response(self, content: str, context: Dict) -> List[str]:
     try:
         content = content.strip()
         if content.startswith('```'):
@@ -227,19 +222,32 @@ def _parse_ai_response(content: str, context: Dict) -> List[str]:
         raise RuntimeError(f"Failed to parse AI response: {e}")
 
 
-def _generate_rule_based_recommendations(areas: Dict, total_visitors: int) -> List[str]:
-    recommendations = []
-    high_pct = areas.get('high', {}).get('percentage', 0)
-    low_pct = areas.get('low', {}).get('percentage', 0)
-    medium_pct = areas.get('medium', {}).get('percentage', 0)
-    if high_pct > 30:
-        recommendations.append("Consider redistributing traffic from high-density areas to improve customer flow")
-    if low_pct > 40:
-        recommendations.append("Implement strategies to increase traffic in low-density areas")
-    if medium_pct < 30:
-        recommendations.append("Optimize store layout to create more balanced traffic distribution")
-    if total_visitors > 50 and high_pct > 25:
-        recommendations.append("High visitor volume detected in concentrated areas - consider expanding popular product displays")
-    elif total_visitors < 10 and low_pct > 50:
-        recommendations.append("Low overall traffic detected - review store hours or marketing strategies")
-    return recommendations if recommendations else ["Monitor traffic patterns over time to identify optimization opportunities"]
+    def _generate_rule_based_recommendations(self, areas: Dict, total_visitors: int) -> List[str]:
+        recommendations = []
+        high_pct = areas.get('high', {}).get('percentage', 0)
+        low_pct = areas.get('low', {}).get('percentage', 0)
+        medium_pct = areas.get('medium', {}).get('percentage', 0)
+        if high_pct > 30:
+            recommendations.append("Consider redistributing traffic from high-density areas to improve customer flow")
+        if low_pct > 40:
+            recommendations.append("Implement strategies to increase traffic in low-density areas")
+        if medium_pct < 30:
+            recommendations.append("Optimize store layout to create more balanced traffic distribution")
+        if total_visitors > 50 and high_pct > 25:
+            recommendations.append("High visitor volume detected in concentrated areas - consider expanding popular product displays")
+        elif total_visitors < 10 and low_pct > 50:
+            recommendations.append("Low overall traffic detected - review store hours or marketing strategies")
+        return recommendations if recommendations else ["Monitor traffic patterns over time to identify optimization opportunities"]
+
+
+# Backward-compatible singleton and wrapper
+_ai_recs_service_singleton = AIRecommendationsService()
+
+
+def generate_ai_recommendations(
+    areas: Dict,
+    total_visitors: int,
+    peak_hours: List[Dict],
+    provider: Optional[str] = None
+) -> Tuple[List[str], bool]:
+    return _ai_recs_service_singleton.generate_ai_recommendations(areas, total_visitors, peak_hours, provider)
