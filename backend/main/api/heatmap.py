@@ -51,7 +51,7 @@ def get_heatmap_preview(job_id):
 
 @heatmap_bp.route('/heatmap_jobs/<job_id>/detections', methods=['POST'])
 def receive_live_detections(job_id):
-    from services import get_jobs_store
+    from ..services.state import get_jobs_store
     jobs = get_jobs_store()
     if job_id not in jobs:
         return jsonify({'error': 'Job not found'}), 404
