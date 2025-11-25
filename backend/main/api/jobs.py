@@ -542,30 +542,9 @@ def stop_live_job(job_id):
             jobs[job_id]['status'] = 'stopped'
             jobs[job_id]['message'] = 'Live stream stopped by user'
         
-        # Update database in background to avoid timeout
-        def update_db_status():
-            try:
-                conn = get_db_connection()
-                cur = conn.cursor()
-                cur.execute('''
-                    UPDATE jobs 
-                    SET status = %s, message = %s, updated_at = CURRENT_TIMESTAMP
-                    WHERE job_id = %s
-                ''', ('stopped', 'Live stream stopped by user', job_id))
-                conn.commit()
-                cur.close()
-                conn.close()
-            except Exception as e:
-                logger.error(f"Error updating database status: {e}")
-        
-        # Run database update in background thread
-        import threading
-        db_thread = threading.Thread(target=update_db_status)
-        db_thread.daemon = True
-        db_thread.start()
-        
-        # Return immediately without waiting for database update
-        return jsonify({"success": True, "message": "Live stream stopped"}), 200
+        # The processor.stop() method now handles all finalization, including
+        # the database update to 'completed'. We don't need to do anything else here.
+        return jsonify({"success": True, "message": "Live stream finalization initiated."}), 200
         
     except Exception as e:
         logger.error(f"Error stopping live job: {e}", exc_info=True)
