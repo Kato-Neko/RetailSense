@@ -49,6 +49,7 @@ class LiveStreamProcessor:
         self.last_detection_time = None
         self.inactivity_timeout = 15  # seconds to wait after last detection before stopping recording
         self.current_clip_path = None
+        self.video_path_in_db = False # Flag to ensure we only update the DB once
         
     def start(self, detection_callback: Optional[Callable] = None):
         """Start processing RTSP stream"""
@@ -397,12 +398,39 @@ class LiveStreamProcessor:
 
             # Upload the finished clip to Supabase in a background thread
             if self.current_clip_path and os.path.exists(self.current_clip_path):
-                upload_thread = threading.Thread(target=upload_video_to_supabase, args=(self.current_clip_path, f"{self.job_id}/{os.path.basename(self.current_clip_path)}"))
+                supabase_path = f"{self.job_id}/{os.path.basename(self.current_clip_path)}"
+                
+                # We need to define the upload function here to pass arguments to the thread
+                def upload_and_update_db():
+                    try:
+                        upload_video_to_supabase(self.current_clip_path, supabase_path)
+                        
+                        # After the first successful upload, update the DB
+                        if not self.video_path_in_db:
+                            self.logger.info(f"First clip uploaded. Setting output_video_path for job {self.job_id}")
+                            conn = get_db_connection()
+                            with conn.cursor() as cur:
+                                # The path is the job_id, which acts as the folder in Supabase
+                                cur.execute('''
+                                    UPDATE jobs 
+                                    SET output_video_path = %s, updated_at = CURRENT_TIMESTAMP
+                                    WHERE job_id = %s
+                                ''', (self.job_id, self.job_id))
+                                conn.commit()
+                            self.video_path_in_db = True # Set flag to prevent future updates
+                            self.logger.info(f"Successfully set output_video_path for job {self.job_id}")
+
+                    except Exception as e:
+                        self.logger.error(f"Error during video upload or DB update: {e}")
+
+                upload_thread = threading.Thread(target=upload_and_update_db)
                 upload_thread.daemon = True
                 upload_thread.start()
         
         self.video_writer = None
         self.current_clip_path = None
+
+
     
     def _save_first_frame(self, frame):
         """Save first frame as floorplan"""
