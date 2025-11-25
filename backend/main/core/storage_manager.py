@@ -79,6 +79,24 @@ class StorageManager:
             {"content-type": "image/jpg", "x-upsert": "true"}
         )
         self.logger.info(f"Uploaded image to Supabase: {self.bucket}/{supabase_path}")
+
+    def upload_video(self, local_video_path: str, supabase_path: str) -> None:
+        """Upload a local video file to Supabase storage.
+
+        Args:
+            local_video_path (str): The local path to the video file.
+            supabase_path (str): The destination path in Supabase Storage (e.g., 'job_id/clip.mp4').
+        """
+        try:
+            with open(local_video_path, 'rb') as f:
+                self.supabase.storage.from_(self.bucket).upload(
+                    path=supabase_path,
+                    file=f,
+                    file_options={"content-type": "video/mp4", "upsert": "true"}
+                )
+            self.logger.info(f"Successfully uploaded video to Supabase: {supabase_path}")
+        except Exception as e:
+            self.logger.error(f"Failed to upload video {local_video_path} to Supabase: {e}")
     
     def download_json(self, supabase_path: str) -> Optional[dict]:
         """Download JSON data from Supabase storage.
@@ -251,6 +269,12 @@ def upload_image_to_supabase(image_np, supabase_path):
     return manager.upload_image(image_np, supabase_path)
 
 
+def upload_video_to_supabase(local_video_path, supabase_path):
+    """Legacy function for backward compatibility."""
+    manager = get_storage_manager()
+    return manager.upload_video(local_video_path, supabase_path)
+
+
 def download_json_from_supabase(supabase_path):
     """Legacy function for backward compatibility."""
     manager = get_storage_manager()
@@ -279,4 +303,3 @@ def download_image_bytes_from_supabase(supabase_path):
     """Legacy function for backward compatibility."""
     manager = get_storage_manager()
     return manager.download_image_bytes(supabase_path)
-
