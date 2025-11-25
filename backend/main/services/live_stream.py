@@ -277,26 +277,31 @@ class LiveStreamProcessor:
                 
                 # Add track IDs to detections
                 tracked_detections = []
-                track_index = 0
+                
+                # Create a mapping from the tracker's output bbox to the original detection
+                # The tracker's bbox is on the resized frame.
+                detection_map = {
+                    tuple(map(int, (d['bbox'][0]*scale_factor, d['bbox'][1]*scale_factor, d['bbox'][2]*scale_factor, d['bbox'][3]*scale_factor))): d 
+                    for d in detections
+                }
+
                 for track in tracks:
                     if not track.is_confirmed():
                         continue
-                    if track_index < len(detections):
-                        # The tracker's bbox is on the resized frame, scale it back up
-                        ltrb_resized = track.to_ltrb()
-                        x1_orig = ltrb_resized[0] / scale_factor
-                        y1_orig = ltrb_resized[1] / scale_factor
-                        x2_orig = ltrb_resized[2] / scale_factor
-                        y2_orig = ltrb_resized[3] / scale_factor
-                        tracked_detections.append({
-                            'bbox': [float(x1_orig), float(y1_orig), float(x2_orig), float(y2_orig)],
-                            'confidence': detections[track_index]['confidence'],
-                            'frame': frame_number,
-                            'track_id': track.track_id
-                        })
-                    track_index += 1
+                    
+                    # Find the original detection that corresponds to this track
+                    # The tracker's to_ltrb() gives the bbox on the resized frame
+                    track_bbox_resized = tuple(map(int, track.to_ltrb()))
+                    
+                    # Find the closest matching detection (simple approach)
+                    # A more robust method would be to calculate IoU (Intersection over Union)
+                    # but this direct lookup is often sufficient if bboxes are stable.
+                    original_detection = detection_map.get(track_bbox_resized)
+                    if original_detection:
+                        original_detection['track_id'] = track.track_id
+                        tracked_detections.append(original_detection)
                 
-                return tracked_detections if tracked_detections else detections
+                return tracked_detections if tracked_detections else detections # Return only tracked detections if any
             
             return detections
             
