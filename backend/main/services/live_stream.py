@@ -13,7 +13,7 @@ from datetime import datetime
 
 from ..core.config import UPLOAD_FOLDER, RESULTS_FOLDER
 from ..core.db import get_db_connection
-from ..core.storage import upload_json_to_supabase, upload_image_to_supabase, upload_video_to_supabase
+from ..core.storage import upload_json_to_supabase, upload_image_to_supabase, upload_video_to_supabase, list_files_in_supabase
 from .tracking import _get_model, _get_tracker
 from .state import get_jobs_store
 
@@ -70,16 +70,45 @@ class LiveStreamProcessor:
         if self.cap:
             self.cap.release()
             self.cap = None
-        
-        # --- MODIFICATION: Trigger a single final update on stop ---
-        self.logger.info(f"Executing final save and heatmap update for job {self.job_id}...")
-        self._save_detections_batch()  # Save any remaining detections
-        
-        if self.is_recording:
-            self._stop_recording() # Finalize and upload any active recording
 
-        self._update_heatmap()         # Generate and save the final heatmap
-        self.logger.info(f"Stopped live stream processing for job {self.job_id}")
+        # --- Centralized Finalization on Stop ---
+        # This runs in a background thread to avoid blocking the API request.
+        def finalize_job():
+            self.logger.info(f"Executing final save and cleanup for job {self.job_id}...")
+            
+            # 1. Save any remaining detections in the buffer
+            self._save_detections_batch()
+            
+            # 2. Stop any active recording and upload the last clip
+            if self.is_recording:
+                self._stop_recording(is_final=True) # Pass is_final to block until upload finishes
+                # Give the upload a moment to complete before listing files
+                time.sleep(5)
+
+            # 3. Generate the final heatmap with the correct name
+            final_heatmap_path = self._update_heatmap(is_final=True)
+
+            # 4. Find the first recorded video clip to use as the primary output_video_path
+            final_video_path = None
+            try:
+                files = list_files_in_supabase(prefix=self.job_id)
+                video_files = sorted([f['name'] for f in files if f['name'].endswith('.mp4')])
+                if video_files:
+                    # We'll use the job_id as the folder path, which is what the frontend expects
+                    final_video_path = self.job_id
+            except Exception as e:
+                self.logger.error(f"Could not list video clips for final DB update: {e}")
+
+            # 5. Update the database with all final information
+            self._update_status('completed', 'Live stream completed.', final_heatmap_path, final_video_path, is_final=True)
+            
+            self.logger.info(f"Finalization complete for job {self.job_id}")
+
+        # Run the finalization in a separate thread
+        finalization_thread = threading.Thread(target=finalize_job)
+        finalization_thread.daemon = True
+        finalization_thread.start()
+        self.logger.info(f"Stopping live stream processing for job {self.job_id}. Finalization running in background.")
         
     def _process_stream(self, detection_callback: Optional[Callable]):
         """Main stream processing loop"""
@@ -385,11 +414,13 @@ class LiveStreamProcessor:
             self.is_recording = False
             self.video_writer = None
             self.current_clip_path = None
-
-    def _stop_recording(self):
+    
+    def _stop_recording(self, is_final: bool = False):
         """Finalizes the current video clip and triggers upload."""
         if not self.is_recording:
             return
+        
+        upload_thread = None
 
         self.is_recording = False
         if self.video_writer:
@@ -427,11 +458,17 @@ class LiveStreamProcessor:
                 upload_thread.daemon = True
                 upload_thread.start()
         
+        # If this is the final stop, wait for the upload to finish
+        if is_final and upload_thread:
+            self.logger.info("Waiting for final clip upload to complete...")
+            upload_thread.join(timeout=60) # Wait up to 60 seconds
+        
         self.video_writer = None
         self.current_clip_path = None
 
 
     
+
     def _save_first_frame(self, frame):
         """Save first frame as floorplan"""
         try:
@@ -447,6 +484,19 @@ class LiveStreamProcessor:
             
             self.floorplan_path = floorplan_path
             self.logger.info(f"Saved first frame as floorplan: {floorplan_path}")
+
+            # Update the input_floorplan_name in the database
+            try:
+                conn = get_db_connection()
+                with conn.cursor() as cur:
+                    cur.execute('''
+                        UPDATE jobs 
+                        SET input_floorplan_name = %s, updated_at = CURRENT_TIMESTAMP
+                        WHERE job_id = %s
+                    ''', (floorplan_filename, self.job_id))
+                    conn.commit()
+            except Exception as e_db:
+                self.logger.error(f"Failed to update input_floorplan_name in DB: {e_db}")
             
         except Exception as e:
             self.logger.error(f"Error saving first frame: {e}")
@@ -487,8 +537,8 @@ class LiveStreamProcessor:
         except Exception as e:
             self.logger.error(f"Error saving detections batch: {e}")
     
-    def _update_heatmap(self):
-        """Update heatmap from accumulated detections"""
+    def _update_heatmap(self, is_final: bool = False):
+        """Update heatmap from accumulated detections. If final, save with video_job naming convention."""
         try:
             from ..core.storage import download_json_from_supabase, download_image_from_supabase
             from .heatmap_processing import create_custom_heatmap
@@ -498,7 +548,7 @@ class LiveStreamProcessor:
             detections_data = download_json_from_supabase(detections_path)
             
             if not detections_data or not detections_data.get('detections'):
-                return
+                return None
             
             detections = detections_data['detections']
             
@@ -516,7 +566,7 @@ class LiveStreamProcessor:
                     cv2.imwrite(floorplan_path, floorplan_img)
                 else:
                     self.logger.warning("No floorplan available for heatmap update")
-                    return
+                    return None
             
             # Create heatmap
             if detections:
@@ -527,48 +577,49 @@ class LiveStreamProcessor:
                 )
                 
                 if blended_img is not None:
+                    # Determine filename based on whether this is the final update
+                    if is_final:
+                        heatmap_filename = f"video_{self.job_id}_heatmap.jpg"
+                        supabase_heatmap_path = f"{self.job_id}/{heatmap_filename}"
+                    else:
+                        heatmap_filename = "live_heatmap.jpg"
+                        supabase_heatmap_path = f"{self.job_id}/{heatmap_filename}"
+
                     # Upload to Supabase
-                    upload_image_to_supabase(blended_img, f"{self.job_id}/live_heatmap.jpg")
-                    self.logger.info(f"Generated and uploaded final live heatmap for job {self.job_id}")
+                    upload_image_to_supabase(blended_img, supabase_heatmap_path)
+                    self.logger.info(f"Generated and uploaded heatmap: {supabase_heatmap_path}")
 
-                    # Mirror uploaded-job artifact behavior: persist a local image and update DB path
-                    try:
-                        results_dir = os.path.join(RESULTS_FOLDER, self.job_id)
-                        os.makedirs(results_dir, exist_ok=True)
-                        output_heatmap_image_path = os.path.join(results_dir, f"live_{self.job_id}_heatmap.jpg")
-                        cv2.imwrite(output_heatmap_image_path, blended_img)
-
-                        # Update DB output_heatmap_path to a stable, upload-style path
-                        try:
-                            conn = get_db_connection()
-                            with conn.cursor() as cur:
-                                # Use the absolute local path, consistent with video_jobs.py, and set video path to None
-                                self.logger.info(f"Updating database for job {self.job_id} with heatmap path: {output_heatmap_image_path}")
-                                cur.execute('''
-                                    UPDATE jobs 
-                                    SET output_heatmap_path = %s, output_video_path = NULL, updated_at = CURRENT_TIMESTAMP
-                                    WHERE job_id = %s
-                                ''', (output_heatmap_image_path, self.job_id))
-                                conn.commit()
-                                self.logger.info(f"Successfully updated output_heatmap_path for live job {self.job_id}")
-                        except Exception as e_db:
-                            self.logger.warning(f"Failed to update output_heatmap_path for live job {self.job_id}: {e_db}")
-                    except Exception as e_local:
-                        self.logger.warning(f"Failed to persist live heatmap locally for job {self.job_id}: {e_local}")
+                    # Persist a local copy and return the path for final DB update
+                    results_dir = os.path.join(RESULTS_FOLDER, self.job_id)
+                    os.makedirs(results_dir, exist_ok=True)
+                    local_heatmap_path = os.path.join(results_dir, heatmap_filename)
+                    cv2.imwrite(local_heatmap_path, blended_img)
                     
+                    return local_heatmap_path
+            return None
         except Exception as e:
             self.logger.error(f"Error updating heatmap: {e}")
+            return None
     
-    def _update_status(self, status: str, message: str):
+    def _update_status(self, status: str, message: str, heatmap_path: Optional[str] = None, video_path: Optional[str] = None, is_final: bool = False):
         """Update job status in database"""
         try:
             conn = get_db_connection()
             cur = conn.cursor()
-            cur.execute('''
-                UPDATE jobs 
-                SET status = %s, message = %s, updated_at = CURRENT_TIMESTAMP
-                WHERE job_id = %s
-            ''', (status, message, self.job_id))
+            
+            if is_final:
+                cur.execute('''
+                    UPDATE jobs 
+                    SET status = %s, message = %s, end_datetime = CURRENT_TIMESTAMP, output_heatmap_path = %s, output_video_path = %s, updated_at = CURRENT_TIMESTAMP
+                    WHERE job_id = %s
+                ''', (status, message, heatmap_path, video_path, self.job_id))
+            else:
+                cur.execute('''
+                    UPDATE jobs 
+                    SET status = %s, message = %s, updated_at = CURRENT_TIMESTAMP
+                    WHERE job_id = %s
+                ''', (status, message, self.job_id))
+
             conn.commit()
             cur.close()
             conn.close()
