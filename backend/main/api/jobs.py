@@ -401,6 +401,65 @@ def create_live_job():
             points_path=points_path
         )
         
+        # Start processing in background immediately. This is non-blocking.
+        started = processor.start()
+        if not started:
+            # This would only happen if the stream was already running, which is unlikely for a new job.
+            return jsonify({"error": "Failed to start stream processing, it may already be running."}), 500
+
+        # Define a function to handle the database insertion in the background.
+        # This prevents the API request from waiting on the database.
+        def insert_job_into_db():
+            try:
+                conn = get_db_connection()
+                cur = conn.cursor()
+                
+                # Check if new columns exist
+                cur.execute("""
+                    SELECT column_name 
+                    FROM information_schema.columns 
+                    WHERE table_name='jobs' AND column_name IN ('camera_name', 'rtsp_url', 'is_live', 'job_type')
+                """)
+                existing_columns = {row[0] for row in cur.fetchall()}
+                
+                base_columns = ['job_id', '"user"', 'input_video_name', 'input_floorplan_name', 'status', 'message', 
+                               'start_datetime', 'end_datetime', 'created_at', 'updated_at', 'output_heatmap_path', 'output_video_path']
+                base_values = [job_id, current_user, 'live_stream', None, 'connecting', 'Connecting to camera stream...',
+                              datetime.datetime.now(), None, datetime.datetime.now(), datetime.datetime.now(), None, None]
+                
+                if 'job_type' in existing_columns:
+                    base_columns.append('job_type')
+                    base_values.append('live')
+                if 'rtsp_url' in existing_columns:
+                    base_columns.append('rtsp_url')
+                    base_values.append(rtsp_url)
+                if 'camera_name' in existing_columns:
+                    base_columns.append('camera_name')
+                    base_values.append(camera_name)
+                if 'is_live' in existing_columns:
+                    base_columns.append('is_live')
+                    base_values.append(True)
+                
+                placeholders = ', '.join(['%s'] * len(base_values))
+                columns_str = ', '.join(base_columns)
+                
+                cur.execute(f'''
+                    INSERT INTO jobs ({columns_str})
+                    VALUES ({placeholders})
+                ''', tuple(base_values))
+                conn.commit()
+                cur.close()
+            except Exception as e:
+                logger.error(f"Error inserting live job into database: {e}")
+                # If DB insert fails, update the in-memory status to 'error'
+                jobs = get_jobs_store()
+                if job_id in jobs:
+                    jobs[job_id]['status'] = 'error'
+                    jobs[job_id]['message'] = f"Database error: {e}"
+            finally:
+                if 'conn' in locals() and conn:
+                    conn.close()
+
         # Store job in memory
         jobs = get_jobs_store()
         jobs[job_id] = {
@@ -412,59 +471,13 @@ def create_live_job():
             'rtsp_url': rtsp_url
         }
         
-        # Insert into database
-        conn = get_db_connection()
-        try:
-            cur = conn.cursor()
-            
-            # Check if new columns exist
-            cur.execute("""
-                SELECT column_name 
-                FROM information_schema.columns 
-                WHERE table_name='jobs' AND column_name IN ('camera_name', 'rtsp_url', 'is_live', 'job_type')
-            """)
-            existing_columns = {row[0] for row in cur.fetchall()}
-            
-            # Build INSERT query based on available columns
-            base_columns = ['job_id', '"user"', 'input_video_name', 'input_floorplan_name', 'status', 'message', 
-                           'start_datetime', 'end_datetime', 'created_at', 'updated_at', 'output_heatmap_path', 'output_video_path']
-            base_values = [job_id, current_user, 'live_stream', None, 'connecting', 'Connecting to camera stream...',
-                          datetime.datetime.now(), None, datetime.datetime.now(), datetime.datetime.now(), None, None]
-            
-            if 'job_type' in existing_columns:
-                base_columns.append('job_type')
-                base_values.append('live')
-            if 'rtsp_url' in existing_columns:
-                base_columns.append('rtsp_url')
-                base_values.append(rtsp_url)
-            if 'camera_name' in existing_columns:
-                base_columns.append('camera_name')
-                base_values.append(camera_name)
-            if 'is_live' in existing_columns:
-                base_columns.append('is_live')
-                base_values.append(True)
-            
-            placeholders = ', '.join(['%s'] * len(base_values))
-            columns_str = ', '.join(base_columns)
-            
-            cur.execute(f'''
-                INSERT INTO jobs ({columns_str})
-                VALUES ({placeholders})
-            ''', tuple(base_values))
-            conn.commit()
-            cur.close()
-        except Exception as e:
-            logger.error(f"Error inserting live job into database: {e}")
-            conn.rollback()
-            return jsonify({"error": f"Database error: {str(e)}. Please run the database migration. See backend/migrations/APPLY_MIGRATION.md"}), 500
-        finally:
-            conn.close()
+        # Run the database insertion in a separate thread.
+        import threading
+        db_thread = threading.Thread(target=insert_job_into_db)
+        db_thread.daemon = True
+        db_thread.start()
         
-        # Start processing in background
-        started = processor.start()
-        if not started:
-            return jsonify({"error": "Failed to start stream processing"}), 500
-        
+        # Return a response to the client immediately.
         return jsonify({
             "job_id": job_id,
             "status": "connecting",
