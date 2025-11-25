@@ -570,3 +570,24 @@ def stop_live_job(job_id):
     except Exception as e:
         logger.error(f"Error stopping live job: {e}", exc_info=True)
         return jsonify({"error": f"Server error: {str(e)}"}), 500
+
+
+@jobs_bp.route('/heatmap_jobs/<job_id>/live/frame', methods=['GET'])
+@cross_origin()
+# No JWT required for this endpoint to allow simple <img> tags or other clients to access it
+def get_live_frame(job_id):
+    """
+    Provides the latest processed frame for a live job as a JPEG image.
+    This can be used by a frontend to create a live video feed.
+    """
+    from ..services.live_stream import get_latest_frame
+    from flask import Response
+
+    frame_bytes = get_latest_frame(job_id)
+    
+    if frame_bytes is None:
+        # You could return a 404 or a placeholder image file
+        return Response(status=404, response="Live stream not running or frame not available.")
+        
+    # Return the JPEG image bytes with the correct content type
+    return Response(frame_bytes, mimetype='image/jpeg')
