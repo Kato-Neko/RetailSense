@@ -13,7 +13,7 @@ from datetime import datetime
 
 from ..core.config import UPLOAD_FOLDER, RESULTS_FOLDER
 from ..core.db import get_db_connection
-from ..core.storage import upload_json_to_supabase, upload_image_to_supabase
+from ..core.storage import upload_json_to_supabase, upload_image_to_supabase, upload_video_to_supabase
 from .tracking import _get_model, _get_tracker
 from .state import get_jobs_store
 
@@ -42,6 +42,13 @@ class LiveStreamProcessor:
         self.last_heatmap_update = time.time()
         self.last_frame_time = None # To be exposed in status
         self.heatmap_update_interval = 60  # seconds
+
+        # --- Event-based recording attributes ---
+        self.is_recording = False
+        self.video_writer = None
+        self.last_detection_time = None
+        self.inactivity_timeout = 15  # seconds to wait after last detection before stopping recording
+        self.current_clip_path = None
         
     def start(self, detection_callback: Optional[Callable] = None):
         """Start processing RTSP stream"""
@@ -66,6 +73,10 @@ class LiveStreamProcessor:
         # --- MODIFICATION: Trigger a single final update on stop ---
         self.logger.info(f"Executing final save and heatmap update for job {self.job_id}...")
         self._save_detections_batch()  # Save any remaining detections
+        
+        if self.is_recording:
+            self._stop_recording() # Finalize and upload any active recording
+
         self._update_heatmap()         # Generate and save the final heatmap
         self.logger.info(f"Stopped live stream processing for job {self.job_id}")
         
@@ -183,6 +194,10 @@ class LiveStreamProcessor:
                         self.logger.warning(f"Deferred floorplan save failed: {e}")
 
                 # Process every Nth frame
+                # Note: We pass the original `frame` to the recording logic, not the resized one.
+                # This ensures the saved clips are full quality.
+                has_detections = False
+
                 if self.frame_count % frame_skip == 0:
                     detections = self._detect_and_track_frame(frame, self.frame_count)
                     
@@ -194,6 +209,7 @@ class LiveStreamProcessor:
                             det['stream_time'] = self.frame_count / self.fps
                         
                         self.detections_buffer.extend(detections)
+                        has_detections = True
                         
                         # Call callback if provided
                         if detection_callback:
@@ -212,6 +228,16 @@ class LiveStreamProcessor:
                             self._update_heatmap()
                             self.last_heatmap_update = time.time()
                 
+                # --- Event-based recording logic ---
+                self._handle_recording(frame, has_detections)
+                
+                # If recording, write the frame. This happens for every frame, not just skipped ones.
+                if self.is_recording and self.video_writer is not None:
+                    try:
+                        self.video_writer.write(frame)
+                    except Exception as e:
+                        self.logger.error(f"Error writing frame to video clip: {e}")
+                
                 self.frame_count += 1
                 
                 # Small delay to prevent CPU overload
@@ -223,6 +249,8 @@ class LiveStreamProcessor:
         finally:
             if self.cap:
                 self.cap.release()
+            if self.is_recording:
+                self._stop_recording() # Ensure final clip is saved on unexpected exit
             self.is_running = False
             
     def _detect_and_track_frame(self, frame, frame_number: int) -> List[Dict[str, Any]]:
@@ -308,6 +336,73 @@ class LiveStreamProcessor:
         except Exception as e:
             self.logger.error(f"Error in detection/tracking: {e}")
             return []
+
+    def _handle_recording(self, frame, has_detections: bool):
+        """Manages starting and stopping of event-based recording."""
+        current_time = time.time()
+
+        if has_detections:
+            self.last_detection_time = current_time
+            if not self.is_recording:
+                # Detections found and we are not recording, so start.
+                self._start_recording(frame.shape[1], frame.shape[0])
+        
+        elif self.is_recording:
+            # No detections in this frame, check if timeout has been reached.
+            if self.last_detection_time is None or (current_time - self.last_detection_time > self.inactivity_timeout):
+                self._stop_recording()
+
+    def _start_recording(self, width: int, height: int):
+        """Initializes a new video clip recording."""
+        if self.is_recording:
+            return
+
+        self.is_recording = True
+        
+        # Create a unique filename for the clip
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        clip_filename = f"clip_{timestamp}.mp4"
+        
+        # Define local path to save the clip
+        job_results_folder = os.path.join(RESULTS_FOLDER, self.job_id)
+        os.makedirs(job_results_folder, exist_ok=True)
+        self.current_clip_path = os.path.join(job_results_folder, clip_filename)
+
+        # Initialize VideoWriter
+        fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+        # Use a lower recording FPS to save space, as we only detect every N frames.
+        # The effective FPS of the *content* is self.fps / frame_skip.
+        record_fps = self.fps # Record at original stream FPS for smooth playback
+        
+        try:
+            self.video_writer = cv2.VideoWriter(self.current_clip_path, fourcc, record_fps, (width, height))
+            if not self.video_writer.isOpened():
+                raise IOError("Could not open VideoWriter.")
+            self.logger.info(f"Started recording new clip: {self.current_clip_path}")
+        except Exception as e:
+            self.logger.error(f"Failed to start recording: {e}")
+            self.is_recording = False
+            self.video_writer = None
+            self.current_clip_path = None
+
+    def _stop_recording(self):
+        """Finalizes the current video clip and triggers upload."""
+        if not self.is_recording:
+            return
+
+        self.is_recording = False
+        if self.video_writer:
+            self.video_writer.release()
+            self.logger.info(f"Stopped recording clip: {self.current_clip_path}")
+
+            # Upload the finished clip to Supabase in a background thread
+            if self.current_clip_path and os.path.exists(self.current_clip_path):
+                upload_thread = threading.Thread(target=upload_video_to_supabase, args=(self.current_clip_path, f"{self.job_id}/{os.path.basename(self.current_clip_path)}"))
+                upload_thread.daemon = True
+                upload_thread.start()
+        
+        self.video_writer = None
+        self.current_clip_path = None
     
     def _save_first_frame(self, frame):
         """Save first frame as floorplan"""
