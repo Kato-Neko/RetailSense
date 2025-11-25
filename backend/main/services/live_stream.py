@@ -215,7 +215,7 @@ class LiveStreamProcessor:
                 self.frame_count += 1
                 
                 # Small delay to prevent CPU overload
-                time.sleep(0.01)
+                time.sleep(0.02) # Increased sleep time to improve stability and reduce memory pressure
                 
         except Exception as e:
             self.logger.error(f"Error in stream processing: {e}", exc_info=True)
