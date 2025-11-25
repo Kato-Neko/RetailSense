@@ -655,9 +655,9 @@ const Dashboard = () => {
       const visitorChange = stats.totalVisitors - comparisonStats.totalVisitors;
       const growthRate = comparisonStats.totalVisitors > 0 
         ? ((stats.totalVisitors - comparisonStats.totalVisitors) / comparisonStats.totalVisitors * 100).toFixed(1)
-        : '0.0';
+        : 'N/A';
       csvRows.push('Visitor Change,' + (visitorChange > 0 ? '+' : '') + visitorChange);
-      csvRows.push('Growth Rate,' + growthRate + '%');
+      csvRows.push('Growth Rate,' + (growthRate === 'N/A' ? 'N/A' : growthRate + '%'));
       csvRows.push('Previous Peak Hour,' + comparisonStats.peakHour);
       csvRows.push('Previous Total Visitors,' + comparisonStats.totalVisitors);
       const comparisonRange = formatDateRange(getDateRanges().comparisonStart, getDateRanges().comparisonEnd);
@@ -900,7 +900,7 @@ const Dashboard = () => {
       const visitorChange = comparisonMode ? stats.totalVisitors - comparisonStats.totalVisitors : 0;
       const growthRate = comparisonMode && comparisonStats.totalVisitors > 0 
         ? ((stats.totalVisitors - comparisonStats.totalVisitors) / comparisonStats.totalVisitors * 100).toFixed(1)
-        : '0.0';
+        : 'N/A';
       
       // Create PDF in portrait orientation
       const pdf = new jsPDF({ orientation: 'portrait', unit: 'pt', format: 'a4' });
@@ -986,19 +986,22 @@ const Dashboard = () => {
       
       // Card 4: Growth Rate (only if comparison mode)
       if (comparisonMode) {
-        const growthRateNum = parseFloat(growthRate);
-        const isNegative = growthRateNum < 0;
+        const isNA = growthRate === 'N/A';
+        const growthRateNum = isNA ? 0 : parseFloat(growthRate);
+        const isNegative = !isNA && growthRateNum < 0;
         drawCard(pdf, margin + (cardWidth + cardSpacing) * 3, y, cardWidth, cardHeight, 
-          isNegative ? [254, 242, 242] : [220, 252, 231], 
-          isNegative ? [248, 113, 113] : [160, 220, 180]);
+          isNA ? [240, 240, 240] : (isNegative ? [254, 242, 242] : [220, 252, 231]), 
+          isNA ? [200, 200, 200] : (isNegative ? [248, 113, 113] : [160, 220, 180]));
         pdf.setFontSize(22);
         pdf.setFont('helvetica', 'bold');
-        if (isNegative) {
+        if (isNA) {
+          pdf.setTextColor(100, 100, 100); // Gray for N/A
+        } else if (isNegative) {
           pdf.setTextColor(239, 68, 68); // Red for negative
         } else {
           pdf.setTextColor(34, 197, 94); // Green for positive
         }
-        pdf.text(`${growthRate}%`, margin + (cardWidth + cardSpacing) * 3 + cardWidth / 2, y + 32, { align: 'center' });
+        pdf.text(isNA ? 'N/A' : `${growthRate}%`, margin + (cardWidth + cardSpacing) * 3 + cardWidth / 2, y + 32, { align: 'center' });
         pdf.setFontSize(8);
         pdf.setFont('helvetica', 'normal');
         pdf.setTextColor(100, 100, 100);
@@ -1189,7 +1192,7 @@ const Dashboard = () => {
           pdf.setTextColor(34, 197, 94); // Green for positive
         }
         pdf.setFont('helvetica', 'bold');
-        pdf.text(`Change: ${visitorChange > 0 ? '+' : ''}${visitorChange} (${growthRate}%)`, col3X + 12, colY);
+        pdf.text(`Change: ${visitorChange > 0 ? '+' : ''}${visitorChange} (${growthRate === 'N/A' ? 'N/A' : growthRate + '%'})`, col3X + 12, colY);
         pdf.setFont('helvetica', 'normal');
         pdf.setTextColor(0, 0, 0);
       }
@@ -1265,11 +1268,11 @@ const Dashboard = () => {
                 {(() => {
                   const growthRate = comparisonStats.totalVisitors > 0 
                     ? ((stats.totalVisitors - comparisonStats.totalVisitors) / comparisonStats.totalVisitors * 100)
-                    : 0;
-                  const isNegative = growthRate < 0;
+                    : null;
+                  const isNegative = growthRate !== null && growthRate < 0;
                   return (
                     <div className={`text-2xl font-bold ${isNegative ? 'text-red-400' : 'text-yellow-400'}`}>
-                      {growthRate.toFixed(1)}%
+                      {growthRate !== null ? `${growthRate.toFixed(1)}%` : 'N/A'}
                 </div>
                   );
                 })()}
