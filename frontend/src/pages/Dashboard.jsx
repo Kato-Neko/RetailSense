@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect, useMemo, Fragment } from "react"
-import { Link } from "react-router-dom"
+import { Link, useLocation } from "react-router-dom"
 import { BarChart as ReBarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, ReferenceArea } from "recharts"
 import { Video, Map, Users, Clock, Download, Check } from "lucide-react"
 import { heatmapService } from "../services/api"
@@ -29,6 +29,7 @@ import {
 import { cn } from "@/lib/utils"
 
 const Dashboard = () => {
+  const location = useLocation()
   const [stats, setStats] = useState({
     totalVisitors: 0,
     peakHour: "N/A",
@@ -374,7 +375,7 @@ const Dashboard = () => {
     return () => {
       window.removeEventListener('dashboard-refresh', handleRefresh);
     };
-  }, [comparisonMode, activeChart])
+  }, [comparisonMode, activeChart, location.pathname])
 
   // Compute turbo color for each point in daily and weekly chart
   const getTurboColor = (value, min, max) => {
