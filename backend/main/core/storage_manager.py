@@ -228,34 +228,116 @@ class StorageManager:
         Returns:
             Image as numpy array or None if failed
         """
+        self.logger.info(f"DEBUG: download_image called with supabase_path='{supabase_path}', bucket='{self.bucket}'")
+        self.logger.info(f"DEBUG: Full path will be: {self.bucket}/{supabase_path}")
+        
         try:
-            # First check if the file exists
+            # Try to download directly
+            self.logger.info(f"DEBUG: Attempting to download image from {self.bucket}/{supabase_path}")
+            res = None
+            download_success = False
+            
             try:
-                info = self.supabase.storage.from_(self.bucket).get_public_url(supabase_path)
-                if not info:
-                    self.logger.warning(f"Image not found in Supabase at {self.bucket}/{supabase_path}")
+                res = self.supabase.storage.from_(self.bucket).download(supabase_path)
+                self.logger.info(f"DEBUG: download() returned: {type(res)} (None={res is None})")
+                if res is not None and len(res) > 0:
+                    download_success = True
+            except Exception as download_error:
+                # Check if it's a 404/not found error
+                error_str = str(download_error)
+                error_type = type(download_error).__name__
+                
+                # Try to extract error information
+                error_dict = None
+                try:
+                    if hasattr(download_error, 'message'):
+                        error_dict = download_error.message
+                    elif hasattr(download_error, 'args') and download_error.args:
+                        error_dict = download_error.args[0] if isinstance(download_error.args[0], dict) else None
+                    elif isinstance(download_error, dict):
+                        error_dict = download_error
+                except Exception:
+                    pass
+                
+                # Check for 404/not found
+                is_404 = False
+                if error_dict and isinstance(error_dict, dict):
+                    status_code = error_dict.get('statusCode') or error_dict.get('status_code') or error_dict.get('code')
+                    error_msg = str(error_dict.get('message', '') or error_dict.get('error', ''))
+                    if status_code == 404 or 'not found' in error_msg.lower() or 'not_found' in error_msg.lower():
+                        is_404 = True
+                elif '404' in error_str or 'not found' in error_str.lower() or 'not_found' in error_str.lower():
+                    is_404 = True
+                
+                if is_404:
+                    self.logger.warning(f"DEBUG: Image not found (404) via download() method, trying HTTP fallback for {self.bucket}/{supabase_path}")
+                    # Try HTTP fallback
+                    try:
+                        from ..core.config_manager import get_config_manager
+                        config = get_config_manager()
+                        supabase_url = config.supabase_url
+                        supabase_key = config.supabase_key
+                        
+                        # Construct the storage API URL
+                        storage_url = f"{supabase_url}/storage/v1/object/{self.bucket}/{supabase_path}"
+                        self.logger.info(f"DEBUG: Trying HTTP fallback for image: {storage_url}")
+                        
+                        headers = {
+                            "apikey": supabase_key,
+                            "Authorization": f"Bearer {supabase_key}"
+                        }
+                        
+                        # Try httpx first (used by supabase client), then requests
+                        http_response = None
+                        try:
+                            import httpx
+                            http_response = httpx.get(storage_url, headers=headers, timeout=30.0)
+                        except ImportError:
+                            try:
+                                import requests
+                                http_response = requests.get(storage_url, headers=headers, timeout=30.0)
+                            except ImportError:
+                                self.logger.warning(f"DEBUG: Neither httpx nor requests available for HTTP fallback")
+                        
+                        if http_response and http_response.status_code == 200:
+                            res = http_response.content
+                            download_success = True
+                            self.logger.info(f"DEBUG: HTTP fallback successful for image, received {len(res)} bytes")
+                        elif http_response:
+                            self.logger.warning(f"DEBUG: HTTP fallback failed with status {http_response.status_code}: {http_response.text[:200] if hasattr(http_response, 'text') else str(http_response.content[:200])}")
+                    except Exception as http_error:
+                        self.logger.warning(f"DEBUG: HTTP fallback also failed: {type(http_error).__name__}: {http_error}")
+                
+                if not download_success:
+                    self.logger.error(f"DEBUG: Download error (not 404) for {self.bucket}/{supabase_path}: {error_type}: {error_str}")
+                    if error_dict:
+                        self.logger.error(f"DEBUG: Error dict: {error_dict}")
+                    import traceback
+                    self.logger.error(f"DEBUG: Traceback:\n{traceback.format_exc()}")
                     return None
-            except Exception as e:
-                self.logger.warning(f"Error checking image existence in Supabase at {self.bucket}/{supabase_path}: {e}")
-                return None
-
-            res = self.supabase.storage.from_(self.bucket).download(supabase_path)
-            if res is None:
-                self.logger.warning(f"Image download returned None from Supabase at {self.bucket}/{supabase_path}")
+            
+            if not download_success or res is None or len(res) == 0:
+                self.logger.warning(f"DEBUG: Image download returned None or empty from Supabase at {self.bucket}/{supabase_path}")
                 return None
             
+            self.logger.info(f"DEBUG: Image download successful, received {len(res)} bytes")
             try:
                 file_bytes = np.frombuffer(res, np.uint8)
                 img = cv2.imdecode(file_bytes, cv2.IMREAD_COLOR)
                 if img is None:
-                    self.logger.error(f"Failed to decode image from Supabase at {self.bucket}/{supabase_path}")
+                    self.logger.error(f"DEBUG: Failed to decode image from Supabase at {self.bucket}/{supabase_path}")
                     return None
+                self.logger.info(f"DEBUG: Image decoded successfully, shape: {img.shape}")
                 return img
             except Exception as e:
-                self.logger.error(f"Failed to process image data from Supabase at {self.bucket}/{supabase_path}: {e}")
+                self.logger.error(f"DEBUG: Failed to process image data from Supabase at {self.bucket}/{supabase_path}: {e}")
+                import traceback
+                self.logger.error(f"DEBUG: Traceback:\n{traceback.format_exc()}")
                 return None
         except Exception as e:
-            self.logger.error(f"Failed to download image from Supabase at {self.bucket}/{supabase_path}: {e}")
+            self.logger.error(f"DEBUG: Unexpected exception in download_image for {self.bucket}/{supabase_path}: {type(e).__name__}: {e}")
+            import traceback
+            self.logger.error(f"DEBUG: Full traceback:\n{traceback.format_exc()}")
             return None
     
     def check_file_exists(self, supabase_path: str) -> bool:
@@ -354,24 +436,91 @@ class StorageManager:
         Returns:
             Image bytes or None if failed
         """
+        self.logger.info(f"DEBUG: download_image_bytes called with supabase_path='{supabase_path}', bucket='{self.bucket}'")
         try:
-            # First check if the file exists
+            res = None
+            download_success = False
+            
             try:
-                info = self.supabase.storage.from_(self.bucket).get_public_url(supabase_path)
-                if not info:
-                    self.logger.warning(f"File not found in Supabase at {self.bucket}/{supabase_path}")
+                res = self.supabase.storage.from_(self.bucket).download(supabase_path)
+                self.logger.info(f"DEBUG: download() returned: {type(res)} (None={res is None})")
+                if res is not None and len(res) > 0:
+                    download_success = True
+            except Exception as download_error:
+                error_str = str(download_error)
+                error_type = type(download_error).__name__
+                
+                # Extract error info
+                error_dict = None
+                try:
+                    if hasattr(download_error, 'message'):
+                        error_dict = download_error.message
+                    elif hasattr(download_error, 'args') and download_error.args:
+                        error_dict = download_error.args[0] if isinstance(download_error.args[0], dict) else None
+                except Exception:
+                    pass
+                
+                # Check for 404
+                is_404 = False
+                if error_dict and isinstance(error_dict, dict):
+                    status_code = error_dict.get('statusCode') or error_dict.get('status_code') or error_dict.get('code')
+                    error_msg = str(error_dict.get('message', '') or error_dict.get('error', ''))
+                    if status_code == 404 or 'not found' in error_msg.lower() or 'not_found' in error_msg.lower():
+                        is_404 = True
+                elif '404' in error_str or 'not found' in error_str.lower() or 'not_found' in error_str.lower():
+                    is_404 = True
+                
+                if is_404:
+                    self.logger.warning(f"DEBUG: Image bytes not found (404) via download(), trying HTTP fallback for {self.bucket}/{supabase_path}")
+                    # Try HTTP fallback
+                    try:
+                        from ..core.config_manager import get_config_manager
+                        config = get_config_manager()
+                        supabase_url = config.supabase_url
+                        supabase_key = config.supabase_key
+                        
+                        storage_url = f"{supabase_url}/storage/v1/object/{self.bucket}/{supabase_path}"
+                        self.logger.info(f"DEBUG: Trying HTTP fallback for image bytes: {storage_url}")
+                        
+                        headers = {
+                            "apikey": supabase_key,
+                            "Authorization": f"Bearer {supabase_key}"
+                        }
+                        
+                        http_response = None
+                        try:
+                            import httpx
+                            http_response = httpx.get(storage_url, headers=headers, timeout=30.0)
+                        except ImportError:
+                            try:
+                                import requests
+                                http_response = requests.get(storage_url, headers=headers, timeout=30.0)
+                            except ImportError:
+                                self.logger.warning(f"DEBUG: Neither httpx nor requests available for HTTP fallback")
+                        
+                        if http_response and http_response.status_code == 200:
+                            res = http_response.content
+                            download_success = True
+                            self.logger.info(f"DEBUG: HTTP fallback successful for image bytes, received {len(res)} bytes")
+                        elif http_response:
+                            self.logger.warning(f"DEBUG: HTTP fallback failed with status {http_response.status_code}")
+                    except Exception as http_error:
+                        self.logger.warning(f"DEBUG: HTTP fallback also failed: {type(http_error).__name__}: {http_error}")
+                
+                if not download_success:
+                    self.logger.error(f"DEBUG: Download error for image bytes: {error_type}: {error_str}")
                     return None
-            except Exception as e:
-                self.logger.warning(f"Error checking file existence in Supabase at {self.bucket}/{supabase_path}: {e}")
+            
+            if not download_success or res is None or len(res) == 0:
+                self.logger.warning(f"DEBUG: Image bytes download returned None or empty from Supabase at {self.bucket}/{supabase_path}")
                 return None
-
-            res = self.supabase.storage.from_(self.bucket).download(supabase_path)
-            if res is None:
-                self.logger.warning(f"File download returned None from Supabase at {self.bucket}/{supabase_path}")
-                return None
+            
+            self.logger.info(f"DEBUG: Image bytes download successful, received {len(res)} bytes")
             return res
         except Exception as e:
-            self.logger.error(f"Failed to download image bytes from Supabase at {self.bucket}/{supabase_path}: {e}")
+            self.logger.error(f"DEBUG: Failed to download image bytes from Supabase at {self.bucket}/{supabase_path}: {type(e).__name__}: {e}")
+            import traceback
+            self.logger.error(f"DEBUG: Traceback:\n{traceback.format_exc()}")
             return None
 
 
