@@ -59,8 +59,9 @@ const UserManagement = () => {
       const totalHeatmaps = jobHistory.filter(job => job.status === "completed").length;
       const lastActivity = jobHistory.length > 0 ? new Date(jobHistory[0].created_at) : null;
       
-      // Get recent activities (last 5)
+      // Get recent activities (last 5) - include job_id for deletion
       const recentActivities = jobHistory.slice(0, 5).map(job => ({
+        job_id: job.job_id,
         type: job.input_video_name ? 'video' : 'heatmap',
         name: job.input_video_name || job.input_floorplan_name || 'Unknown',
         status: job.status,
@@ -162,12 +163,32 @@ const UserManagement = () => {
     }
   };
 
-  // Delete activity from UI only
-  const handleDeleteActivity = (index) => {
-    setActivityStats((prev) => ({
-      ...prev,
-      recentActivities: prev.recentActivities.filter((_, i) => i !== index)
-    }));
+  // Delete activity - calls API and refreshes data
+  const handleDeleteActivity = async (index) => {
+    const activity = activityStats.recentActivities[index];
+    if (!activity || !activity.job_id) {
+      toast.error("Unable to delete: Job ID not found");
+      return;
+    }
+
+    // Confirm deletion
+    if (!window.confirm(`Are you sure you want to delete "${activity.name}"? This action cannot be undone.`)) {
+      return;
+    }
+
+    try {
+      // Call the delete API
+      await heatmapService.deleteJob(activity.job_id);
+      
+      // Show success message
+      toast.success("Activity deleted successfully");
+      
+      // Refresh activity data to update stats dynamically
+      await fetchUserActivity();
+    } catch (error) {
+      console.error("Failed to delete activity:", error);
+      toast.error(error.response?.data?.error || error.message || "Failed to delete activity");
+    }
   };
 
   if (isLoading) {
@@ -253,7 +274,7 @@ const UserManagement = () => {
             <h3 className="text-base font-semibold text-foreground mb-3">Recent Activities</h3>
             <div className="space-y-4">
               {activityStats.recentActivities.map((activity, index) => (
-                <div key={index} className="flex items-center gap-4 bg-muted/60 dark:bg-slate-800/60 rounded-lg px-4 py-3">
+                <div key={activity.job_id || index} className="flex items-center gap-4 bg-muted/60 dark:bg-slate-800/60 rounded-lg px-4 py-3">
                   <div className="rounded-full bg-muted dark:bg-slate-900 p-2 flex-shrink-0">
                     {activity.type === 'video' ? <Video className="h-5 w-5 text-cyan-400" /> : <Map className="h-5 w-5 text-green-400" />}
             </div>
