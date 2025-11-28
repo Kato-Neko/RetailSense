@@ -100,9 +100,14 @@ class StorageManager:
         try:
             # Try to download directly - get_public_url is unreliable for existence checks
             self.logger.info(f"DEBUG: Attempting to download file from {self.bucket}/{supabase_path}")
+            res = None
+            download_success = False
+            
             try:
                 res = self.supabase.storage.from_(self.bucket).download(supabase_path)
                 self.logger.info(f"DEBUG: download() returned: {type(res)} (None={res is None})")
+                if res is not None and len(res) > 0:
+                    download_success = True
             except Exception as download_error:
                 # Check if it's a 404/not found error
                 error_str = str(download_error)
@@ -134,19 +139,55 @@ class StorageManager:
                     is_404 = True
                 
                 if is_404:
-                    self.logger.warning(f"DEBUG: File not found (404) in Supabase at {self.bucket}/{supabase_path}: {error_dict or error_str}")
-                    return None
+                    self.logger.warning(f"DEBUG: File not found (404) via download() method, trying HTTP fallback for {self.bucket}/{supabase_path}")
+                    # Try HTTP fallback using requests or httpx
+                    try:
+                        from ..core.config_manager import get_config_manager
+                        config = get_config_manager()
+                        supabase_url = config.supabase_url
+                        supabase_key = config.supabase_key
+                        
+                        # Construct the storage API URL
+                        storage_url = f"{supabase_url}/storage/v1/object/{self.bucket}/{supabase_path}"
+                        self.logger.info(f"DEBUG: Trying HTTP fallback: {storage_url}")
+                        
+                        headers = {
+                            "apikey": supabase_key,
+                            "Authorization": f"Bearer {supabase_key}"
+                        }
+                        
+                        # Try httpx first (used by supabase client), then requests
+                        http_response = None
+                        try:
+                            import httpx
+                            http_response = httpx.get(storage_url, headers=headers, timeout=30.0)
+                        except ImportError:
+                            try:
+                                import requests
+                                http_response = requests.get(storage_url, headers=headers, timeout=30.0)
+                            except ImportError:
+                                self.logger.warning(f"DEBUG: Neither httpx nor requests available for HTTP fallback")
+                        
+                        if http_response and http_response.status_code == 200:
+                            res = http_response.content
+                            download_success = True
+                            self.logger.info(f"DEBUG: HTTP fallback successful, received {len(res)} bytes")
+                        elif http_response:
+                            self.logger.warning(f"DEBUG: HTTP fallback failed with status {http_response.status_code}: {http_response.text[:200] if hasattr(http_response, 'text') else str(http_response.content[:200])}")
+                    except Exception as http_error:
+                        self.logger.warning(f"DEBUG: HTTP fallback also failed: {type(http_error).__name__}: {http_error}")
                 
-                # Log non-404 errors with full details
-                self.logger.error(f"DEBUG: Download error (not 404) for {self.bucket}/{supabase_path}: {error_type}: {error_str}")
-                if error_dict:
-                    self.logger.error(f"DEBUG: Error dict: {error_dict}")
-                import traceback
-                self.logger.error(f"DEBUG: Traceback:\n{traceback.format_exc()}")
-                return None
+                if not download_success:
+                    # Log non-404 errors with full details
+                    self.logger.error(f"DEBUG: Download error (not 404) for {self.bucket}/{supabase_path}: {error_type}: {error_str}")
+                    if error_dict:
+                        self.logger.error(f"DEBUG: Error dict: {error_dict}")
+                    import traceback
+                    self.logger.error(f"DEBUG: Traceback:\n{traceback.format_exc()}")
+                    return None
             
-            if res is None:
-                self.logger.warning(f"DEBUG: File download returned None from Supabase at {self.bucket}/{supabase_path}")
+            if not download_success or res is None or len(res) == 0:
+                self.logger.warning(f"DEBUG: File download returned None or empty from Supabase at {self.bucket}/{supabase_path}")
                 return None
             
             self.logger.info(f"DEBUG: Download successful, received {len(res)} bytes")
