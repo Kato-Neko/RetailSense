@@ -68,34 +68,49 @@ def receive_live_detections(job_id):
 
 def get_detections_logic(job_id, current_user=None):
     """Shared logic for getting detections"""
+    logger.info(f"DEBUG: get_detections_logic called with job_id='{job_id}', current_user={current_user}")
     # Validate user ownership if user is provided
     if current_user is not None:
+        logger.info(f"DEBUG: Validating user ownership for job_id='{job_id}', user='{current_user}'")
         conn = get_db_connection()
         cur = conn.cursor()
         try:
             cur.execute('SELECT "user" FROM jobs WHERE job_id = %s', (job_id,))
             job_row = cur.fetchone()
+            logger.info(f"DEBUG: Database query result: {job_row}")
             if not job_row:
-                logger.error(f"Job {job_id} not found")
+                logger.error(f"DEBUG: Job {job_id} not found in database")
                 return jsonify({"error": "Job not found"}), 404
             # Extract user from row (handles both tuple and dict-like results)
             job_user = job_row['user'] if isinstance(job_row, dict) else job_row[0]
+            logger.info(f"DEBUG: Job owner: '{job_user}', requesting user: '{current_user}'")
             if job_user != current_user:
-                logger.error(f"User {current_user} attempted to access job {job_id} owned by {job_user}")
+                logger.error(f"DEBUG: User {current_user} attempted to access job {job_id} owned by {job_user}")
                 return jsonify({"error": "Unauthorized: Job not found or not authorized"}), 403
+            logger.info(f"DEBUG: User ownership validated successfully")
         except Exception as e:
-            logger.error(f"Error validating job ownership: {e}")
+            logger.error(f"DEBUG: Error validating job ownership: {type(e).__name__}: {e}")
+            import traceback
+            logger.error(f"DEBUG: Traceback:\n{traceback.format_exc()}")
             return jsonify({"error": "Error validating job ownership"}), 500
         finally:
             cur.close()
             conn.close()
+    else:
+        logger.info(f"DEBUG: No user validation required (current_user is None)")
     
     # Load detections from Supabase
+    logger.info(f"DEBUG: Loading detections for job_id='{job_id}'")
     detections, fps = load_detections(job_id)
+    logger.info(f"DEBUG: load_detections returned - detections: {type(detections).__name__} (None={detections is None}), fps: {fps}")
     if detections is None:
-        logger.warning(f"Detections file not found for job {job_id}")
+        logger.warning(f"DEBUG: Detections file not found for job {job_id}, returning 404")
         return jsonify({"error": "Detections file not found"}), 404
-    return jsonify({"detections": detections, "fps": fps}), 200
+    
+    logger.info(f"DEBUG: Preparing response with {len(detections)} detections, fps={fps}")
+    response_data = {"detections": detections, "fps": fps}
+    logger.info(f"DEBUG: Response data keys: {list(response_data.keys())}, detections count: {len(detections)}, fps type: {type(fps).__name__}")
+    return jsonify(response_data), 200
 
 @heatmap_bp.route('/heatmap_jobs/<job_id>/detections', methods=['GET', 'OPTIONS'])
 @cross_origin()

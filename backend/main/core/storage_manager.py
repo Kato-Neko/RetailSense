@@ -19,9 +19,11 @@ class StorageManager:
             supabase_client: The Supabase client instance
             logger: The logger instance
         """
+        self.logger.info("DEBUG: StorageManager.__init__ called")
         self.supabase = supabase_client
         self.logger = logger
         self.bucket = "projectresults"
+        self.logger.info(f"DEBUG: StorageManager initialized with bucket='{self.bucket}', supabase_client={type(supabase_client).__name__}")
     
     def upload_and_remove_local(self, local_path: str, supabase_path: str, content_type: str) -> None:
         """Upload a local file to Supabase storage and remove the local file.
@@ -49,13 +51,22 @@ class StorageManager:
             data: Dictionary to serialize as JSON
             supabase_path: Path in Supabase storage
         """
-        json_bytes = json.dumps(data).encode("utf-8")
-        self.supabase.storage.from_(self.bucket).upload(
-            supabase_path,
-            json_bytes,
-            {"content-type": "application/json"}
-        )
-        self.logger.info(f"Uploaded JSON to Supabase: {self.bucket}/{supabase_path}")
+        self.logger.info(f"DEBUG: upload_json called with supabase_path='{supabase_path}', bucket='{self.bucket}'")
+        self.logger.info(f"DEBUG: Data keys: {list(data.keys()) if isinstance(data, dict) else 'N/A'}, data type: {type(data).__name__}")
+        try:
+            json_bytes = json.dumps(data).encode("utf-8")
+            self.logger.info(f"DEBUG: Serialized JSON to {len(json_bytes)} bytes")
+            self.supabase.storage.from_(self.bucket).upload(
+                supabase_path,
+                json_bytes,
+                {"content-type": "application/json"}
+            )
+            self.logger.info(f"DEBUG: Successfully uploaded JSON to Supabase: {self.bucket}/{supabase_path}")
+        except Exception as e:
+            self.logger.error(f"DEBUG: Failed to upload JSON to Supabase: {type(e).__name__}: {e}")
+            import traceback
+            self.logger.error(f"DEBUG: Traceback:\n{traceback.format_exc()}")
+            raise
     
     def upload_image(self, image_np: np.ndarray, supabase_path: str) -> None:
         """Upload an image (numpy array) to Supabase storage.
@@ -84,29 +95,69 @@ class StorageManager:
         Returns:
             Dictionary with JSON data or None if failed
         """
+        self.logger.info(f"DEBUG: download_json called with supabase_path='{supabase_path}', bucket='{self.bucket}'")
+        self.logger.info(f"DEBUG: Full path will be: {self.bucket}/{supabase_path}")
         try:
-            # First check if the file exists
+            # Try to download directly - get_public_url is unreliable for existence checks
+            self.logger.info(f"DEBUG: Attempting to download file from {self.bucket}/{supabase_path}")
             try:
-                info = self.supabase.storage.from_(self.bucket).get_public_url(supabase_path)
-                if not info:
-                    self.logger.warning(f"File not found in Supabase at {self.bucket}/{supabase_path}")
-                    return None
-            except Exception as e:
-                self.logger.warning(f"Error checking file existence in Supabase at {self.bucket}/{supabase_path}: {e}")
-                return None
-
-            res = self.supabase.storage.from_(self.bucket).download(supabase_path)
-            if res is None:
-                self.logger.warning(f"File download returned None from Supabase at {self.bucket}/{supabase_path}")
+                res = self.supabase.storage.from_(self.bucket).download(supabase_path)
+                self.logger.info(f"DEBUG: download() returned: {type(res)} (None={res is None})")
+            except Exception as download_error:
+                # Check if it's a 404/not found error
+                error_str = str(download_error)
+                error_dict = getattr(download_error, 'message', None) or getattr(download_error, 'args', [None])[0]
+                if isinstance(error_dict, dict):
+                    status_code = error_dict.get('statusCode', None)
+                    error_msg = error_dict.get('message', '')
+                    if status_code == 404 or 'not found' in error_msg.lower() or 'not_found' in str(error_dict).lower():
+                        self.logger.warning(f"DEBUG: File not found (404) in Supabase at {self.bucket}/{supabase_path}: {error_dict}")
+                        return None
+                self.logger.error(f"DEBUG: Download error (not 404) for {self.bucket}/{supabase_path}: {type(download_error).__name__}: {download_error}")
+                self.logger.error(f"DEBUG: Error details: {error_dict if 'error_dict' in locals() else error_str}")
+                import traceback
+                self.logger.error(f"DEBUG: Traceback:\n{traceback.format_exc()}")
                 return None
             
+            if res is None:
+                self.logger.warning(f"DEBUG: File download returned None from Supabase at {self.bucket}/{supabase_path}")
+                return None
+            
+            self.logger.info(f"DEBUG: Download successful, received {len(res)} bytes")
             try:
-                return json.loads(res.decode('utf-8'))
+                decoded = res.decode('utf-8')
+                self.logger.info(f"DEBUG: Decoded JSON string length: {len(decoded)} characters")
+                parsed = json.loads(decoded)
+                self.logger.info(f"DEBUG: JSON parsed successfully, type: {type(parsed)}, keys: {list(parsed.keys()) if isinstance(parsed, dict) else 'N/A'}")
+                if isinstance(parsed, dict):
+                    for key, value in parsed.items():
+                        if isinstance(value, list):
+                            self.logger.info(f"DEBUG: Key '{key}' contains list with {len(value)} items")
+                        elif isinstance(value, (int, float)):
+                            self.logger.info(f"DEBUG: Key '{key}' = {value}")
+                        else:
+                            self.logger.info(f"DEBUG: Key '{key}' = {type(value).__name__}")
+                return parsed
             except json.JSONDecodeError as e:
-                self.logger.error(f"Failed to parse JSON from Supabase at {self.bucket}/{supabase_path}: {e}")
+                self.logger.error(f"DEBUG: Failed to parse JSON from Supabase at {self.bucket}/{supabase_path}: {e}")
+                self.logger.error(f"DEBUG: JSON decode error at line {e.lineno}, column {e.colno}: {e.msg}")
+                self.logger.error(f"DEBUG: First 500 chars of response: {decoded[:500] if 'decoded' in locals() else 'N/A'}")
                 return None
         except Exception as e:
-            self.logger.error(f"Failed to download JSON from Supabase at {self.bucket}/{supabase_path}: {e}")
+            # Catch any other exceptions
+            error_str = str(e)
+            error_dict = getattr(e, 'message', None) or getattr(e, 'args', [None])[0]
+            if isinstance(error_dict, dict):
+                status_code = error_dict.get('statusCode', None)
+                if status_code == 404:
+                    self.logger.warning(f"DEBUG: File not found (404) in Supabase at {self.bucket}/{supabase_path}: {error_dict}")
+                else:
+                    self.logger.error(f"DEBUG: Failed to download JSON from Supabase at {self.bucket}/{supabase_path}: {type(e).__name__}: {e}")
+                    self.logger.error(f"DEBUG: Error details: {error_dict}")
+            else:
+                self.logger.error(f"DEBUG: Failed to download JSON from Supabase at {self.bucket}/{supabase_path}: {type(e).__name__}: {e}")
+            import traceback
+            self.logger.error(f"DEBUG: Full traceback:\n{traceback.format_exc()}")
             return None
     
     def download_image(self, supabase_path: str) -> Optional[np.ndarray]:
@@ -157,16 +208,21 @@ class StorageManager:
         Returns:
             True if file exists, False otherwise
         """
+        self.logger.info(f"DEBUG: check_file_exists called with supabase_path='{supabase_path}', bucket='{self.bucket}'")
         try:
-            self.logger.info(f"Checking if file exists in Supabase: {self.bucket}/{supabase_path}")
+            self.logger.info(f"DEBUG: Checking if file exists in Supabase: {self.bucket}/{supabase_path}")
             # Try to get the file's metadata - this is faster than listing
             info = self.supabase.storage.from_(self.bucket).get_public_url(supabase_path)
+            self.logger.info(f"DEBUG: get_public_url returned: {info} (type: {type(info).__name__}, truthy: {bool(info)})")
             if info:
-                self.logger.info(f"File exists in Supabase: {self.bucket}/{supabase_path}")
+                self.logger.info(f"DEBUG: File exists in Supabase: {self.bucket}/{supabase_path}")
                 return True
+            self.logger.info(f"DEBUG: File does not exist in Supabase: {self.bucket}/{supabase_path}")
             return False
         except Exception as e:
-            self.logger.error(f"Error checking file existence in Supabase: {e}")
+            self.logger.error(f"DEBUG: Error checking file existence in Supabase: {type(e).__name__}: {e}")
+            import traceback
+            self.logger.error(f"DEBUG: Traceback:\n{traceback.format_exc()}")
             return False
     
     def list_files(self, prefix: str = "") -> List[str]:
@@ -178,14 +234,18 @@ class StorageManager:
         Returns:
             List of file names
         """
+        self.logger.info(f"DEBUG: list_files called with prefix='{prefix}', bucket='{self.bucket}'")
         try:
-            self.logger.info(f"Listing files in Supabase bucket {self.bucket} with prefix: {prefix}")
+            self.logger.info(f"DEBUG: Listing files in Supabase bucket {self.bucket} with prefix: {prefix}")
             files = self.supabase.storage.from_(self.bucket).list(prefix)
+            self.logger.info(f"DEBUG: list() returned: {type(files).__name__}, length: {len(files) if hasattr(files, '__len__') else 'N/A'}")
             file_names = [f['name'] for f in files]
-            self.logger.info(f"Found {len(file_names)} files: {file_names}")
+            self.logger.info(f"DEBUG: Found {len(file_names)} files: {file_names[:10]}{'...' if len(file_names) > 10 else ''}")
             return file_names
         except Exception as e:
-            self.logger.error(f"Failed to list files in Supabase at {self.bucket}/{prefix}: {e}")
+            self.logger.error(f"DEBUG: Failed to list files in Supabase at {self.bucket}/{prefix}: {type(e).__name__}: {e}")
+            import traceback
+            self.logger.error(f"DEBUG: Traceback:\n{traceback.format_exc()}")
             return []
     
     def download_image_bytes(self, supabase_path: str) -> Optional[bytes]:
@@ -228,7 +288,11 @@ def get_storage_manager() -> StorageManager:
     if _storage_manager is None:
         from .config_manager import get_config_manager
         config = get_config_manager()
+        config.logger.info("DEBUG: Creating new StorageManager instance")
         _storage_manager = StorageManager(config.supabase, config.logger)
+        config.logger.info("DEBUG: StorageManager instance created successfully")
+    else:
+        _storage_manager.logger.info("DEBUG: Returning existing StorageManager instance")
     return _storage_manager
 
 
@@ -254,7 +318,10 @@ def upload_image_to_supabase(image_np, supabase_path):
 def download_json_from_supabase(supabase_path):
     """Legacy function for backward compatibility."""
     manager = get_storage_manager()
-    return manager.download_json(supabase_path)
+    manager.logger.info(f"DEBUG: download_json_from_supabase called with path='{supabase_path}'")
+    result = manager.download_json(supabase_path)
+    manager.logger.info(f"DEBUG: download_json_from_supabase returning: {type(result).__name__} (None={result is None})")
+    return result
 
 
 def download_image_from_supabase(supabase_path):
