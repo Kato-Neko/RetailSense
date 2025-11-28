@@ -19,10 +19,10 @@ class StorageManager:
             supabase_client: The Supabase client instance
             logger: The logger instance
         """
-        self.logger.info("DEBUG: StorageManager.__init__ called")
         self.supabase = supabase_client
         self.logger = logger
         self.bucket = "projectresults"
+        self.logger.info("DEBUG: StorageManager.__init__ called")
         self.logger.info(f"DEBUG: StorageManager initialized with bucket='{self.bucket}', supabase_client={type(supabase_client).__name__}")
     
     def upload_and_remove_local(self, local_path: str, supabase_path: str, content_type: str) -> None:
@@ -106,15 +106,41 @@ class StorageManager:
             except Exception as download_error:
                 # Check if it's a 404/not found error
                 error_str = str(download_error)
-                error_dict = getattr(download_error, 'message', None) or getattr(download_error, 'args', [None])[0]
-                if isinstance(error_dict, dict):
-                    status_code = error_dict.get('statusCode', None)
-                    error_msg = error_dict.get('message', '')
-                    if status_code == 404 or 'not found' in error_msg.lower() or 'not_found' in str(error_dict).lower():
-                        self.logger.warning(f"DEBUG: File not found (404) in Supabase at {self.bucket}/{supabase_path}: {error_dict}")
-                        return None
-                self.logger.error(f"DEBUG: Download error (not 404) for {self.bucket}/{supabase_path}: {type(download_error).__name__}: {download_error}")
-                self.logger.error(f"DEBUG: Error details: {error_dict if 'error_dict' in locals() else error_str}")
+                error_type = type(download_error).__name__
+                
+                # Try to extract error information from various possible formats
+                error_dict = None
+                try:
+                    # Supabase errors might have message attribute
+                    if hasattr(download_error, 'message'):
+                        error_dict = download_error.message
+                    # Or args might contain dict
+                    elif hasattr(download_error, 'args') and download_error.args:
+                        error_dict = download_error.args[0] if isinstance(download_error.args[0], dict) else None
+                    # Or it might be a dict-like object
+                    elif isinstance(download_error, dict):
+                        error_dict = download_error
+                except Exception:
+                    pass
+                
+                # Check for 404/not found
+                is_404 = False
+                if error_dict and isinstance(error_dict, dict):
+                    status_code = error_dict.get('statusCode') or error_dict.get('status_code') or error_dict.get('code')
+                    error_msg = str(error_dict.get('message', '') or error_dict.get('error', ''))
+                    if status_code == 404 or 'not found' in error_msg.lower() or 'not_found' in error_msg.lower():
+                        is_404 = True
+                elif '404' in error_str or 'not found' in error_str.lower() or 'not_found' in error_str.lower():
+                    is_404 = True
+                
+                if is_404:
+                    self.logger.warning(f"DEBUG: File not found (404) in Supabase at {self.bucket}/{supabase_path}: {error_dict or error_str}")
+                    return None
+                
+                # Log non-404 errors with full details
+                self.logger.error(f"DEBUG: Download error (not 404) for {self.bucket}/{supabase_path}: {error_type}: {error_str}")
+                if error_dict:
+                    self.logger.error(f"DEBUG: Error dict: {error_dict}")
                 import traceback
                 self.logger.error(f"DEBUG: Traceback:\n{traceback.format_exc()}")
                 return None
@@ -144,18 +170,10 @@ class StorageManager:
                 self.logger.error(f"DEBUG: First 500 chars of response: {decoded[:500] if 'decoded' in locals() else 'N/A'}")
                 return None
         except Exception as e:
-            # Catch any other exceptions
+            # Catch any other exceptions that weren't caught in inner try block
             error_str = str(e)
-            error_dict = getattr(e, 'message', None) or getattr(e, 'args', [None])[0]
-            if isinstance(error_dict, dict):
-                status_code = error_dict.get('statusCode', None)
-                if status_code == 404:
-                    self.logger.warning(f"DEBUG: File not found (404) in Supabase at {self.bucket}/{supabase_path}: {error_dict}")
-                else:
-                    self.logger.error(f"DEBUG: Failed to download JSON from Supabase at {self.bucket}/{supabase_path}: {type(e).__name__}: {e}")
-                    self.logger.error(f"DEBUG: Error details: {error_dict}")
-            else:
-                self.logger.error(f"DEBUG: Failed to download JSON from Supabase at {self.bucket}/{supabase_path}: {type(e).__name__}: {e}")
+            error_type = type(e).__name__
+            self.logger.error(f"DEBUG: Unexpected exception in download_json for {self.bucket}/{supabase_path}: {error_type}: {error_str}")
             import traceback
             self.logger.error(f"DEBUG: Full traceback:\n{traceback.format_exc()}")
             return None
