@@ -125,6 +125,118 @@ def get_detections_from_json(job_id):
     return get_detections_logic(job_id, current_user)
 
 
+@heatmap_bp.route('/heatmap_jobs/<job_id>/regenerate_detections', methods=['POST', 'OPTIONS'])
+@cross_origin()
+@jwt_required()
+def regenerate_detections(job_id):
+    """Regenerate and upload detections.json for a completed job if missing."""
+    current_user = get_jwt_identity()
+    logger.info(f"DEBUG: regenerate_detections called for job_id='{job_id}', user='{current_user}'")
+    
+    # Validate user ownership
+    conn = get_db_connection()
+    cur = conn.cursor()
+    try:
+        cur.execute('SELECT "user", input_video_name, status FROM jobs WHERE job_id = %s', (job_id,))
+        job_row = cur.fetchone()
+        if not job_row:
+            logger.error(f"DEBUG: Job {job_id} not found in database")
+            return jsonify({"error": "Job not found"}), 404
+        
+        job_user = job_row[0] if isinstance(job_row, tuple) else job_row['user']
+        input_video_name = job_row[1] if isinstance(job_row, tuple) else job_row.get('input_video_name')
+        job_status = job_row[2] if isinstance(job_row, tuple) else job_row.get('status')
+        
+        if job_user != current_user:
+            logger.error(f"DEBUG: User {current_user} attempted to regenerate detections for job {job_id} owned by {job_user}")
+            return jsonify({"error": "Unauthorized"}), 403
+        
+        if job_status != 'completed':
+            logger.error(f"DEBUG: Job {job_id} is not completed (status: {job_status})")
+            return jsonify({"error": "Job must be completed to regenerate detections"}), 400
+    except Exception as e:
+        logger.error(f"DEBUG: Error validating job: {type(e).__name__}: {e}")
+        import traceback
+        logger.error(f"DEBUG: Traceback:\n{traceback.format_exc()}")
+        return jsonify({"error": "Error validating job"}), 500
+    finally:
+        cur.close()
+        conn.close()
+    
+    # Check if detections already exist
+    detections, fps = load_detections(job_id)
+    if detections is not None and len(detections) > 0:
+        logger.info(f"DEBUG: Detections already exist for job {job_id} ({len(detections)} detections)")
+        return jsonify({
+            "message": "Detections already exist",
+            "detections_count": len(detections),
+            "fps": fps
+        }), 200
+    
+    # Check if original video file exists
+    from ..core.config import UPLOAD_FOLDER
+    if not input_video_name:
+        logger.error(f"DEBUG: No input video name for job {job_id}")
+        return jsonify({"error": "No input video found for this job"}), 404
+    
+    video_path = os.path.join(UPLOAD_FOLDER, job_id, input_video_name)
+    logger.info(f"DEBUG: Checking for video at: {video_path}")
+    
+    if not os.path.exists(video_path):
+        logger.error(f"DEBUG: Video file not found at {video_path}")
+        return jsonify({
+            "error": "Original video file not found. Cannot regenerate detections without the original video.",
+            "video_path": video_path
+        }), 404
+    
+    # Regenerate detections
+    try:
+        logger.info(f"DEBUG: Starting detection regeneration for job {job_id}")
+        from ..services.tracking import detect_and_track
+        
+        # Create a temporary output path (we don't need the video, just detections)
+        import tempfile
+        temp_output = os.path.join(tempfile.gettempdir(), f"temp_detections_{job_id}.mp4")
+        
+        # Run detection
+        output_video_path, detections, fps = detect_and_track(
+            video_path,
+            temp_output,
+            progress_callback=None,
+            preview_folder=None,
+            cancelled_flag=lambda: False
+        )
+        
+        # Clean up temp video file
+        try:
+            if os.path.exists(temp_output):
+                os.remove(temp_output)
+        except Exception as e:
+            logger.warning(f"DEBUG: Failed to clean up temp file {temp_output}: {e}")
+        
+        if not detections or len(detections) == 0:
+            logger.warning(f"DEBUG: No detections generated for job {job_id}")
+            return jsonify({"error": "No detections generated from video"}), 400
+        
+        # Upload detections to Supabase
+        from ..core.storage import upload_json_to_supabase
+        detections_data = {"fps": fps, "detections": detections}
+        upload_json_to_supabase(detections_data, f"{job_id}/detections.json")
+        
+        logger.info(f"DEBUG: Successfully regenerated and uploaded {len(detections)} detections for job {job_id}")
+        return jsonify({
+            "message": "Detections regenerated successfully",
+            "detections_count": len(detections),
+            "fps": fps
+        }), 200
+        
+    except Exception as e:
+        logger.error(f"DEBUG: Error regenerating detections for job {job_id}: {type(e).__name__}: {e}")
+        import traceback
+        logger.error(f"DEBUG: Traceback:\n{traceback.format_exc()}")
+        return jsonify({"error": f"Failed to regenerate detections: {str(e)}"}), 500
+
+
 def get_heatmap_image_logic(job_id):
     """Shared logic for getting heatmap image"""
     # First check if job is completed

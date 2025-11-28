@@ -339,6 +339,15 @@ export const heatmapService = {
     }
   },
 
+  regenerateDetections: async (jobId) => {
+    try {
+      const response = await apiClient.post(`/api/heatmap_jobs/${jobId}/regenerate_detections`);
+      return response.data;
+    } catch (error) {
+      throw error.response ? error.response.data : error;
+    }
+  },
+
   getJobPoints: async (jobId) => {
     // Fetch the 4 points (pointsData) for a given job from the backend
     try {

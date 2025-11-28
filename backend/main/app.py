@@ -89,6 +89,14 @@ def direct_heatmap_detections(job_id):
     current_user = get_jwt_identity()
     return get_detections_logic(job_id, current_user)
 
+@app.route('/heatmap_jobs/<job_id>/regenerate_detections', methods=['POST', 'OPTIONS'])
+@cross_origin()
+@jwt_required()
+def direct_regenerate_detections(job_id):
+    """Direct access to regenerate detections without /api prefix"""
+    from .api.heatmap import regenerate_detections
+    return regenerate_detections(job_id)
+
 @app.route('/heatmap_jobs/<job_id>/analysis', methods=['GET', 'OPTIONS'])
 @cross_origin()
 @jwt_required()
