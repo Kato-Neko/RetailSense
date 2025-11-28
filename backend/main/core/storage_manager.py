@@ -247,17 +247,55 @@ class StorageManager:
         """List files in Supabase storage.
         
         Args:
-            prefix: Optional prefix to filter files
+            prefix: Optional prefix to filter files (folder path)
             
         Returns:
-            List of file names
+            List of file names (full paths)
         """
         self.logger.info(f"DEBUG: list_files called with prefix='{prefix}', bucket='{self.bucket}'")
         try:
             self.logger.info(f"DEBUG: Listing files in Supabase bucket {self.bucket} with prefix: {prefix}")
+            
+            # Supabase list() with a prefix returns files in that folder
+            # If prefix is a folder (like job_id), it returns files in that folder
+            # The 'name' field might be just the filename or the full path
             files = self.supabase.storage.from_(self.bucket).list(prefix)
             self.logger.info(f"DEBUG: list() returned: {type(files).__name__}, length: {len(files) if hasattr(files, '__len__') else 'N/A'}")
-            file_names = [f['name'] for f in files]
+            
+            file_names = []
+            if files:
+                for item in files:
+                    # Handle both dict-like and object-like responses
+                    if isinstance(item, dict):
+                        name = item.get('name', '')
+                        # Check if it's metadata (file) or id (folder)
+                        # Files have 'metadata', folders might not
+                        is_file = 'metadata' in item or 'id' in item
+                    else:
+                        name = getattr(item, 'name', '')
+                        is_file = hasattr(item, 'metadata') or hasattr(item, 'id')
+                    
+                    if name:
+                        # If prefix was provided and name doesn't start with it, construct full path
+                        if prefix and not name.startswith(prefix):
+                            # Name is likely just the filename, need to prepend prefix
+                            if '/' not in name:  # It's just a filename
+                                full_path = f"{prefix}/{name}" if prefix else name
+                            else:
+                                # Name already has path, use as-is
+                                full_path = name
+                        elif prefix and name.startswith(prefix):
+                            # Name already includes prefix
+                            full_path = name
+                        else:
+                            # No prefix or name is already full path
+                            full_path = name
+                        
+                        # Only include files, not folders
+                        if is_file:
+                            file_names.append(full_path)
+                            self.logger.info(f"DEBUG: Found file: '{full_path}'")
+            
             self.logger.info(f"DEBUG: Found {len(file_names)} files: {file_names[:10]}{'...' if len(file_names) > 10 else ''}")
             return file_names
         except Exception as e:
