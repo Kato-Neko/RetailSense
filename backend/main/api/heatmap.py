@@ -103,9 +103,14 @@ def get_detections_logic(job_id, current_user=None):
     logger.info(f"DEBUG: Loading detections for job_id='{job_id}'")
     detections, fps = load_detections(job_id)
     logger.info(f"DEBUG: load_detections returned - detections: {type(detections).__name__} (None={detections is None}), fps: {fps}")
+    
+    # Return empty detections array instead of 404 for missing files
+    # This allows the dashboard to gracefully handle jobs without detections
     if detections is None:
-        logger.warning(f"DEBUG: Detections file not found for job {job_id}, returning 404")
-        return jsonify({"error": "Detections file not found"}), 404
+        logger.warning(f"DEBUG: Detections file not found for job {job_id}, returning empty detections array")
+        response_data = {"detections": [], "fps": fps or 30}  # Default fps to 30 if not found
+        logger.info(f"DEBUG: Returning empty detections for job {job_id}")
+        return jsonify(response_data), 200
     
     logger.info(f"DEBUG: Preparing response with {len(detections)} detections, fps={fps}")
     response_data = {"detections": detections, "fps": fps}

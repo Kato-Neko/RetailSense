@@ -171,7 +171,7 @@ const Dashboard = () => {
             const detectionsResponse = await heatmapService.getDetections(job.job_id)
             console.log("Detections Response:", detectionsResponse)
 
-            if (detectionsResponse && detectionsResponse.detections) {
+            if (detectionsResponse && detectionsResponse.detections && detectionsResponse.detections.length > 0) {
               const detections = detectionsResponse.detections
               const fps = detectionsResponse.fps
               const startDate = job.start_datetime ? new Date(job.start_datetime) : null
@@ -196,10 +196,18 @@ const Dashboard = () => {
                 }
               })
             } else {
-              console.warn(`No detections found for job ${job.job_id}`)
+              // Silently skip jobs without detections - this is normal for older jobs or heatmap-only jobs
+              // Only log if there's an actual error response
+              if (detectionsResponse && detectionsResponse.error) {
+                console.warn(`No detections found for job ${job.job_id}: ${detectionsResponse.error}`)
+              }
             }
           } catch (error) {
-            console.error(`Error fetching detections for job ${job.job_id}:`, error)
+            // Only log actual errors, not 404s (which should now return empty arrays)
+            if (error.response && error.response.status !== 404) {
+              console.error(`Error fetching detections for job ${job.job_id}:`, error)
+            }
+            // Silently continue for missing detections
           }
         }
 
