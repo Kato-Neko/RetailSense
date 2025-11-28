@@ -173,7 +173,7 @@ def regenerate_detections(job_id):
             "fps": fps
         }), 200
     
-    # Check if original video file exists
+    # Check if original video file exists (local first, then Supabase)
     from ..core.config import UPLOAD_FOLDER
     if not input_video_name:
         logger.error(f"DEBUG: No input video name for job {job_id}")
@@ -182,12 +182,39 @@ def regenerate_detections(job_id):
     video_path = os.path.join(UPLOAD_FOLDER, job_id, input_video_name)
     logger.info(f"DEBUG: Checking for video at: {video_path}")
     
+    # If video doesn't exist locally, try to download from Supabase
     if not os.path.exists(video_path):
-        logger.error(f"DEBUG: Video file not found at {video_path}")
-        return jsonify({
-            "error": "Original video file not found. Cannot regenerate detections without the original video.",
-            "video_path": video_path
-        }), 404
+        logger.info(f"DEBUG: Video not found locally, checking Supabase for {job_id}/{input_video_name}")
+        from ..core.storage_manager import get_storage_manager
+        try:
+            # Try to download video from Supabase
+            storage_manager = get_storage_manager()
+            video_supabase_path = f"{job_id}/{input_video_name}"
+            logger.info(f"DEBUG: Attempting to download video from Supabase: {video_supabase_path}")
+            
+            # Try to download as bytes (videos are binary like images)
+            video_bytes = storage_manager.download_image_bytes(video_supabase_path)
+            if video_bytes:
+                # Save to local path
+                os.makedirs(os.path.dirname(video_path), exist_ok=True)
+                with open(video_path, 'wb') as f:
+                    f.write(video_bytes)
+                logger.info(f"DEBUG: Downloaded video from Supabase to {video_path} ({len(video_bytes)} bytes)")
+            else:
+                logger.error(f"DEBUG: Video file not found in Supabase at {video_supabase_path}")
+                return jsonify({
+                    "error": "Original video file not found locally or in Supabase. Cannot regenerate detections without the original video.",
+                    "video_path": video_path,
+                    "supabase_path": video_supabase_path
+                }), 404
+        except Exception as e:
+            logger.error(f"DEBUG: Error downloading video from Supabase: {type(e).__name__}: {e}")
+            import traceback
+            logger.error(f"DEBUG: Traceback:\n{traceback.format_exc()}")
+            return jsonify({
+                "error": f"Video file not found and failed to download from Supabase: {str(e)}",
+                "video_path": video_path
+            }), 404
     
     # Regenerate detections
     try:
