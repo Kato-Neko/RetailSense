@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect, useMemo, Fragment } from "react"
-import { Link } from "react-router-dom"
+import { Link, useLocation } from "react-router-dom"
 import { BarChart as ReBarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, ReferenceArea } from "recharts"
 import { Video, Map, Users, Clock, Download, Check } from "lucide-react"
 import { heatmapService } from "../services/api"
@@ -29,6 +29,7 @@ import {
 import { cn } from "@/lib/utils"
 
 const Dashboard = () => {
+  const location = useLocation()
   const [stats, setStats] = useState({
     totalVisitors: 0,
     peakHour: "N/A",
@@ -44,6 +45,9 @@ const Dashboard = () => {
   const [monthlyData, setMonthlyData] = useState([])
   const [exportOpen, setExportOpen] = useState(false)
   const [exportValue, setExportValue] = useState("")
+  const [comparisonMode, setComparisonMode] = useState(false)
+  const [comparisonStats, setComparisonStats] = useState({ totalVisitors: 0, peakHour: "N/A" })
+  const [comparisonData, setComparisonData] = useState({ daily: [], weekly: [], monthly: [] })
 
   // Turbo colormap-inspired gradient (24 colors, blue to red)
   const turboColors = [
@@ -73,6 +77,39 @@ const Dashboard = () => {
     setExportOpen(false);
   };
 
+  // Helper function to get date ranges for current and previous periods
+  const getDateRanges = () => {
+    const now = new Date()
+    
+    if (activeChart === "daily") {
+      // Today vs yesterday (same hours of day)
+      const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+      const currentStart = today
+      const currentEnd = now
+      const yesterday = new Date(today.getTime() - 24 * 60 * 60 * 1000)
+      const yesterdayEnd = new Date(yesterday.getTime() + (now.getTime() - today.getTime()))
+      const comparisonStart = yesterday
+      const comparisonEnd = yesterdayEnd
+      return { currentStart, currentEnd, comparisonStart, comparisonEnd }
+    } else if (activeChart === "weekly") {
+      // Last 7 days vs previous 7 days
+      const currentStart = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000)
+      const currentEnd = now
+      const comparisonStart = new Date(now.getTime() - 14 * 24 * 60 * 60 * 1000)
+      const comparisonEnd = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000)
+      return { currentStart, currentEnd, comparisonStart, comparisonEnd }
+    } else if (activeChart === "monthly") {
+      // This month vs last month
+      const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+      const currentStart = new Date(today.getFullYear(), today.getMonth(), 1)
+      const currentEnd = now
+      const comparisonStart = new Date(today.getFullYear(), today.getMonth() - 1, 1)
+      const comparisonEnd = new Date(today.getFullYear(), today.getMonth(), 0)
+      return { currentStart, currentEnd, comparisonStart, comparisonEnd }
+    }
+    return { currentStart: now, currentEnd: now, comparisonStart: now, comparisonEnd: now }
+  }
+
   useEffect(() => {
     const fetchDashboardData = async () => {
       setIsLoading(true)
@@ -93,35 +130,48 @@ const Dashboard = () => {
         setRecentJobs(recent)
 
         // Calculate stats from job history
-        const completedJobs = jobHistory.filter((job) => job.status === "completed")
+        let allCompletedJobs = jobHistory.filter((job) => job.status === "completed")
+        
+        // Filter by date range when comparison mode is enabled
+        // Use start_datetime (when video was recorded) not created_at (when job was created)
+        let completedJobs = allCompletedJobs
+        if (comparisonMode) {
+          const { currentStart, currentEnd } = getDateRanges()
+          completedJobs = allCompletedJobs.filter(job => {
+            const jobStartDateTime = job.start_datetime ? new Date(job.start_datetime) : new Date(job.created_at)
+            return jobStartDateTime >= currentStart && jobStartDateTime < currentEnd
+          })
+        }
+        
         // Only count completed video jobs for Processed Videos
         const processedVideos = jobHistory.filter(
           job => job.input_video_name && job.status === "completed"
         ).length;
-        const heatmapCount = completedJobs.length
+        const heatmapCount = allCompletedJobs.length
 
-        // For this demo, we'll estimate visitor count based on completed jobs
-        const estimatedVisitors = heatmapCount * 150 + Math.floor(Math.random() * 200)
-
+        // Set initial stats (will be updated after processing detections)
         setStats({
-          totalVisitors: estimatedVisitors,
-          peakHour: "14:00-15:00", // This would ideally come from real analysis
+          totalVisitors: 0,
+          peakHour: "14:00-15:00",
           processedVideos: processedVideos,
           generatedHeatmaps: heatmapCount,
         })
 
         // Prepare traffic counts and unique visitor set
+        // IMPORTANT: Fetch detections ONCE per job and process for all views
         const trafficCounts = {}
         let totalUniqueVisitors = new Set()
         let hourlyUniqueVisitors = Array.from({ length: 24 }, () => new Set())
+        let weeklyUniqueVisitors = Array.from({ length: 7 }, () => new Set())
+        let monthlyUniqueVisitors = Array.from({ length: 12 }, () => new Set())
 
         for (const job of completedJobs) {
-          // Fetch detections from the new API endpoint
+          // Fetch detections from the new API endpoint - ONLY ONCE
           try {
             const detectionsResponse = await heatmapService.getDetections(job.job_id)
             console.log("Detections Response:", detectionsResponse)
 
-            if (detectionsResponse && detectionsResponse.detections) {
+            if (detectionsResponse && detectionsResponse.detections && detectionsResponse.detections.length > 0) {
               const detections = detectionsResponse.detections
               const fps = detectionsResponse.fps
               const startDate = job.start_datetime ? new Date(job.start_datetime) : null
@@ -131,23 +181,33 @@ const Dashboard = () => {
                 const timeInSeconds = det.timestamp || (det.frame / fps)
                 const detectionTime = startDate ? new Date(startDate.getTime() + timeInSeconds * 1000) : null
                 const hour = detectionTime ? detectionTime.getHours() : null
+                const day = detectionTime ? detectionTime.getDay() : null
+                const month = detectionTime ? detectionTime.getMonth() : null
 
                 if (trackId && hour !== null) {
                   totalUniqueVisitors.add(`${job.job_id}_${trackId}`) // Ensure uniqueness across jobs
                   hourlyUniqueVisitors[hour].add(`${job.job_id}_${trackId}`)
                 }
+                if (trackId && day !== null) {
+                  weeklyUniqueVisitors[day].add(`${job.job_id}_${trackId}`)
+                }
+                if (trackId && month !== null) {
+                  monthlyUniqueVisitors[month].add(`${job.job_id}_${trackId}`)
+                }
               })
             } else {
-              console.warn(`No detections found for job ${job.job_id}`)
-              toast.warn(`No detections found for job ${job.job_id}`)
+              // Silently skip jobs without detections - this is normal for older jobs or heatmap-only jobs
+              // Only log if there's an actual error response
+              if (detectionsResponse && detectionsResponse.error) {
+                console.warn(`No detections found for job ${job.job_id}: ${detectionsResponse.error}`)
+              }
             }
           } catch (error) {
-            console.error(`Error fetching detections for job ${job.job_id}:`, error)
-            let errorMessage = `Failed to load detections for job ${job.job_id}`
-            if (error.response && error.response.status) {
-              errorMessage += ` (Status: ${error.response.status})`
+            // Only log actual errors, not 404s (which should now return empty arrays)
+            if (error.response && error.response.status !== 404) {
+              console.error(`Error fetching detections for job ${job.job_id}:`, error)
             }
-            toast.error(errorMessage)
+            // Silently continue for missing detections
           }
         }
 
@@ -190,27 +250,7 @@ const Dashboard = () => {
         }))
 
         // --- Weekly Data ---
-        // Group detections by day of week (0=Sun, 6=Sat)
-        let weeklyUniqueVisitors = Array.from({ length: 7 }, () => new Set())
-        for (const job of completedJobs) {
-          try {
-            const detectionsResponse = await heatmapService.getDetections(job.job_id)
-            if (detectionsResponse && detectionsResponse.detections) {
-              const detections = detectionsResponse.detections
-              const fps = detectionsResponse.fps
-              const startDate = job.start_datetime ? new Date(job.start_datetime) : null
-              detections.forEach((det) => {
-                const trackId = det.track_id
-                const timeInSeconds = det.timestamp || (det.frame / fps)
-                const detectionTime = startDate ? new Date(startDate.getTime() + timeInSeconds * 1000) : null
-                const day = detectionTime ? detectionTime.getDay() : null
-                if (trackId && day !== null) {
-                  weeklyUniqueVisitors[day].add(`${job.job_id}_${trackId}`)
-                }
-              })
-            }
-          } catch {}
-        }
+       
         const weekDays = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
         const weeklyDataArr = weekDays.map((day, idx) => ({
           day,
@@ -219,33 +259,112 @@ const Dashboard = () => {
         setWeeklyData(weeklyDataArr)
 
         // --- Monthly Data ---
-        // Group detections by month (0=Jan, 11=Dec)
-        let monthlyUniqueVisitors = Array.from({ length: 12 }, () => new Set())
-        for (const job of completedJobs) {
-          try {
-            const detectionsResponse = await heatmapService.getDetections(job.job_id)
-            if (detectionsResponse && detectionsResponse.detections) {
-              const detections = detectionsResponse.detections
-              const fps = detectionsResponse.fps
-              const startDate = job.start_datetime ? new Date(job.start_datetime) : null
-              detections.forEach((det) => {
-                const trackId = det.track_id
-                const timeInSeconds = det.timestamp || (det.frame / fps)
-                const detectionTime = startDate ? new Date(startDate.getTime() + timeInSeconds * 1000) : null
-                const month = detectionTime ? detectionTime.getMonth() : null
-                if (trackId && month !== null) {
-                  monthlyUniqueVisitors[month].add(`${job.job_id}_${trackId}`)
-                }
-              })
-            }
-          } catch {}
-        }
+        // Use data already processed above (no need to fetch again!)
         const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
         const monthlyDataArr = monthNames.map((month, idx) => ({
           month,
           visitors: monthlyUniqueVisitors[idx].size,
         }))
         setMonthlyData(monthlyDataArr)
+
+        // Process comparison data if comparison mode is enabled
+        if (comparisonMode) {
+          const { comparisonStart, comparisonEnd } = getDateRanges()
+          
+          // Filter jobs for comparison period
+          // Use start_datetime (when video was recorded) not created_at (when job was created)
+          const comparisonJobs = allCompletedJobs.filter(job => {
+            const jobStartDateTime = job.start_datetime ? new Date(job.start_datetime) : new Date(job.created_at)
+            return jobStartDateTime >= comparisonStart && jobStartDateTime < comparisonEnd
+          })
+          
+          if (comparisonJobs.length > 0) {
+            // Process detections for comparison period
+            let compTotalUniqueVisitors = new Set()
+            let compHourlyVisitors = Array.from({ length: 24 }, () => new Set())
+            let compWeeklyVisitors = Array.from({ length: 7 }, () => new Set())
+            let compMonthlyVisitors = Array.from({ length: 12 }, () => new Set())
+
+            for (const job of comparisonJobs) {
+              try {
+                const detectionsResponse = await heatmapService.getDetections(job.job_id)
+                if (detectionsResponse && detectionsResponse.detections) {
+                  const detections = detectionsResponse.detections
+                  const fps = detectionsResponse.fps
+                  const startDate = job.start_datetime ? new Date(job.start_datetime) : null
+
+                  detections.forEach((det) => {
+                    const trackId = det.track_id
+                    const timeInSeconds = det.timestamp || (det.frame / fps)
+                    const detectionTime = startDate ? new Date(startDate.getTime() + timeInSeconds * 1000) : null
+                    const hour = detectionTime ? detectionTime.getHours() : null
+                    const day = detectionTime ? detectionTime.getDay() : null
+                    const month = detectionTime ? detectionTime.getMonth() : null
+
+                    if (trackId && hour !== null) {
+                      compTotalUniqueVisitors.add(`${job.job_id}_${trackId}`)
+                      compHourlyVisitors[hour].add(`${job.job_id}_${trackId}`)
+                    }
+                    if (trackId && day !== null) {
+                      compWeeklyVisitors[day].add(`${job.job_id}_${trackId}`)
+                    }
+                    if (trackId && month !== null) {
+                      compMonthlyVisitors[month].add(`${job.job_id}_${trackId}`)
+                    }
+                  })
+                }
+              } catch (error) {
+                console.error(`Error fetching comparison detections for job ${job.job_id}:`, error)
+              }
+            }
+
+            // Find peak hour for comparison
+            let compPeakHourIdx = 0
+            let compPeakHourValue = 0
+            compHourlyVisitors.forEach((set, idx) => {
+              if (set.size > compPeakHourValue) {
+                compPeakHourValue = set.size
+                compPeakHourIdx = idx
+              }
+            })
+            const compPeakHourLabel = compPeakHourValue > 0 ? 
+              `${compPeakHourIdx.toString().padStart(2, "0")}:00-${(compPeakHourIdx + 1).toString().padStart(2, "0")}:00` : 
+              "N/A"
+
+            // Format comparison data
+            const compDailyArr = Array.from({ length: 24 }, (_, hour) => ({
+              hour: hour.toString().padStart(2, "0") + ":00",
+              visitors: compHourlyVisitors[hour].size
+            }))
+            
+            const weekDays = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
+            const compWeeklyArr = weekDays.map((day, idx) => ({
+              day,
+              visitors: compWeeklyVisitors[idx].size
+            }))
+
+            const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+            const compMonthlyArr = monthNames.map((month, idx) => ({
+              month,
+              visitors: compMonthlyVisitors[idx].size
+            }))
+
+            setComparisonData({
+              daily: compDailyArr,
+              weekly: compWeeklyArr,
+              monthly: compMonthlyArr
+            })
+
+            setComparisonStats({
+              totalVisitors: compTotalUniqueVisitors.size,
+              peakHour: compPeakHourLabel
+            })
+          } else {
+            // No comparison data available
+            setComparisonData({ daily: [], weekly: [], monthly: [] })
+            setComparisonStats({ totalVisitors: 0, peakHour: "N/A" })
+          }
+        }
       } catch (error) {
         console.error("Error fetching dashboard data:", error)
         toast.error("Failed to load dashboard data")
@@ -264,7 +383,7 @@ const Dashboard = () => {
     return () => {
       window.removeEventListener('dashboard-refresh', handleRefresh);
     };
-  }, [])
+  }, [comparisonMode, activeChart, location.pathname])
 
   // Compute turbo color for each point in daily and weekly chart
   const getTurboColor = (value, min, max) => {
@@ -295,16 +414,42 @@ const Dashboard = () => {
     }))
   }, [weeklyData, turboColors])
 
-  const monthlyBarData = useMemo(() => {
+  const monthlyLineData = useMemo(() => {
     if (!monthlyData.length) return []
     const values = monthlyData.map(d => d.visitors)
     const min = Math.min(...values)
     const max = Math.max(...values)
     return monthlyData.map((d) => ({
       ...d,
-      fill: getTurboColor(d.visitors, min, max),
+      dotColor: getTurboColor(d.visitors, min, max),
     }))
   }, [monthlyData, turboColors])
+
+  // Merge current and comparison data for chart rendering
+  const mergedData = useMemo(() => {
+    if (!comparisonMode) {
+      if (activeChart === "daily") return dailyLineData
+      if (activeChart === "weekly") return weeklyLineData
+      if (activeChart === "monthly") return monthlyLineData
+      return []
+    }
+
+    // Merge data for comparison mode
+    const currentData = activeChart === "daily" ? dailyLineData : activeChart === "weekly" ? weeklyLineData : monthlyLineData
+    const compData = activeChart === "daily" ? comparisonData.daily : activeChart === "weekly" ? comparisonData.weekly : comparisonData.monthly
+    
+    // Merge by index
+    const merged = currentData.map((item, idx) => {
+      const comparison = compData[idx]
+      return {
+        ...item,
+        comparison: comparison ? comparison.visitors : 0,
+        current: item.visitors || 0
+      }
+    })
+    
+    return merged
+  }, [comparisonMode, activeChart, dailyLineData, weeklyLineData, monthlyLineData, comparisonData])
 
   // Helper to create a turbo-gradient SVG path for the line chart
   function TurboLinePath({ data, xAccessor, yAccessor, colorAccessor }) {
@@ -361,84 +506,718 @@ const Dashboard = () => {
   const userEmail = 'N/A'; // Replace with actual value if available
   const dateRange = 'N/A'; // Replace with actual value if available
 
-  // Export chart data as CSV (summary stats + chart data, excluding 'fill' and 'dotColor')
+  // Helper function to format date range
+  const formatDateRange = (start, end) => {
+    const formatDate = (date) => {
+      return date.toLocaleDateString('en-US', { 
+        year: 'numeric', 
+        month: 'short', 
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+      })
+    }
+    return `${formatDate(start)} - ${formatDate(end)}`
+  }
+
+  // Helper functions for statistical calculations
+  const calculateStats = (data, visitorKey = 'visitors') => {
+    if (!data || data.length === 0) {
+      return {
+        average: 0,
+        min: 0,
+        max: 0,
+        median: 0,
+        sum: 0,
+        count: 0
+      }
+    }
+    
+    const values = data.map(d => d[visitorKey] || 0).filter(v => typeof v === 'number')
+    if (values.length === 0) {
+      return { average: 0, min: 0, max: 0, median: 0, sum: 0, count: 0 }
+    }
+    
+    const sorted = [...values].sort((a, b) => a - b)
+    const sum = values.reduce((acc, val) => acc + val, 0)
+    const average = sum / values.length
+    const min = sorted[0]
+    const max = sorted[sorted.length - 1]
+    const median = sorted.length % 2 === 0
+      ? (sorted[sorted.length / 2 - 1] + sorted[sorted.length / 2]) / 2
+      : sorted[Math.floor(sorted.length / 2)]
+    
+    return { average, min, max, median, sum, count: values.length }
+  }
+
+  // Helper function to find busiest and quietest periods
+  const findPeriods = (data, visitorKey = 'visitors', labelKey) => {
+    if (!data || data.length === 0) {
+      return { busiest: null, quietest: null }
+    }
+    
+    let busiest = data[0]
+    let quietest = data[0]
+    
+    data.forEach(item => {
+      const value = item[visitorKey] || 0
+      if (value > (busiest[visitorKey] || 0)) busiest = item
+      if (value < (quietest[visitorKey] || 0)) quietest = item
+    })
+    
+    const busiestLabel = labelKey ? busiest[labelKey] : (busiest.hour || busiest.day || busiest.month || 'N/A')
+    const quietestLabel = labelKey ? quietest[labelKey] : (quietest.hour || quietest.day || quietest.month || 'N/A')
+    
+    return {
+      busiest: { label: busiestLabel, value: busiest[visitorKey] || 0 },
+      quietest: { label: quietestLabel, value: quietest[visitorKey] || 0 }
+    }
+  }
+
+  // Helper function to calculate trend
+  const calculateTrend = (data, visitorKey = 'visitors') => {
+    if (!data || data.length < 2) return 'Insufficient data'
+    
+    const values = data.map(d => d[visitorKey] || 0)
+    const firstHalf = values.slice(0, Math.floor(values.length / 2))
+    const secondHalf = values.slice(Math.floor(values.length / 2))
+    
+    const firstAvg = firstHalf.reduce((a, b) => a + b, 0) / firstHalf.length
+    const secondAvg = secondHalf.reduce((a, b) => a + b, 0) / secondHalf.length
+    
+    const change = ((secondAvg - firstAvg) / (firstAvg || 1)) * 100
+    
+    if (change > 5) return `Increasing (+${change.toFixed(1)}%)`
+    if (change < -5) return `Decreasing (${change.toFixed(1)}%)`
+    return `Stable (${change.toFixed(1)}%)`
+  }
+
+  // Helper function to get chart period label
+  const getChartPeriodLabel = () => {
+    const now = new Date()
+    if (activeChart === "daily") {
+      const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+      return formatDateRange(today, now)
+    } else if (activeChart === "weekly") {
+      const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000)
+      return formatDateRange(weekAgo, now)
+    } else if (activeChart === "monthly") {
+      const monthStart = new Date(now.getFullYear(), now.getMonth(), 1)
+      return formatDateRange(monthStart, now)
+    }
+    return 'N/A'
+  }
+
+  // Export chart data as CSV (Option 2: Statistical Analysis Export)
   const exportCSV = () => {
     let data = [];
-    if (activeChart === 'daily') data = dailyLineData;
-    else if (activeChart === 'weekly') data = weeklyLineData;
-    else if (activeChart === 'monthly') data = monthlyBarData;
+    let labelKey = '';
+    if (activeChart === 'daily') {
+      data = dailyLineData;
+      labelKey = 'hour';
+    } else if (activeChart === 'weekly') {
+      data = weeklyLineData;
+      labelKey = 'day';
+    } else if (activeChart === 'monthly') {
+      data = monthlyLineData;
+      labelKey = 'month';
+    }
     if (!data.length) return toast.error('No data to export.');
+    
+    // Calculate statistics
+    const stats_calc = calculateStats(data);
+    const periods = findPeriods(data, 'visitors', labelKey);
+    const trend = calculateTrend(data);
+    const periodLabel = getChartPeriodLabel();
+    const { currentStart, currentEnd } = getDateRanges();
+    
     // Exclude 'fill' and 'dotColor' fields
     const header = Object.keys(data[0]).filter(h => h !== 'fill' && h !== 'dotColor');
     const csvRows = [];
-    // Add export date/time as first row
-    const exportDate = new Date().toLocaleString();
-    csvRows.push('Exported At,' + exportDate);
-    // Add summary stats as next rows
+    
+    // === SECTION 1: REPORT HEADER ===
+    csvRows.push('='.repeat(50));
+    csvRows.push('FOOT TRAFFIC ANALYTICS REPORT');
+    csvRows.push('='.repeat(50));
+    csvRows.push('');
+    csvRows.push('Report Generated,' + new Date().toLocaleString());
+    csvRows.push('Chart Type,' + activeChart.charAt(0).toUpperCase() + activeChart.slice(1));
+    csvRows.push('Comparison Mode,' + (comparisonMode ? 'Enabled' : 'Disabled'));
+    csvRows.push('Data Period,' + periodLabel);
+    csvRows.push('');
+    
+    // === SECTION 2: SUMMARY STATISTICS ===
+    csvRows.push('='.repeat(50));
+    csvRows.push('SUMMARY STATISTICS');
+    csvRows.push('='.repeat(50));
     csvRows.push('Total Visitors,' + stats.totalVisitors);
-    csvRows.push('Peak Hour,' + stats.peakHour);
+    csvRows.push('Peak Period,' + stats.peakHour);
     csvRows.push('Processed Videos,' + stats.processedVideos);
     csvRows.push('Generated Heatmaps,' + stats.generatedHeatmaps);
-    csvRows.push(''); // Empty row
+    csvRows.push('');
+    
+    // === SECTION 3: COMPARISON ANALYSIS (if enabled) ===
+    if (comparisonMode) {
+      csvRows.push('='.repeat(50));
+      csvRows.push('COMPARISON ANALYSIS');
+      csvRows.push('='.repeat(50));
+      const visitorChange = stats.totalVisitors - comparisonStats.totalVisitors;
+      const growthRate = comparisonStats.totalVisitors > 0 
+        ? ((stats.totalVisitors - comparisonStats.totalVisitors) / comparisonStats.totalVisitors * 100).toFixed(1)
+        : 'N/A';
+      csvRows.push('Visitor Change,' + (visitorChange > 0 ? '+' : '') + visitorChange);
+      csvRows.push('Growth Rate,' + (growthRate === 'N/A' ? 'N/A' : growthRate + '%'));
+      csvRows.push('Previous Peak Hour,' + comparisonStats.peakHour);
+      csvRows.push('Previous Total Visitors,' + comparisonStats.totalVisitors);
+      const comparisonRange = formatDateRange(getDateRanges().comparisonStart, getDateRanges().comparisonEnd);
+      csvRows.push('Comparison Period,' + comparisonRange);
+      csvRows.push('');
+    }
+    
+    // === SECTION 4: STATISTICAL ANALYSIS ===
+    csvRows.push('='.repeat(50));
+    csvRows.push('STATISTICAL ANALYSIS');
+    csvRows.push('='.repeat(50));
+    csvRows.push('Average Visitors,' + stats_calc.average.toFixed(2));
+    csvRows.push('Minimum Visitors,' + stats_calc.min);
+    csvRows.push('Maximum Visitors,' + stats_calc.max);
+    csvRows.push('Median Visitors,' + stats_calc.median.toFixed(2));
+    csvRows.push('Total Visitor Count,' + stats_calc.sum);
+    csvRows.push('Data Points,' + stats_calc.count);
+    csvRows.push('');
+    
+    // === SECTION 5: TIME ANALYSIS ===
+    csvRows.push('='.repeat(50));
+    csvRows.push('TIME ANALYSIS');
+    csvRows.push('='.repeat(50));
+    if (periods.busiest) {
+      csvRows.push('Busiest Period,' + periods.busiest.label + ' (' + periods.busiest.value + ' visitors)');
+    }
+    if (periods.quietest) {
+      csvRows.push('Quietest Period,' + periods.quietest.label + ' (' + periods.quietest.value + ' visitors)');
+    }
+    csvRows.push('Trend Indicator,' + trend);
+    csvRows.push('');
+    
+    // === SECTION 6: RAW CHART DATA ===
+    csvRows.push('='.repeat(50));
+    csvRows.push('RAW CHART DATA');
+    csvRows.push('='.repeat(50));
     csvRows.push(header.join(','));
     data.forEach(row => {
       csvRows.push(header.map(h => row[h]).join(','));
     });
+    
     const csvContent = csvRows.join('\n');
     const blob = new Blob([csvContent], { type: 'text/csv' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `foot_traffic_${activeChart}.csv`;
+    a.download = `foot_traffic_${activeChart}_${new Date().toISOString().split('T')[0]}.csv`;
     a.click();
     URL.revokeObjectURL(url);
+    toast.success('CSV exported successfully!');
   };
 
-  // Export chart as PDF (summary stats + chart image, using dom-to-image to avoid color issues)
+  // Helper function to draw a card/box in PDF
+  const drawCard = (pdf, x, y, width, height, fillColor = null, strokeColor = [200, 200, 200]) => {
+    if (fillColor) {
+      pdf.setFillColor(fillColor[0], fillColor[1], fillColor[2]);
+      pdf.rect(x, y, width, height, 'F');
+    }
+    pdf.setDrawColor(strokeColor[0], strokeColor[1], strokeColor[2]);
+    pdf.setLineWidth(0.5);
+    pdf.rect(x, y, width, height, 'S');
+  }
+
+  // Helper function to draw a simple bar chart in PDF
+  const drawBarChart = (pdf, x, y, width, height, data, xKey, yKey, title) => {
+    if (!data || data.length === 0) return;
+    
+    // Draw title with wrapping to prevent overflow
+    pdf.setFontSize(10);
+    pdf.setFont('helvetica', 'bold');
+    const maxTitleWidth = width - 20; // Leave 10pt margin on each side
+    const titleLines = pdf.splitTextToSize(title, maxTitleWidth);
+    let titleY = y + 12;
+    titleLines.forEach((line, idx) => {
+      pdf.text(line, x + 10, titleY + (idx * 12));
+    });
+    
+    const chartPadding = 40;
+    const chartX = x + chartPadding;
+    const chartY = y + 25 + (titleLines.length - 1) * 12; // Adjust based on number of title lines
+    const chartWidth = width - (chartPadding * 2);
+    const chartHeight = height - chartPadding - 25 - (titleLines.length - 1) * 12; // Adjust for title
+    
+    // Calculate max value for scaling
+    const maxValue = Math.max(...data.map(d => d[yKey] || 0), 1);
+    const barWidth = chartWidth / data.length;
+    const barSpacing = barWidth * 0.1;
+    const actualBarWidth = barWidth - barSpacing;
+    
+    // Draw bars
+    data.forEach((item, idx) => {
+      const barHeight = ((item[yKey] || 0) / maxValue) * chartHeight;
+      const barX = chartX + (idx * barWidth) + barSpacing / 2;
+      const barY = chartY + chartHeight - barHeight;
+      
+      // Bar color based on value
+      const intensity = (item[yKey] || 0) / maxValue;
+      const blue = Math.round(25 + (230 - 25) * intensity);
+      pdf.setFillColor(25, 118, 210);
+      pdf.rect(barX, barY, actualBarWidth, barHeight, 'F');
+    });
+    
+    // Draw axes
+    pdf.setDrawColor(100, 100, 100);
+    pdf.setLineWidth(0.5);
+    // X-axis
+    pdf.line(chartX, chartY + chartHeight, chartX + chartWidth, chartY + chartHeight);
+    // Y-axis
+    pdf.line(chartX, chartY, chartX, chartY + chartHeight);
+    
+    // Draw labels
+    pdf.setFontSize(7);
+    pdf.setFont('helvetica', 'normal');
+    pdf.setTextColor(100, 100, 100);
+    data.forEach((item, idx) => {
+      const labelX = chartX + (idx * barWidth) + (barWidth / 2);
+      pdf.text(item[xKey], labelX, chartY + chartHeight + 8, { align: 'center' });
+    });
+    
+    // Y-axis labels
+    const numTicks = 5;
+    for (let i = 0; i <= numTicks; i++) {
+      const tickValue = (maxValue / numTicks) * i;
+      const tickY = chartY + chartHeight - ((i / numTicks) * chartHeight);
+      pdf.text(Math.round(tickValue).toString(), chartX - 5, tickY, { align: 'right' });
+      pdf.line(chartX - 3, tickY, chartX, tickY);
+    }
+    
+    pdf.setTextColor(0, 0, 0);
+  }
+
+  // Helper function to draw a simple line chart in PDF
+  const drawLineChart = (pdf, x, y, width, height, data, xKey, yKey, title) => {
+    if (!data || data.length < 2) return;
+    
+    // Draw title with wrapping to prevent overflow
+    pdf.setFontSize(10);
+    pdf.setFont('helvetica', 'bold');
+    const maxTitleWidth = width - 20; // Leave 10pt margin on each side
+    const titleLines = pdf.splitTextToSize(title, maxTitleWidth);
+    let titleY = y + 12;
+    titleLines.forEach((line, idx) => {
+      pdf.text(line, x + 10, titleY + (idx * 12));
+    });
+    
+    const chartPadding = 40;
+    const chartX = x + chartPadding;
+    const chartY = y + 25 + (titleLines.length - 1) * 12; // Adjust based on number of title lines
+    const chartWidth = width - (chartPadding * 2);
+    const chartHeight = height - chartPadding - 25 - (titleLines.length - 1) * 12; // Adjust for title
+    
+    // Calculate max value for scaling
+    const maxValue = Math.max(...data.map(d => d[yKey] || 0), 1);
+    const pointSpacing = chartWidth / (data.length - 1);
+    
+    // Draw line
+    pdf.setDrawColor(25, 118, 210);
+    pdf.setLineWidth(2);
+    const points = data.map((item, idx) => {
+      const pointX = chartX + (idx * pointSpacing);
+      const pointY = chartY + chartHeight - ((item[yKey] || 0) / maxValue) * chartHeight;
+      return { x: pointX, y: pointY };
+    });
+    
+    for (let i = 0; i < points.length - 1; i++) {
+      pdf.line(points[i].x, points[i].y, points[i + 1].x, points[i + 1].y);
+    }
+    
+    // Draw points
+    pdf.setFillColor(25, 118, 210);
+    points.forEach((point) => {
+      pdf.circle(point.x, point.y, 2, 'F');
+    });
+    
+    // Draw axes
+    pdf.setDrawColor(100, 100, 100);
+    pdf.setLineWidth(0.5);
+    // X-axis
+    pdf.line(chartX, chartY + chartHeight, chartX + chartWidth, chartY + chartHeight);
+    // Y-axis
+    pdf.line(chartX, chartY, chartX, chartY + chartHeight);
+    
+    // Draw labels
+    pdf.setFontSize(7);
+    pdf.setFont('helvetica', 'normal');
+    pdf.setTextColor(100, 100, 100);
+    
+    // Show every Nth label to avoid crowding
+    const labelInterval = Math.ceil(data.length / 6);
+    data.forEach((item, idx) => {
+      if (idx % labelInterval === 0 || idx === data.length - 1) {
+        const labelX = chartX + (idx * pointSpacing);
+        pdf.text(item[xKey], labelX, chartY + chartHeight + 8, { align: 'center' });
+      }
+    });
+    
+    // Y-axis labels
+    const numTicks = 5;
+    for (let i = 0; i <= numTicks; i++) {
+      const tickValue = (maxValue / numTicks) * i;
+      const tickY = chartY + chartHeight - ((i / numTicks) * chartHeight);
+      pdf.text(Math.round(tickValue).toString(), chartX - 5, tickY, { align: 'right' });
+      pdf.line(chartX - 3, tickY, chartX, tickY);
+    }
+    
+    pdf.setTextColor(0, 0, 0);
+  }
+
+  // Export chart as PDF (Professional Report Layout - Vertical/Portrait Layout)
   const exportPDF = async () => {
-    const chartCard = document.getElementById('foot-traffic-chart-card');
-    if (!chartCard) return toast.error('Chart not found.');
-    const chartArea = chartCard.querySelector('.ChartContainer') || chartCard;
     try {
-      // Use dom-to-image to get a PNG of the chart
-      const imgData = await domtoimage.toPng(chartArea, { bgcolor: '#fff' });
-      const pdf = new jsPDF({ orientation: 'landscape', unit: 'pt', format: 'a4' });
+      // Get data and calculate statistics
+      let data = [];
+      let labelKey = '';
+      if (activeChart === 'daily') {
+        data = dailyLineData;
+        labelKey = 'hour';
+      } else if (activeChart === 'weekly') {
+        data = weeklyLineData;
+        labelKey = 'day';
+      } else if (activeChart === 'monthly') {
+        data = monthlyLineData;
+        labelKey = 'month';
+      }
+      if (!data.length) return toast.error('No data to export.');
+      
+      const stats_calc = calculateStats(data);
+      const periods = findPeriods(data, 'visitors', labelKey);
+      const trend = calculateTrend(data);
+      const periodLabel = getChartPeriodLabel();
+      const standardDev = (() => {
+        const variance = data.reduce((acc, d) => {
+          const diff = (d.visitors || 0) - stats_calc.average;
+          return acc + (diff * diff);
+        }, 0) / data.length;
+        return Math.sqrt(variance).toFixed(2);
+      })();
+      
+      // Calculate comparison metrics
+      const visitorChange = comparisonMode ? stats.totalVisitors - comparisonStats.totalVisitors : 0;
+      const growthRate = comparisonMode && comparisonStats.totalVisitors > 0 
+        ? ((stats.totalVisitors - comparisonStats.totalVisitors) / comparisonStats.totalVisitors * 100).toFixed(1)
+        : 'N/A';
+      
+      // Create PDF in portrait orientation
+      const pdf = new jsPDF({ orientation: 'portrait', unit: 'pt', format: 'a4' });
       const pageWidth = pdf.internal.pageSize.getWidth();
       const pageHeight = pdf.internal.pageSize.getHeight();
-      let y = 40;
-      pdf.setFontSize(18);
-      pdf.text('Foot Traffic Analytics', 40, y);
-      // Add export date/time below the title
-      pdf.setFontSize(11);
-      const exportDate = new Date().toLocaleString();
-      y += 18;
-      pdf.text(`Exported At: ${exportDate}`, 40, y);
-      pdf.setFontSize(12);
+      
+      const margin = 40;
+      let y = 30;
+      const cardHeight = 70;
+      const cardSpacing = 12;
+      const sectionSpacing = 22;
+      const lineHeight = 13;
+      
+      // === HEADER ===
+      pdf.setFontSize(22);
+      pdf.setFont('helvetica', 'bold');
+      pdf.text('Foot Traffic Analytics Report', pageWidth / 2, y, { align: 'center' });
+      
       y += 22;
-      pdf.text(`Total Visitors: ${stats.totalVisitors}`, 40, y);
-      y += 20;
-      pdf.text(`Peak Hour: ${stats.peakHour}`, 40, y);
-      y += 20;
-      pdf.text(`Processed Videos: ${stats.processedVideos}`, 40, y);
-      y += 20;
-      pdf.text(`Generated Heatmaps: ${stats.generatedHeatmaps}`, 40, y);
-      y += 20;
-      // Add chart image
-      const img = new window.Image();
-      img.src = imgData;
-      img.onload = () => {
-        let imgWidth = pageWidth - 80;
-        let imgHeight = (img.height * imgWidth) / img.width;
-
-        // If the image is too tall for the page, scale it down
-        if (imgHeight > pageHeight - y - 40) {
-          imgHeight = pageHeight - y - 40;
-          imgWidth = (img.width * imgHeight) / img.height;
+      pdf.setFontSize(9);
+      pdf.setFont('helvetica', 'normal');
+      pdf.setTextColor(100, 100, 100);
+      const exportDate = new Date().toLocaleString();
+      pdf.text(`Report Generated: ${exportDate}`, margin, y);
+      y += lineHeight * 0.8;
+      pdf.text(`Chart Type: ${activeChart.charAt(0).toUpperCase() + activeChart.slice(1)} | Comparison Mode: ${comparisonMode ? 'Enabled' : 'Disabled'}`, margin, y);
+      y += lineHeight * 0.8;
+      pdf.text(`Data Period: ${periodLabel}`, margin, y, { maxWidth: pageWidth - (margin * 2) });
+      pdf.setTextColor(0, 0, 0);
+      
+      y += sectionSpacing + 5;
+      
+      // === EXECUTIVE SUMMARY - 4 Cards in a row ===
+      pdf.setFontSize(12);
+      pdf.setFont('helvetica', 'bold');
+      pdf.text('Executive Summary', margin, y);
+      y += 18;
+      
+      const cardWidth = (pageWidth - (margin * 2) - (cardSpacing * 3)) / 4;
+      
+      // Card 1: Total Visitors
+      drawCard(pdf, margin, y, cardWidth, cardHeight, [250, 250, 255], [210, 213, 220]);
+      pdf.setFontSize(24);
+      pdf.setFont('helvetica', 'bold');
+      pdf.text(String(stats.totalVisitors), margin + cardWidth / 2, y + 32, { align: 'center' });
+      pdf.setFontSize(8);
+      pdf.setFont('helvetica', 'normal');
+      pdf.setTextColor(100, 100, 100);
+      pdf.text('Current period', margin + cardWidth / 2, y + 50, { align: 'center' });
+      pdf.setTextColor(0, 0, 0);
+      
+      // Card 2: Peak Period
+      drawCard(pdf, margin + cardWidth + cardSpacing, y, cardWidth, cardHeight, [250, 250, 255], [210, 213, 220]);
+      pdf.setFontSize(18);
+      pdf.setFont('helvetica', 'bold');
+      pdf.text(stats.peakHour, margin + cardWidth + cardSpacing + cardWidth / 2, y + 32, { align: 'center' });
+      pdf.setFontSize(8);
+      pdf.setFont('helvetica', 'normal');
+      pdf.setTextColor(100, 100, 100);
+      pdf.text('Highest traffic window', margin + cardWidth + cardSpacing + cardWidth / 2, y + 50, { align: 'center' });
+      pdf.setTextColor(0, 0, 0);
+      
+      // Card 3: Visitor Change (only if comparison mode)
+      if (comparisonMode) {
+        const isNegative = visitorChange < 0;
+        drawCard(pdf, margin + (cardWidth + cardSpacing) * 2, y, cardWidth, cardHeight, 
+          isNegative ? [254, 242, 242] : [220, 252, 231], 
+          isNegative ? [248, 113, 113] : [160, 220, 180]);
+        pdf.setFontSize(24);
+        pdf.setFont('helvetica', 'bold');
+        if (isNegative) {
+          pdf.setTextColor(239, 68, 68); // Red for negative
+        } else {
+          pdf.setTextColor(34, 197, 94); // Green for positive
         }
-
-        pdf.addImage(img, 'PNG', 40, y, imgWidth, imgHeight);
-        pdf.save(`foot_traffic_${activeChart}.pdf`);
-      };
+        pdf.text(`${visitorChange > 0 ? '+' : ''}${visitorChange}`, margin + (cardWidth + cardSpacing) * 2 + cardWidth / 2, y + 32, { align: 'center' });
+        pdf.setFontSize(8);
+        pdf.setFont('helvetica', 'normal');
+        pdf.setTextColor(100, 100, 100);
+        pdf.text('vs previous period', margin + (cardWidth + cardSpacing) * 2 + cardWidth / 2, y + 50, { align: 'center' });
+        pdf.setTextColor(0, 0, 0);
+      }
+      
+      // Card 4: Growth Rate (only if comparison mode)
+      if (comparisonMode) {
+        const isNA = growthRate === 'N/A';
+        const growthRateNum = isNA ? 0 : parseFloat(growthRate);
+        const isNegative = !isNA && growthRateNum < 0;
+        drawCard(pdf, margin + (cardWidth + cardSpacing) * 3, y, cardWidth, cardHeight, 
+          isNA ? [240, 240, 240] : (isNegative ? [254, 242, 242] : [220, 252, 231]), 
+          isNA ? [200, 200, 200] : (isNegative ? [248, 113, 113] : [160, 220, 180]));
+        pdf.setFontSize(22);
+        pdf.setFont('helvetica', 'bold');
+        if (isNA) {
+          pdf.setTextColor(100, 100, 100); // Gray for N/A
+        } else if (isNegative) {
+          pdf.setTextColor(239, 68, 68); // Red for negative
+        } else {
+          pdf.setTextColor(34, 197, 94); // Green for positive
+        }
+        pdf.text(isNA ? 'N/A' : `${growthRate}%`, margin + (cardWidth + cardSpacing) * 3 + cardWidth / 2, y + 32, { align: 'center' });
+        pdf.setFontSize(8);
+        pdf.setFont('helvetica', 'normal');
+        pdf.setTextColor(100, 100, 100);
+        pdf.text('Period over period', margin + (cardWidth + cardSpacing) * 3 + cardWidth / 2, y + 50, { align: 'center' });
+        pdf.setTextColor(0, 0, 0);
+      }
+      
+      y += cardHeight + sectionSpacing;
+      
+      // === KEY STATISTICS - 3 Columns with improved spacing ===
+      pdf.setFontSize(12);
+      pdf.setFont('helvetica', 'bold');
+      pdf.text('Key Statistics', margin, y);
+      y += 18;
+      
+      const colWidth = (pageWidth - (margin * 2) - (cardSpacing * 2)) / 3;
+      const col1X = margin;
+      const col2X = margin + colWidth + cardSpacing;
+      const col3X = margin + (colWidth + cardSpacing) * 2;
+      const boxHeight = 140; // Increased height for better spacing
+      
+      // Column 1: Distribution
+      drawCard(pdf, col1X, y, colWidth, boxHeight, [250, 250, 255], [210, 213, 220]);
+      pdf.setFontSize(11);
+      pdf.setFont('helvetica', 'bold');
+      pdf.text('Distribution', col1X + 12, y + 18);
+      pdf.setFontSize(9.5);
+      pdf.setFont('helvetica', 'normal');
+      let colY = y + 38;
+      const itemSpacing = 16; // Better spacing between items
+      pdf.text(`Average: ${stats_calc.average.toFixed(2)}`, col1X + 12, colY);
+      colY += itemSpacing;
+      pdf.text(`Median: ${stats_calc.median.toFixed(2)}`, col1X + 12, colY);
+      colY += itemSpacing;
+      pdf.text(`Minimum: ${stats_calc.min}`, col1X + 12, colY);
+      colY += itemSpacing;
+      pdf.text(`Maximum: ${stats_calc.max}`, col1X + 12, colY);
+      
+      // Column 2: Peak Activity
+      drawCard(pdf, col2X, y, colWidth, boxHeight, [250, 250, 255], [210, 213, 220]);
+      pdf.setFontSize(11);
+      pdf.setFont('helvetica', 'bold');
+      pdf.text('Peak Activity', col2X + 12, y + 18);
+      pdf.setFontSize(9.5);
+      pdf.setFont('helvetica', 'normal');
+      colY = y + 38;
+      if (periods.busiest) {
+        pdf.text(`Busiest Day: ${periods.busiest.label}`, col2X + 12, colY);
+        colY += itemSpacing;
+        pdf.text(`Peak Visitors: ${periods.busiest.value}`, col2X + 12, colY);
+        colY += itemSpacing + 4;
+      }
+      if (periods.quietest) {
+        pdf.text(`Quietest Day: ${periods.quietest.label}`, col2X + 12, colY);
+        colY += itemSpacing;
+        pdf.text(`Low Visitors: ${periods.quietest.value}`, col2X + 12, colY);
+      }
+      
+      // Column 3: Statistical Metrics
+      drawCard(pdf, col3X, y, colWidth, boxHeight, [250, 250, 255], [210, 213, 220]);
+      pdf.setFontSize(11);
+      pdf.setFont('helvetica', 'bold');
+      pdf.text('Statistical Metrics', col3X + 12, y + 18);
+      pdf.setFontSize(9.5);
+      pdf.setFont('helvetica', 'normal');
+      colY = y + 38;
+      pdf.text(`Std. Deviation: ${standardDev}`, col3X + 12, colY);
+      colY += itemSpacing;
+      pdf.text(`Data Points: ${stats_calc.count}`, col3X + 12, colY);
+      colY += itemSpacing + 4;
+      // Check if trend is negative (Decreasing or contains negative percentage)
+      const trendMatch1 = trend.match(/\(([-+]?\d+\.?\d*)%\)/);
+      const trendValue1 = trendMatch1 ? parseFloat(trendMatch1[1]) : 0;
+      const isTrendNegative1 = trend.includes('Decreasing') || trendValue1 < 0;
+      if (isTrendNegative1) {
+        pdf.setTextColor(239, 68, 68); // Red for negative
+      } else {
+        pdf.setTextColor(34, 197, 94); // Green for positive
+      }
+      pdf.setFont('helvetica', 'bold');
+      pdf.text(`Trend: ${trend}`, col3X + 12, colY);
+      pdf.setFont('helvetica', 'normal');
+      pdf.setTextColor(0, 0, 0);
+      
+      y += boxHeight + sectionSpacing;
+      
+      // === CHARTS - Two side by side ===
+      const chartWidth = (pageWidth - (margin * 2) - cardSpacing) / 2;
+      const chartHeight = 160;
+      
+      // Calculate data for chart titles
+      // Total visitors for weekly chart
+      const weeklyTotalVisitors = weeklyData.reduce((sum, d) => sum + (d.visitors || 0), 0);
+      
+      // Find peak hour window for time period chart
+      const peakHourIdx = trafficData.reduce((maxIdx, curr, idx) => 
+        (curr.visitors || 0) > (trafficData[maxIdx].visitors || 0) ? idx : maxIdx, 0
+      );
+      const peakHourWindow = `${peakHourIdx.toString().padStart(2, "0")}:00 - ${(peakHourIdx + 1).toString().padStart(2, "0")}:00`;
+      
+      // Chart 1: Weekly Foot Traffic (Bar Chart)
+      drawCard(pdf, margin, y, chartWidth, chartHeight, [255, 255, 255], [210, 213, 220]);
+      const weeklyTitle = `Current Weekly Foot Traffic (Visitor distribution by day of week): ${weeklyTotalVisitors} total visitors`;
+      drawBarChart(pdf, margin, y, chartWidth, chartHeight, weeklyData, 'day', 'visitors', weeklyTitle);
+      
+      // Chart 2: Traffic by Time Period (Line Chart)
+      drawCard(pdf, margin + chartWidth + cardSpacing, y, chartWidth, chartHeight, [255, 255, 255], [210, 213, 220]);
+      // Use trafficData for hourly line chart (sample every 4 hours to reduce clutter)
+      const hourlyDataSample = trafficData.filter((_, idx) => idx % 2 === 0 || idx === trafficData.length - 1);
+      const timeTitle = `Current Traffic by Time Period (Visitor count across different hours): ${peakHourWindow}`;
+      drawLineChart(pdf, margin + chartWidth + cardSpacing, y, chartWidth, chartHeight, hourlyDataSample, 'hour', 'visitors', timeTitle);
+      
+      y += chartHeight + sectionSpacing;
+      
+      // === DETAILED ANALYSIS - 3 Columns ===
+      pdf.setFontSize(12);
+      pdf.setFont('helvetica', 'bold');
+      pdf.text('Detailed Analysis', margin, y);
+      y += 18;
+      
+      const detailBoxHeight = 110;
+      
+      // Column 1: Statistical Breakdown
+      drawCard(pdf, col1X, y, colWidth, detailBoxHeight, [250, 250, 255], [210, 213, 220]);
+      pdf.setFontSize(10.5);
+      pdf.setFont('helvetica', 'bold');
+      pdf.text('Statistical Breakdown', col1X + 12, y + 18);
+      pdf.setFontSize(9.5);
+      pdf.setFont('helvetica', 'normal');
+      colY = y + 36;
+      pdf.text(`Total Visitor Count: ${stats_calc.sum}`, col1X + 12, colY);
+      colY += itemSpacing;
+      pdf.text(`Number of Data Points: ${stats_calc.count}`, col1X + 12, colY);
+      colY += itemSpacing;
+      pdf.text(`Standard Deviation: ${standardDev}`, col1X + 12, colY);
+      
+      // Column 2: Time Analysis
+      drawCard(pdf, col2X, y, colWidth, detailBoxHeight, [250, 250, 255], [210, 213, 220]);
+      pdf.setFontSize(10.5);
+      pdf.setFont('helvetica', 'bold');
+      pdf.text('Time Analysis', col2X + 12, y + 18);
+      pdf.setFontSize(9.5);
+      pdf.setFont('helvetica', 'normal');
+      colY = y + 36;
+      if (periods.busiest) {
+        pdf.text(`Peak Traffic Time: ${periods.busiest.label}`, col2X + 12, colY);
+        colY += itemSpacing;
+        pdf.text(`  - Visitor Count: ${periods.busiest.value}`, col2X + 15, colY);
+        colY += itemSpacing;
+      }
+      if (periods.quietest) {
+        pdf.text(`Lowest Traffic Time: ${periods.quietest.label}`, col2X + 12, colY);
+        colY += itemSpacing;
+        pdf.text(`  - Visitor Count: ${periods.quietest.value}`, col2X + 15, colY);
+        colY += itemSpacing;
+      }
+      // Check if trend is negative (Decreasing or contains negative percentage)
+      const trendMatch2 = trend.match(/\(([-+]?\d+\.?\d*)%\)/);
+      const trendValue2 = trendMatch2 ? parseFloat(trendMatch2[1]) : 0;
+      const isTrendNegative2 = trend.includes('Decreasing') || trendValue2 < 0;
+      if (isTrendNegative2) {
+        pdf.setTextColor(239, 68, 68); // Red for negative
+      } else {
+        pdf.setTextColor(34, 197, 94); // Green for positive
+      }
+      pdf.setFont('helvetica', 'bold');
+      pdf.text(`Overall Trend: ${trend}`, col2X + 12, colY);
+      pdf.setFont('helvetica', 'normal');
+      pdf.setTextColor(0, 0, 0);
+      
+      // Column 3: Period Comparison (only if comparison mode)
+      if (comparisonMode) {
+        drawCard(pdf, col3X, y, colWidth, detailBoxHeight, [250, 250, 255], [210, 213, 220]);
+        pdf.setFontSize(10.5);
+        pdf.setFont('helvetica', 'bold');
+        pdf.text('Period Comparison', col3X + 12, y + 18);
+        pdf.setFontSize(9.5);
+        pdf.setFont('helvetica', 'normal');
+        colY = y + 36;
+        pdf.text(`Current Period Total: ${stats.totalVisitors} visitors`, col3X + 12, colY);
+        colY += itemSpacing;
+        pdf.text(`Previous Period Total: ${comparisonStats.totalVisitors} visitors`, col3X + 12, colY);
+        colY += itemSpacing;
+        const isNegativeChange = visitorChange < 0;
+        if (isNegativeChange) {
+          pdf.setTextColor(239, 68, 68); // Red for negative
+        } else {
+          pdf.setTextColor(34, 197, 94); // Green for positive
+        }
+        pdf.setFont('helvetica', 'bold');
+        pdf.text(`Change: ${visitorChange > 0 ? '+' : ''}${visitorChange} (${growthRate === 'N/A' ? 'N/A' : growthRate + '%'})`, col3X + 12, colY);
+        pdf.setFont('helvetica', 'normal');
+        pdf.setTextColor(0, 0, 0);
+      }
+      
+      y += detailBoxHeight + 15;
+      
+      // === FOOTER ===
+      pdf.setFontSize(8);
+      pdf.setFont('helvetica', 'italic');
+      pdf.setTextColor(128, 128, 128);
+      pdf.text('Report includes comprehensive foot traffic analysis with trend indicators and comparative metrics.', margin, y, { maxWidth: pageWidth - (margin * 2) });
+      y += lineHeight;
+      pdf.text(`Generated on ${exportDate}`, margin, y);
+      
+      pdf.save(`foot_traffic_${activeChart}_${new Date().toISOString().split('T')[0]}.pdf`);
+      toast.success('PDF exported successfully!');
     } catch (err) {
       toast.error('Failed to export PDF');
       console.error(err);
@@ -477,6 +1256,48 @@ const Dashboard = () => {
             <span className="text-xs text-muted-foreground mt-1 tracking-wide">Generated Heatmaps</span>
         </Card>
       </div>
+        {/* Comparison Stats Banner */}
+        {comparisonMode && (
+          <Card className="bg-gradient-to-br from-slate-800/80 to-slate-900/90 dark:from-slate-800/80 dark:to-slate-900/90 border border-slate-600 mb-4 p-4">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <div className="text-center">
+                {(() => {
+                  const visitorChange = stats.totalVisitors - comparisonStats.totalVisitors;
+                  const isNegative = visitorChange < 0;
+                  return (
+                    <div className={`text-2xl font-bold ${isNegative ? 'text-red-400' : 'text-cyan-400'}`}>
+                      {(visitorChange > 0 ? '+' : '')}
+                      {visitorChange}
+                </div>
+                  );
+                })()}
+                <div className="text-xs text-muted-foreground">Visitor Change</div>
+              </div>
+              <div className="text-center">
+                {(() => {
+                  const growthRate = comparisonStats.totalVisitors > 0 
+                    ? ((stats.totalVisitors - comparisonStats.totalVisitors) / comparisonStats.totalVisitors * 100)
+                    : null;
+                  const isNegative = growthRate !== null && growthRate < 0;
+                  return (
+                    <div className={`text-2xl font-bold ${isNegative ? 'text-red-400' : 'text-yellow-400'}`}>
+                      {growthRate !== null ? `${growthRate.toFixed(1)}%` : 'N/A'}
+                </div>
+                  );
+                })()}
+                <div className="text-xs text-muted-foreground">Growth Rate</div>
+              </div>
+              <div className="text-center">
+                <div className="text-lg font-bold text-slate-400">{comparisonStats.peakHour}</div>
+                <div className="text-xs text-muted-foreground">Previous Peak Hour</div>
+              </div>
+              <div className="text-center">
+                <div className="text-lg font-bold text-slate-400">{comparisonStats.totalVisitors}</div>
+                <div className="text-xs text-muted-foreground">Previous Total Visitors</div>
+              </div>
+            </div>
+          </Card>
+        )}
         {/* Section Divider */}
         <div className="w-full h-px bg-border bg-gradient-to-r from-primary/20 via-muted/10 to-cyan-400/20 mb-7" />
       {/* Main Grid */}
@@ -485,7 +1306,17 @@ const Dashboard = () => {
           <Card id="foot-traffic-chart-card" className="col-span-2 bg-gradient-to-br from-background/80 to-muted/90 dark:from-slate-900/80 dark:to-slate-950/90 border border-border shadow-2xl shadow-primary/10 backdrop-blur-xl rounded-xl">
             <CardHeader className="pb-2">
               <div className="flex items-center justify-between mb-2">
-                <CardTitle className="text-lg font-bold text-foreground tracking-tight drop-shadow">Foot Traffic Analytics</CardTitle>
+                <div className="flex items-center gap-3">
+                  <CardTitle className="text-lg font-bold text-foreground tracking-tight drop-shadow">Foot Traffic Analytics</CardTitle>
+                  <Button
+                    variant={comparisonMode ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => setComparisonMode(!comparisonMode)}
+                    className="text-xs"
+                  >
+                    {comparisonMode ? "✓ Compare" : "Compare"}
+                  </Button>
+                </div>
                 <Popover open={exportOpen} onOpenChange={setExportOpen}>
                   <PopoverTrigger asChild>
                     <Button
@@ -558,10 +1389,18 @@ const Dashboard = () => {
                       color: turboColors[turboColors.length - 1],
                       label: "Visitors",
                     },
+                    current: {
+                      color: "#ff7a36",
+                      label: "Current",
+                    },
+                    comparison: {
+                      color: "#94a3b8",
+                      label: "Previous Period",
+                    },
                   }}
                 >
                   {activeChart === "daily" && (
-                    <ReLineChart data={dailyLineData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                    <ReLineChart data={mergedData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                       <defs>
                         <linearGradient id="turbo-gradient-daily" x1="0" y1="0" x2="1" y2="0">
                           {dailyLineData.map((d, i) => (
@@ -579,7 +1418,7 @@ const Dashboard = () => {
                       <ChartTooltip content={<ChartTooltipContent />} />
                 <Line 
                   type="monotone" 
-                  dataKey="visitors" 
+                  dataKey={comparisonMode ? "current" : "visitors"} 
                         stroke="url(#turbo-gradient-daily)"
                         strokeWidth={2.5}
                   dot={false}
@@ -589,11 +1428,23 @@ const Dashboard = () => {
                         isAnimationActive={true}
                         connectNulls
                       />
+                      {comparisonMode && (
+                        <Line 
+                          type="monotone" 
+                          dataKey="comparison" 
+                          stroke="#94a3b8"
+                          strokeWidth={2}
+                          strokeDasharray="5 5"
+                          dot={false}
+                          activeDot={{ r: 6, fill: "#94a3b8", stroke: "#fff", strokeWidth: 2 }}
+                          name="Previous Period"
+                        />
+                      )}
                       <ChartLegend content={<ChartLegendContent />} />
                     </ReLineChart>
                   )}
                   {activeChart === "weekly" && (
-                    <ReLineChart data={weeklyLineData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                    <ReLineChart data={mergedData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                       <defs>
                         <linearGradient id="turbo-gradient-weekly" x1="0" y1="0" x2="1" y2="0">
                           {weeklyLineData.map((d, i) => (
@@ -611,7 +1462,7 @@ const Dashboard = () => {
                       <ChartTooltip content={<ChartTooltipContent />} />
                       <Line
                         type="monotone" 
-                        dataKey="visitors" 
+                        dataKey={comparisonMode ? "current" : "visitors"} 
                         stroke="url(#turbo-gradient-weekly)"
                         strokeWidth={2.5}
                         dot={false}
@@ -621,22 +1472,64 @@ const Dashboard = () => {
                         isAnimationActive={true}
                         connectNulls
                       />
+                      {comparisonMode && (
+                        <Line 
+                          type="monotone" 
+                          dataKey="comparison" 
+                          stroke="#94a3b8"
+                          strokeWidth={2}
+                          strokeDasharray="5 5"
+                          dot={false}
+                          activeDot={{ r: 6, fill: "#94a3b8", stroke: "#fff", strokeWidth: 2 }}
+                          name="Previous Period"
+                        />
+                      )}
                       <ChartLegend content={<ChartLegendContent />} />
                     </ReLineChart>
                   )}
                   {activeChart === "monthly" && (
-                    <ReBarChart data={monthlyBarData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                    <ReLineChart data={mergedData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                      <defs>
+                        <linearGradient id="turbo-gradient-monthly" x1="0" y1="0" x2="1" y2="0">
+                          {monthlyLineData.map((d, i) => (
+                            <stop
+                              key={i}
+                              offset={`${(i / (monthlyLineData.length - 1)) * 100}%`}
+                              stopColor={d.dotColor}
+                            />
+                          ))}
+                        </linearGradient>
+                      </defs>
                       <CartesianGrid strokeDasharray="3 3" stroke="#334155" vertical={false} />
                       <XAxis dataKey="month" stroke="#ff6f00" tick={{ fontSize: 12, fill: '#ff6f00' }} />
                       <YAxis stroke="#ff6f00" tick={{ fontSize: 12, fill: '#ff6f00' }} label={{ value: 'Visitors', angle: -90, position: 'insideLeft', fill: '#ff6f00', fontSize: 14, dy: -10 }} />
                       <ChartTooltip content={<ChartTooltipContent />} />
-                      <Bar dataKey="visitors" radius={[6, 6, 0, 0]}>
-                        {monthlyBarData.map((entry, idx) => (
-                          <Cell key={idx} fill={entry.fill} />
-                        ))}
-                      </Bar>
+                      <Line
+                        type="monotone" 
+                        dataKey={comparisonMode ? "current" : "visitors"} 
+                        stroke="url(#turbo-gradient-monthly)"
+                        strokeWidth={2.5}
+                        dot={false}
+                        activeDot={({ cx, cy, payload, index }) => (
+                          <circle key={"dot-active-" + index} cx={cx} cy={cy} r={7} fill={payload.dotColor} stroke="#fff" strokeWidth={2} />
+                        )}
+                        isAnimationActive={true}
+                        connectNulls
+                      />
+                      {comparisonMode && (
+                        <Line 
+                          type="monotone" 
+                          dataKey="comparison" 
+                          stroke="#94a3b8"
+                          strokeWidth={2}
+                          strokeDasharray="5 5"
+                          dot={false}
+                          activeDot={{ r: 6, fill: "#94a3b8", stroke: "#fff", strokeWidth: 2 }}
+                          name="Previous Period"
+                        />
+                      )}
                       <ChartLegend content={<ChartLegendContent />} />
-                </ReBarChart>
+                    </ReLineChart>
                   )}
                 </ChartContainer>
                 )}

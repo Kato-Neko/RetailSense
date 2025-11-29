@@ -85,7 +85,17 @@ def direct_heatmap_image(job_id):
 def direct_heatmap_detections(job_id):
     """Direct access to detections without /api prefix"""
     from .api.heatmap import get_detections_logic
-    return get_detections_logic(job_id)
+    from flask_jwt_extended import get_jwt_identity
+    current_user = get_jwt_identity()
+    return get_detections_logic(job_id, current_user)
+
+@app.route('/heatmap_jobs/<job_id>/regenerate_detections', methods=['POST', 'OPTIONS'])
+@cross_origin()
+@jwt_required()
+def direct_regenerate_detections(job_id):
+    """Direct access to regenerate detections without /api prefix"""
+    from .api.heatmap import regenerate_detections
+    return regenerate_detections(job_id)
 
 @app.route('/heatmap_jobs/<job_id>/analysis', methods=['GET', 'OPTIONS'])
 @cross_origin()
@@ -194,7 +204,7 @@ def cleanup_orphaned_jobs():
 
 if __name__ == '__main__':
     # init_db()  # No longer needed, handled by Supabase
-    cleanup_orphaned_jobs()  # Clean up jobs on startup
+    # cleanup_orphaned_jobs()  # Clean up jobs on startup - DISABLED due to database connection issues
     debug_mode = os.getenv('FLASK_DEBUG', 'False').lower() == 'true'
     port = int(os.getenv('PORT', 5000))
     app.run(host='0.0.0.0', port=port, debug=debug_mode)
