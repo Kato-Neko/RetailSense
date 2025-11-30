@@ -149,7 +149,6 @@ def process_video_job(job_id: str):
         logger.info(f"DEBUG: Output video with bounding boxes: {output_video_path}")
         
         # Create a placeholder heatmap (just the floorplan) for now
-        import cv2
         floorplan_img = cv2.imread(floorplan_path)
         if floorplan_img is None:
             logger.warning(f"Could not load floorplan for placeholder heatmap")
@@ -317,7 +316,6 @@ def run_custom_heatmap_job(job_id: str, start_time: float, end_time: float, set_
 
     # Download floorplan from Supabase to local temp file
     from ..core.storage import download_image_from_supabase
-    import cv2
     floorplan_filename = job_row[3]
     floorplan_supabase_path = f"{job_id}/{floorplan_filename}"
     
