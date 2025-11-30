@@ -178,6 +178,30 @@ def process_video_job(job_id: str):
         #     return_image=True
         # )
 
+        # Upload output video with bounding boxes to Supabase
+        supabase_video_path = None
+        try:
+            from ..core.storage import upload_to_supabase_and_remove_local
+            if os.path.exists(output_video_path):
+                # Extract just the filename from the full path
+                video_filename = os.path.basename(output_video_path)
+                supabase_video_path = f"{job_id}/{video_filename}"
+                logger.info(f"Uploading output video to Supabase: {output_video_path} -> {supabase_video_path}")
+                upload_to_supabase_and_remove_local(
+                    output_video_path,
+                    supabase_video_path,
+                    content_type="video/mp4"
+                )
+                logger.info(f"Successfully uploaded output video to Supabase for job {job_id}")
+                # Update output_video_path to Supabase path for database storage
+                output_video_path = supabase_video_path
+            else:
+                logger.warning(f"Output video not found at {output_video_path}")
+        except Exception as e:
+            logger.error(f"Failed uploading output video for job {job_id}: {e}")
+            # Don't fail the job if video upload fails, but log the error
+            # Keep original local path if upload fails
+
         # TEMPORARILY DISABLED: Progressive heatmap video (focus on bounding boxes first)
         logger.info(f"DEBUG: Bounding box mode - skipping progressive heatmap video")
         
