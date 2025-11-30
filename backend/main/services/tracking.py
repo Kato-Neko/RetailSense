@@ -201,6 +201,12 @@ def detect_and_track(
                 track_id = track.track_id
                 ltrb = track.to_ltrb()
                 x1, y1, x2, y2 = map(int, ltrb)
+                
+                # Ensure valid bounding box (x1 < x2, y1 < y2)
+                if x1 > x2:
+                    x1, x2 = x2, x1
+                if y1 > y2:
+                    y1, y2 = y2, y1
 
                 # Scale coordinates back to original size for heatmap
                 if scale_factor != 1.0:
@@ -210,6 +216,18 @@ def detect_and_track(
                     y2_orig = int(y2 / scale_factor)
                 else:
                     x1_orig, y1_orig, x2_orig, y2_orig = x1, y1, x2, y2
+                
+                # Clamp to original video dimensions
+                x1_orig = max(0, min(x1_orig, original_width - 1))
+                y1_orig = max(0, min(y1_orig, original_height - 1))
+                x2_orig = max(0, min(x2_orig, original_width - 1))
+                y2_orig = max(0, min(y2_orig, original_height - 1))
+                
+                # Ensure minimum size
+                if x2_orig <= x1_orig:
+                    x2_orig = x1_orig + 1
+                if y2_orig <= y1_orig:
+                    y2_orig = y1_orig + 1
 
                 detections_for_heatmap.append({
                     'frame': frame_count,

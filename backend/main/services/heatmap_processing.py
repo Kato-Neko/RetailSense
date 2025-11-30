@@ -5,6 +5,74 @@ from scipy.ndimage import gaussian_filter
 from ..core.config import logger
 
 
+def validate_and_normalize_bbox(bbox, video_width, video_height):
+    """
+    Validate and normalize bounding box coordinates.
+    Ensures proper xyxy format (x1 < x2, y1 < y2) and clamps to video bounds.
+    
+    Args:
+        bbox: [x1, y1, x2, y2] bounding box coordinates
+        video_width: Width of video frame
+        video_height: Height of video frame
+    
+    Returns:
+        Validated and normalized [x1, y1, x2, y2] bounding box
+    """
+    if len(bbox) < 4:
+        raise ValueError(f"Invalid bbox format: {bbox}. Expected [x1, y1, x2, y2]")
+    
+    x1, y1, x2, y2 = float(bbox[0]), float(bbox[1]), float(bbox[2]), float(bbox[3])
+    
+    # Ensure x1 < x2 and y1 < y2 (swap if needed)
+    if x1 > x2:
+        x1, x2 = x2, x1
+    if y1 > y2:
+        y1, y2 = y2, y1
+    
+    # Clamp to video bounds
+    x1 = max(0, min(x1, video_width - 1))
+    y1 = max(0, min(y1, video_height - 1))
+    x2 = max(0, min(x2, video_width - 1))
+    y2 = max(0, min(y2, video_height - 1))
+    
+    # Ensure minimum size
+    if x2 - x1 < 1:
+        x2 = x1 + 1
+    if y2 - y1 < 1:
+        y2 = y1 + 1
+    
+    return [int(x1), int(y1), int(x2), int(y2)]
+
+
+def get_floor_position_from_bbox(bbox, video_width, video_height, use_bottom_center=True):
+    """
+    Extract floor position from bounding box.
+    For heatmaps, using bottom center (feet position) is more accurate than center.
+    
+    Args:
+        bbox: [x1, y1, x2, y2] bounding box coordinates
+        video_width: Width of video frame
+        video_height: Height of video frame
+        use_bottom_center: If True, use bottom center (feet), else use center
+    
+    Returns:
+        (x, y) tuple of floor position in video coordinates
+    """
+    bbox = validate_and_normalize_bbox(bbox, video_width, video_height)
+    x1, y1, x2, y2 = bbox
+    
+    if use_bottom_center:
+        # Use bottom center (feet position) for more accurate floor mapping
+        center_x = (x1 + x2) / 2
+        center_y = y2  # Bottom of bounding box (feet position)
+    else:
+        # Use center of bounding box
+        center_x = (x1 + x2) / 2
+        center_y = (y1 + y2) / 2
+    
+    return center_x, center_y
+
+
 def interpolate_path_between_points(pt1, pt2, num_points=None):
     """
     Interpolate points between two detection points to create a continuous path.
@@ -21,7 +89,7 @@ def interpolate_path_between_points(pt1, pt2, num_points=None):
     x2, y2 = pt2
     
     # Calculate distance between points
-    distance = np.sqrt((x2 - x1)**2 + (y2 - y1)**2) 
+    distance = np.sqrt((x2 - x1)**2 + (y2 - y1)**2)
     
     # Auto-calculate number of points based on distance (1 point per 5 pixels)
     if num_points is None:
@@ -138,10 +206,21 @@ def create_custom_heatmap(detections, floorplan_path, dimensions=(1920, 1080), p
         
         for det in track_detections:
             bbox = det['bbox']
-            center_x = (bbox[0] + bbox[2]) / 2
-            center_y = (bbox[1] + bbox[3]) / 2
+            
+            # Validate and get floor position (bottom center for feet position)
+            try:
+                center_x, center_y = get_floor_position_from_bbox(
+                    bbox, video_width, video_height, use_bottom_center=True
+                )
+            except ValueError as e:
+                logger.warning(f"Invalid bbox in custom heatmap: {bbox}, error: {e}")
+                continue
             
             # Map coordinates to floorplan space
+            # Ensure coordinates are within bounds
+            center_x = max(0, min(center_x, video_width - 1))
+            center_y = max(0, min(center_y, video_height - 1))
+            
             mx = int(center_x * floorplan_width / video_width)
             my = int(center_y * floorplan_height / video_height)
             mx = max(0, min(mx, floorplan_width - 1))
@@ -247,12 +326,18 @@ def blend_heatmap(detections, floorplan_path, output_heatmap_path, output_video_
     
     floorplan_height, floorplan_width = floorplan.shape[:2]
     
-    # Debug: Check if coordinates are way outside video bounds
+    # Debug: Log coordinate mapping info
+    logger.info(f"DEBUG: Video dimensions: {video_width}x{video_height}")
+    logger.info(f"DEBUG: Floorplan dimensions: {floorplan_width}x{floorplan_height}")
     if detections:
-        center_x = (detections[0]['bbox'][0] + detections[0]['bbox'][2]) / 2
-        center_y = (detections[0]['bbox'][1] + detections[0]['bbox'][3]) / 2
-        if center_x > video_width * 2 or center_y > video_height * 2:
-            print(f"DEBUG: WARNING - Detection coordinates are much larger than video dimensions!")
+        first_bbox = detections[0]['bbox']
+        try:
+            center_x, center_y = get_floor_position_from_bbox(
+                first_bbox, video_width, video_height, use_bottom_center=True
+            )
+            logger.info(f"DEBUG: First detection bbox: {first_bbox}, floor position: ({center_x:.1f}, {center_y:.1f})")
+        except Exception as e:
+            logger.warning(f"DEBUG: Error processing first detection: {e}")
     
     # --- Direct coordinate mapping ---
     # Use static points directly without homography transformation
@@ -289,35 +374,35 @@ def blend_heatmap(detections, floorplan_path, output_heatmap_path, output_video_
     circle_radius = 20  # Increased from 15 for better overlap
     line_thickness = 3  # Thickness for connecting lines
     
+    processed_count = 0  # Track total processed detections for progress
+    
     for track_id, track_detections in detections_by_track.items():
         prev_mapped_point = None
         
         for i, detection in enumerate(track_detections):
             bbox = detection['bbox']
-            # Get bounding box center in video coordinates
-            center_x = (bbox[0] + bbox[2]) / 2
-            center_y = (bbox[1] + bbox[3]) / 2
             
-            # Use direct coordinate mapping (no homography)
-            # Check if coordinates are way outside video bounds (coordinate system mismatch)
-            if center_x > video_width * 1.5 or center_y > video_height * 1.5:
-                # Try to normalize coordinates if they're in a different coordinate space
-                if center_x > video_width * 2:
-                    center_x = center_x % video_width
-                    center_y = center_y % video_height
+            # Validate and get floor position (bottom center for feet position)
+            try:
+                center_x, center_y = get_floor_position_from_bbox(
+                    bbox, video_width, video_height, use_bottom_center=True
+                )
+            except ValueError as e:
+                logger.warning(f"Invalid bbox for detection {i}: {bbox}, error: {e}")
+                continue
             
-            # Alternative approach: if coordinates are still way out of bounds, use a different mapping
-            if center_x > video_width * 3 or center_y > video_height * 3:
-                # Use a simple center-based approach
-                mx = floorplan_width // 2 + int((center_x - video_width) * 0.1)
-                my = floorplan_height // 2 + int((center_y - video_height) * 0.1)
-                mx = max(0, min(mx, floorplan_width - 1))
-                my = max(0, min(my, floorplan_height - 1))
-            else:
-                mx = int(center_x * floorplan_width / video_width)
-                my = int(center_y * floorplan_height / video_height)
-                mx = max(0, min(mx, floorplan_width - 1))
-                my = max(0, min(my, floorplan_height - 1))
+            # Map video coordinates to floorplan coordinates
+            # Ensure coordinates are within bounds
+            center_x = max(0, min(center_x, video_width - 1))
+            center_y = max(0, min(center_y, video_height - 1))
+            
+            # Direct coordinate mapping (proportional scaling)
+            mx = int(center_x * floorplan_width / video_width)
+            my = int(center_y * floorplan_height / video_height)
+            
+            # Clamp to floorplan bounds
+            mx = max(0, min(mx, floorplan_width - 1))
+            my = max(0, min(my, floorplan_height - 1))
             
             current_mapped_point = (mx, my)
             
@@ -345,6 +430,12 @@ def blend_heatmap(detections, floorplan_path, output_heatmap_path, output_video_
                     cv2.line(heatmap, prev_mapped_point, current_mapped_point, 1.0, line_thickness)
             
             prev_mapped_point = current_mapped_point
+            
+            # Update progress
+            processed_count += 1
+            if progress_callback and total_detections > 0:
+                progress = 0.5 * processed_count / total_detections
+                progress_callback(progress)
         
         # COMMENTED OUT: Homography transformation code (kept for future use)
         # pt = np.array([[center_x, center_y]], dtype=np.float32)
@@ -356,10 +447,6 @@ def blend_heatmap(detections, floorplan_path, output_heatmap_path, output_video_
         #     print(f"DEBUG: Detection {i}: video=({center_x:.1f}, {center_y:.1f}) -> floorplan=({mx}, {my})")
         # else:
         #     print(f"DEBUG: Detection {i}: video=({center_x:.1f}, {center_y:.1f}) -> floorplan=({mx}, {my}) [OUT OF BOUNDS]")
-        
-        if progress_callback and total_detections > 0:
-            progress = 0.5 * (i + 1) / total_detections
-            progress_callback(progress)
     
     print(f"DEBUG: Heatmap max value before processing: {heatmap.max()}")
     print(f"DEBUG: Heatmap non-zero pixels: {np.count_nonzero(heatmap)}")
