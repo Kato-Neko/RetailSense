@@ -72,12 +72,16 @@ def detect_and_track(
         scale_factor = max_width / original_width
         width = max_width
         height = int(original_height * scale_factor)
+        # Ensure height is even (some codecs require this)
+        if height % 2 != 0:
+            height += 1
     else:
         width = original_width
         height = original_height
         scale_factor = 1.0
 
-    logger.info(f"Processing video: {original_width}x{original_height} -> {width}x{height} (scale: {scale_factor:.2f})")
+    logger.info(f"Processing video: {original_width}x{original_height} -> {width}x{height} (scale: {scale_factor:.4f})")
+    logger.info(f"Coordinate scaling: multiply by {1.0/scale_factor:.4f} to get original coordinates")
     logger.info(f"Output video will be at ORIGINAL resolution: {original_width}x{original_height} for better bounding box visibility")
 
     fourcc = cv2.VideoWriter_fourcc(*'mp4v')
@@ -154,8 +158,9 @@ def detect_and_track(
             start_time = time.time()
             
             try:
-                # YOLO inference - optimized for speed
-                results = model(frame, 
+                # YOLO inference - run on RESIZED frame for consistency
+                # YOLO will automatically resize internally, but we use resized frame for coordinate consistency
+                results = model(frame_resized, 
                               classes=[0], 
                               verbose=False,
                               imgsz=320,  # Smaller input size for faster inference
@@ -173,7 +178,7 @@ def detect_and_track(
             if processed_frames <= 3:
                 logger.info(f"YOLO inference took {yolo_time:.2f} seconds for frame {frame_count + 1}")
 
-            # Process detections
+            # Process detections - these are in RESIZED frame coordinates
             detections = []
             total_detections = 0
             for r in results:
@@ -183,7 +188,14 @@ def detect_and_track(
                     conf = float(box.conf[0])
                     total_detections += 1
                     if conf > 0.3:
-                        detections.append(([x1, y1, x2, y2], conf, 0))
+                        # Clamp to resized frame bounds
+                        x1 = max(0, min(x1, width - 1))
+                        y1 = max(0, min(y1, height - 1))
+                        x2 = max(0, min(x2, width - 1))
+                        y2 = max(0, min(y2, height - 1))
+                        # Ensure valid box
+                        if x2 > x1 and y2 > y1:
+                            detections.append(([x1, y1, x2, y2], conf, 0))
 
             # Debug logging for first few processed frames
             if processed_frames <= 3:
@@ -193,9 +205,9 @@ def detect_and_track(
                 else:
                     logger.warning(f"No detections above threshold (0.3) in frame {processed_frames}")
 
-            # Update tracks
+            # Update tracks - use resized frame for consistency
             try:
-                tracks = tracker.update_tracks(detections, frame=frame)
+                tracks = tracker.update_tracks(detections, frame=frame_resized)
             except Exception as e:
                 logger.error(f"Error updating tracks for frame {frame_count}: {e}")
                 tracks = []
@@ -209,32 +221,66 @@ def detect_and_track(
                 ltrb = track.to_ltrb()
                 x1, y1, x2, y2 = map(int, ltrb)
                 
-                # Ensure valid bounding box (x1 < x2, y1 < y2)
+                # Ensure valid bounding box (x1 < x2, y1 < y2) in resized coordinates
                 if x1 > x2:
                     x1, x2 = x2, x1
                 if y1 > y2:
                     y1, y2 = y2, y1
+                
+                # Clamp to resized frame bounds first
+                x1 = max(0, min(x1, width - 1))
+                y1 = max(0, min(y1, height - 1))
+                x2 = max(0, min(x2, width - 1))
+                y2 = max(0, min(y2, height - 1))
+                
+                # Ensure minimum size in resized space
+                if x2 <= x1:
+                    x2 = x1 + 1
+                if y2 <= y1:
+                    y2 = y1 + 1
 
-                # Scale coordinates back to original size for heatmap
+                # Scale coordinates back to original size for drawing on original frame
+                # Use separate scale factors for X and Y to handle aspect ratio correctly
                 if scale_factor != 1.0:
-                    x1_orig = int(x1 / scale_factor)
-                    y1_orig = int(y1 / scale_factor)
-                    x2_orig = int(x2 / scale_factor)
-                    y2_orig = int(y2 / scale_factor)
+                    # Calculate scale factors for both dimensions
+                    # This handles cases where width and height scale differently
+                    scale_x = original_width / width
+                    scale_y = original_height / height
+                    
+                    # Scale coordinates using the correct scale factors
+                    x1_orig = int(round(x1 * scale_x))
+                    y1_orig = int(round(y1 * scale_y))
+                    x2_orig = int(round(x2 * scale_x))
+                    y2_orig = int(round(y2 * scale_y))
+                    
+                    # Debug logging for first few detections
+                    if processed_frames <= 3 and len(detections_for_heatmap) <= 3:
+                        logger.info(f"Scaling: resized ({x1}, {y1}, {x2}, {y2}) -> "
+                                  f"original ({x1_orig}, {y1_orig}, {x2_orig}, {y2_orig}) "
+                                  f"using scale_x={scale_x:.3f}, scale_y={scale_y:.3f}")
                 else:
                     x1_orig, y1_orig, x2_orig, y2_orig = x1, y1, x2, y2
                 
-                # Clamp to original video dimensions
+                # Clamp to original video dimensions (critical for preventing out-of-frame boxes)
                 x1_orig = max(0, min(x1_orig, original_width - 1))
                 y1_orig = max(0, min(y1_orig, original_height - 1))
                 x2_orig = max(0, min(x2_orig, original_width - 1))
                 y2_orig = max(0, min(y2_orig, original_height - 1))
                 
-                # Ensure minimum size
+                # Ensure minimum size and valid box in original space
                 if x2_orig <= x1_orig:
-                    x2_orig = x1_orig + 1
+                    x2_orig = min(x1_orig + 1, original_width - 1)
                 if y2_orig <= y1_orig:
-                    y2_orig = y1_orig + 1
+                    y2_orig = min(y1_orig + 1, original_height - 1)
+                
+                # Final validation - ensure box is within frame bounds
+                if (x1_orig >= original_width or y1_orig >= original_height or 
+                    x2_orig < 0 or y2_orig < 0 or 
+                    x1_orig >= x2_orig or y1_orig >= y2_orig):
+                    if processed_frames <= 5:
+                        logger.warning(f"Frame {frame_count}: Skipping invalid box for track {track_id}: "
+                                     f"({x1_orig}, {y1_orig}) to ({x2_orig}, {y2_orig}) on {original_width}x{original_height}")
+                    continue  # Skip this detection if coordinates are invalid
 
                 detections_for_heatmap.append({
                     'frame': frame_count,
