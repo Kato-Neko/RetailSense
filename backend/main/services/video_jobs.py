@@ -142,49 +142,62 @@ def process_video_job(job_id: str):
             y = float(point['y']) * video_height
             homography_points.append([x, y])
         
-        logger.info(f"DEBUG: About to call blend_heatmap with {len(detections)} detections and {len(homography_points)} homography points")
-        logger.info(f"DEBUG: Homography points: {homography_points}")
+        # TEMPORARILY DISABLED: Focus on bounding boxes first
+        # Heatmap generation will be re-enabled after bounding boxes are verified
+        logger.info(f"DEBUG: Bounding box mode - skipping heatmap generation")
+        logger.info(f"DEBUG: Detections collected: {len(detections)}")
+        logger.info(f"DEBUG: Output video with bounding boxes: {output_video_path}")
         
-        blended_img = blend_heatmap(
-            detections,
-            floorplan_path,
-            None,
-            output_video_path,
-            video_path,
-            points=homography_points,
-            return_image=True
-        )
+        # Create a placeholder heatmap (just the floorplan) for now
+        import cv2
+        floorplan_img = cv2.imread(floorplan_path)
+        if floorplan_img is None:
+            logger.warning(f"Could not load floorplan for placeholder heatmap")
+            blended_img = None
+        else:
+            blended_img = floorplan_img.copy()
         
-        if blended_img is None:
-            logger.error(f"blend_heatmap returned None for job {job_id}")
-            raise Exception("Failed to generate heatmap image")
-        
-        try:
-            upload_image_to_supabase(
-                blended_img,
-                f"{job_id}/video_heatmap.jpg"
-            )
-            logger.info(f"Successfully uploaded heatmap image to Supabase for job {job_id}")
-        except Exception as e:
-            logger.error(f"Error uploading heatmap image to Supabase for job {job_id}: {e}")
-            raise
-
-        # Attempt to upload progressive heatmap video if it exists
-        try:
-            progressive_local_path = os.path.join(RESULTS_FOLDER, job_id, f"progressive_heatmap_{job_id}.mp4")
-            if os.path.exists(progressive_local_path):
-                from ..core.storage import upload_to_supabase_and_remove_local
-                supabase_progressive_path = f"{job_id}/progressive_heatmap.mp4"
-                upload_to_supabase_and_remove_local(
-                    progressive_local_path,
-                    supabase_progressive_path,
-                    content_type="video/mp4"
+        # Upload placeholder heatmap
+        if blended_img is not None:
+            try:
+                upload_image_to_supabase(
+                    blended_img,
+                    f"{job_id}/video_heatmap.jpg"
                 )
-                logger.info(f"Uploaded progressive heatmap video to Supabase for job {job_id}")
-            else:
-                logger.info(f"Progressive video not found at {progressive_local_path}; skipping upload")
-        except Exception as e:
-            logger.warning(f"Failed uploading progressive video for job {job_id}: {e}")
+                logger.info(f"Uploaded placeholder heatmap (bounding box mode)")
+            except Exception as e:
+                logger.warning(f"Error uploading placeholder heatmap: {e}")
+        
+        # TODO: Re-enable heatmap generation after bounding boxes are verified
+        # blended_img = blend_heatmap(
+        #     detections,
+        #     floorplan_path,
+        #     None,
+        #     output_video_path,
+        #     video_path,
+        #     points=homography_points,
+        #     return_image=True
+        # )
+
+        # TEMPORARILY DISABLED: Progressive heatmap video (focus on bounding boxes first)
+        logger.info(f"DEBUG: Bounding box mode - skipping progressive heatmap video")
+        
+        # TODO: Re-enable progressive heatmap video after bounding boxes are verified
+        # try:
+        #     progressive_local_path = os.path.join(RESULTS_FOLDER, job_id, f"progressive_heatmap_{job_id}.mp4")
+        #     if os.path.exists(progressive_local_path):
+        #         from ..core.storage import upload_to_supabase_and_remove_local
+        #         supabase_progressive_path = f"{job_id}/progressive_heatmap.mp4"
+        #         upload_to_supabase_and_remove_local(
+        #             progressive_local_path,
+        #             supabase_progressive_path,
+        #             content_type="video/mp4"
+        #         )
+        #         logger.info(f"Uploaded progressive heatmap video to Supabase for job {job_id}")
+        #     else:
+        #         logger.info(f"Progressive video not found at {progressive_local_path}; skipping upload")
+        # except Exception as e:
+        #     logger.warning(f"Failed uploading progressive video for job {job_id}: {e}")
 
         if job.get('cancelled'):
             job['status'] = 'cancelled'

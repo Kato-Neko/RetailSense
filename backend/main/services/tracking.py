@@ -78,14 +78,16 @@ def detect_and_track(
         scale_factor = 1.0
 
     logger.info(f"Processing video: {original_width}x{original_height} -> {width}x{height} (scale: {scale_factor:.2f})")
+    logger.info(f"Output video will be at ORIGINAL resolution: {original_width}x{original_height} for better bounding box visibility")
 
     fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-    out = cv2.VideoWriter(output_path, fourcc, fps, (width, height))
+    # Write output at ORIGINAL resolution so bounding boxes are clearly visible
+    out = cv2.VideoWriter(output_path, fourcc, fps, (original_width, original_height))
 
     detections_for_heatmap: List[Dict[str, Any]] = []
     frame_count = 0
     processed_frames = 0  # Track actually processed frames
-    frame_skip = 2  # Process every 2nd frame for better heatmap continuity
+    frame_skip = 1  # Process EVERY frame for accurate bounding box detection
     
     # Calculate total frames that will be processed
     total_processed_frames = (total_frames + frame_skip - 1) // frame_skip
@@ -115,15 +117,16 @@ def detect_and_track(
             frame_count += 1
             continue
         
-        # Always write frame to output video (resized)
-        if scale_factor != 1.0:
-            frame_resized = cv2.resize(frame, (width, height))
-        else:
-            frame_resized = frame.copy()
-        out.write(frame_resized)
-        
         # Determine if we should process this frame for detection
         should_process = (frame_count % frame_skip == 0)
+        
+        # Prepare frame for output (use original resolution for better visibility)
+        if scale_factor != 1.0:
+            frame_resized = cv2.resize(frame, (width, height))
+            frame_for_output = frame.copy()  # Keep original for drawing boxes
+        else:
+            frame_resized = frame.copy()
+            frame_for_output = frame.copy()
         
         if should_process:
             processed_frames += 1
@@ -246,21 +249,53 @@ def detect_and_track(
                               f"center=({(x1_orig+x2_orig)/2:.1f}, {(y1_orig+y2_orig)/2:.1f}), "
                               f"bottom=({(x1_orig+x2_orig)/2:.1f}, {y2_orig})")
 
-                # Draw bounding box and ID
-                cv2.rectangle(frame_resized, (x1, y1), (x2, y2), (0, 255, 0), 2)
+                # Draw bounding box and ID on ORIGINAL resolution frame
+                # Use original coordinates (x1_orig, y1_orig, x2_orig, y2_orig)
+                box_color = (0, 255, 0)  # Green
+                box_thickness = 3
+                
+                cv2.rectangle(frame_for_output, 
+                             (x1_orig, y1_orig), 
+                             (x2_orig, y2_orig), 
+                             box_color, 
+                             box_thickness)
+                
+                # Draw track ID with background
                 text = f"ID: {track_id}"
-                (text_width, text_height), _ = cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, 0.9, 2)
-                cv2.rectangle(frame_resized, (x1, y1-text_height-10), (x1+text_width, y1), (0, 0, 0), -1)
-                cv2.putText(frame_resized, text, (x1, y1-5),
-                           cv2.FONT_HERSHEY_SIMPLEX, 0.9, (255, 255, 255), 2)
+                font = cv2.FONT_HERSHEY_SIMPLEX
+                font_scale = 0.7
+                text_thickness = 2
+                (text_width, text_height), baseline = cv2.getTextSize(text, font, font_scale, text_thickness)
+                
+                # Background rectangle for text
+                cv2.rectangle(frame_for_output, 
+                             (x1_orig, y1_orig - text_height - baseline - 5), 
+                             (x1_orig + text_width, y1_orig), 
+                             (0, 0, 0), 
+                             -1)
+                
+                # Text
+                cv2.putText(frame_for_output, 
+                           text, 
+                           (x1_orig, y1_orig - baseline - 2),
+                           font, 
+                           font_scale, 
+                           (255, 255, 255), 
+                           text_thickness)
 
-                # Draw center dot
-                center_x = int((x1 + x2) / 2)
-                center_y = int((y1 + y2) / 2)
-                cv2.circle(frame_resized, (center_x, center_y), 4, (255, 255, 255), -1)
+                # Draw center dot (feet position for heatmap)
+                center_x_orig = int((x1_orig + x2_orig) / 2)
+                center_y_orig = y2_orig  # Bottom center (feet)
+                cv2.circle(frame_for_output, (center_x_orig, center_y_orig), 5, (0, 0, 255), -1)
+                
+                # Enhanced debug logging
+                if processed_frames <= 5:
+                    logger.info(f"Frame {frame_count}: Drawing box for Track {track_id} at "
+                              f"({x1_orig}, {y1_orig}) to ({x2_orig}, {y2_orig}) "
+                              f"on frame size {frame_for_output.shape}")
 
-            # Update the output video with the annotated frame
-            out.write(frame_resized)
+            # Write the annotated frame to output video at ORIGINAL resolution
+            out.write(frame_for_output)
 
             # Save preview
             if preview_folder and processed_frames % 2 == 0:  # Every 2nd processed frame
@@ -268,6 +303,10 @@ def detect_and_track(
                 preview_path = os.path.join(preview_folder, 'preview_detections.jpg')
                 cv2.imwrite(preview_path, frame_resized)
 
+        # For frames that weren't processed, still write them to output at original resolution
+        if not should_process:
+            out.write(frame)
+        
         # Increment frame counter
         frame_count += 1
         
