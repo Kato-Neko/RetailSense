@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Dialog, DialogContent, DialogClose } from "@/components/ui/dialog";
 
 const UserManagement = () => {
   const [userInfo, setUserInfo] = useState({
@@ -33,6 +34,8 @@ const UserManagement = () => {
   });
   const [isEditingUsername, setIsEditingUsername] = useState(false);
   const [newUsername, setNewUsername] = useState("");
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [activityToDelete, setActivityToDelete] = useState(null);
 
   useEffect(() => {
     fetchUserInfo();
@@ -163,31 +166,43 @@ const UserManagement = () => {
     }
   };
 
-  // Delete activity - calls API and refreshes data
-  const handleDeleteActivity = async (index) => {
+  // Delete activity - opens confirmation dialog
+  const handleDeleteActivity = (index) => {
     const activity = activityStats.recentActivities[index];
     if (!activity || !activity.job_id) {
       toast.error("Unable to delete: Job ID not found");
       return;
     }
+    setActivityToDelete({ ...activity, index });
+    setDeleteDialogOpen(true);
+  };
 
-    // Confirm deletion
-    if (!window.confirm(`Are you sure you want to delete "${activity.name}"? This action cannot be undone.`)) {
+  // Confirm and execute deletion
+  const confirmDeleteActivity = async () => {
+    if (!activityToDelete || !activityToDelete.job_id) {
+      toast.error("Unable to delete: Job ID not found");
+      setDeleteDialogOpen(false);
       return;
     }
 
     try {
       // Call the delete API
-      await heatmapService.deleteJob(activity.job_id);
+      await heatmapService.deleteJob(activityToDelete.job_id);
       
       // Show success message
       toast.success("Activity deleted successfully");
+      
+      // Close dialog and reset state
+      setDeleteDialogOpen(false);
+      setActivityToDelete(null);
       
       // Refresh activity data to update stats dynamically
       await fetchUserActivity();
     } catch (error) {
       console.error("Failed to delete activity:", error);
       toast.error(error.response?.data?.error || error.message || "Failed to delete activity");
+      setDeleteDialogOpen(false);
+      setActivityToDelete(null);
     }
   };
 
@@ -371,6 +386,64 @@ const UserManagement = () => {
         </form>
         </CardContent>
       </Card>
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog open={deleteDialogOpen} onOpenChange={(open) => {
+        setDeleteDialogOpen(open);
+        if (!open) {
+          setActivityToDelete(null);
+        }
+      }}>
+        <DialogContent className="sm:max-w-md p-0 overflow-hidden border-0 shadow-xl rounded-lg">
+          {/* Pink Header Section */}
+          <div className="relative bg-gradient-to-r from-pink-400 to-pink-500 dark:from-pink-500 dark:to-pink-600 px-6 py-8 rounded-t-lg">
+            <DialogClose asChild>
+              <button
+                aria-label="Close"
+                className="absolute top-3 right-3 z-20 rounded-full p-1.5 bg-white/20 hover:bg-white/30 text-white transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-white/50"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </DialogClose>
+            {/* Illustration */}
+            <div className="flex items-center justify-center">
+              <div className="w-20 h-20 bg-white/20 rounded-full flex items-center justify-center backdrop-blur-sm">
+                <Trash2 className="h-10 w-10 text-white" />
+              </div>
+            </div>
+          </div>
+
+          {/* White Content Section */}
+          <div className="bg-white dark:bg-slate-900 px-6 py-8 rounded-b-lg">
+            <h2 className="text-2xl font-bold text-center text-slate-900 dark:text-white mb-4">
+              Are you sure?
+            </h2>
+            <p className="text-center text-slate-600 dark:text-slate-300 mb-8 text-sm leading-relaxed">
+              Are you sure you want to delete <span className="font-medium">"{activityToDelete?.name || 'this item'}"</span>? This action cannot be undone.
+            </p>
+
+            {/* Action Buttons */}
+            <div className="flex gap-3 justify-center">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setDeleteDialogOpen(false);
+                  setActivityToDelete(null);
+                }}
+                className="px-6 py-2.5 border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 rounded-md font-medium transition-colors"
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={confirmDeleteActivity}
+                className="px-6 py-2.5 bg-gradient-to-r from-pink-500 to-pink-600 hover:from-pink-600 hover:to-pink-700 text-white font-medium shadow-md rounded-md transition-all"
+              >
+                Delete
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };
