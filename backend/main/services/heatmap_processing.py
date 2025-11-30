@@ -329,15 +329,28 @@ def blend_heatmap(detections, floorplan_path, output_heatmap_path, output_video_
     # Debug: Log coordinate mapping info
     logger.info(f"DEBUG: Video dimensions: {video_width}x{video_height}")
     logger.info(f"DEBUG: Floorplan dimensions: {floorplan_width}x{floorplan_height}")
+    logger.info(f"DEBUG: Total detections to process: {len(detections)}")
+    
     if detections:
-        first_bbox = detections[0]['bbox']
-        try:
-            center_x, center_y = get_floor_position_from_bbox(
-                first_bbox, video_width, video_height, use_bottom_center=True
-            )
-            logger.info(f"DEBUG: First detection bbox: {first_bbox}, floor position: ({center_x:.1f}, {center_y:.1f})")
-        except Exception as e:
-            logger.warning(f"DEBUG: Error processing first detection: {e}")
+        # Log first few detections with detailed info
+        for idx, det in enumerate(detections[:3]):
+            bbox = det.get('bbox', [])
+            track_id = det.get('track_id', -1)
+            frame = det.get('frame', -1)
+            logger.info(f"DEBUG: Detection {idx}: track_id={track_id}, frame={frame}, bbox={bbox}")
+            
+            try:
+                center_x, center_y = get_floor_position_from_bbox(
+                    bbox, video_width, video_height, use_bottom_center=True
+                )
+                mx = int(center_x * floorplan_width / video_width)
+                my = int(center_y * floorplan_height / video_height)
+                logger.info(f"DEBUG:   -> Video floor pos: ({center_x:.1f}, {center_y:.1f}), "
+                           f"Floorplan mapped: ({mx}, {my})")
+            except Exception as e:
+                logger.warning(f"DEBUG:   -> Error processing detection {idx}: {e}")
+    else:
+        logger.warning("DEBUG: No detections provided to blend_heatmap!")
     
     # --- Direct coordinate mapping ---
     # Use static points directly without homography transformation
@@ -600,11 +613,12 @@ def create_progressive_heatmap_video_local(detections, floorplan, job_id, video_
         fourcc = cv2.VideoWriter_fourcc(*'mp4v')
         out = cv2.VideoWriter(progressive_video_path, fourcc, fps, (video_width, video_height))
 
-        # Build detections map per frame (video coordinates)
+        # Build detections map per frame (store both center points and full bbox info)
         detections_by_frame = {}
         for det in detections:
             fidx = int(det.get('frame', 0))
             bbox = det.get('bbox', [0, 0, 0, 0])
+            track_id = det.get('track_id', -1)
             if not isinstance(bbox, (list, tuple)) or len(bbox) < 4:
                 continue
             x1, y1, x2, y2 = bbox[:4]
@@ -614,7 +628,12 @@ def create_progressive_heatmap_video_local(detections, floorplan, job_id, video_
                 cx = max(0, min(video_width - 1, cx % max(1, video_width)))
             if cy < 0 or cy >= video_height:
                 cy = max(0, min(video_height - 1, cy % max(1, video_height)))
-            detections_by_frame.setdefault(fidx, []).append((cx, cy))
+            # Store both center point (for heatmap) and full bbox info (for drawing)
+            detections_by_frame.setdefault(fidx, []).append({
+                'center': (cx, cy),
+                'bbox': [int(x1), int(y1), int(x2), int(y2)],
+                'track_id': track_id
+            })
 
         # Progressive accumulation - matching static heatmap parameters
         heat_accum = np.zeros((video_height, video_width), dtype=np.float32)
@@ -627,8 +646,29 @@ def create_progressive_heatmap_video_local(detections, floorplan, job_id, video_
             if not ret:
                 break
 
-            # Add new detections for this frame using same circle approach as static
-            for (cx, cy) in detections_by_frame.get(frame_index, []):
+            # Draw bounding boxes and track IDs for current frame
+            frame_detections = detections_by_frame.get(frame_index, [])
+            for det_info in frame_detections:
+                bbox = det_info['bbox']
+                track_id = det_info['track_id']
+                cx, cy = det_info['center']
+                
+                # Draw bounding box
+                cv2.rectangle(frame, 
+                             (bbox[0], bbox[1]), 
+                             (bbox[2], bbox[3]), 
+                             (0, 255, 0), 2)
+                
+                # Draw track ID
+                cv2.putText(frame, 
+                           f"ID: {track_id}", 
+                           (bbox[0], bbox[1] - 10), 
+                           cv2.FONT_HERSHEY_SIMPLEX, 
+                           0.5, 
+                           (0, 255, 0), 
+                           2)
+                
+                # Add detection to heat accumulation
                 cv2.circle(heat_accum, (cx, cy), circle_radius, 1.0, -1)
 
             # Apply same processing as static heatmap

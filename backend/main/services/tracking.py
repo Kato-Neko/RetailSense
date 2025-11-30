@@ -185,6 +185,10 @@ def detect_and_track(
             # Debug logging for first few processed frames
             if processed_frames <= 3:
                 logger.info(f"YOLO found {total_detections} total detections, {len(detections)} above threshold in processed frame {processed_frames}")
+                if detections:
+                    logger.info(f"Sample detection bbox (resized): {detections[0][0]}, conf: {detections[0][1]:.3f}")
+                else:
+                    logger.warning(f"No detections above threshold (0.3) in frame {processed_frames}")
 
             # Update tracks
             try:
@@ -235,6 +239,12 @@ def detect_and_track(
                     'track_id': track_id,
                     'timestamp': timestamp
                 })
+                
+                # Enhanced debug logging for first few detections
+                if processed_frames <= 3 and len(detections_for_heatmap) <= 5:
+                    logger.info(f"Track {track_id}: bbox (original) [{x1_orig}, {y1_orig}, {x2_orig}, {y2_orig}], "
+                              f"center=({(x1_orig+x2_orig)/2:.1f}, {(y1_orig+y2_orig)/2:.1f}), "
+                              f"bottom=({(x1_orig+x2_orig)/2:.1f}, {y2_orig})")
 
                 # Draw bounding box and ID
                 cv2.rectangle(frame_resized, (x1, y1), (x2, y2), (0, 255, 0), 2)
