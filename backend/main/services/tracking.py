@@ -85,7 +85,7 @@ def detect_and_track(
     detections_for_heatmap: List[Dict[str, Any]] = []
     frame_count = 0
     processed_frames = 0  # Track actually processed frames
-    frame_skip = 10  # Process every 10th frame (2x faster)
+    frame_skip = 2  # Process every 2nd frame for better heatmap continuity
     
     # Calculate total frames that will be processed
     total_processed_frames = (total_frames + frame_skip - 1) // frame_skip

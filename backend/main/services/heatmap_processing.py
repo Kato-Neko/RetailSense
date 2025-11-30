@@ -5,6 +5,39 @@ from scipy.ndimage import gaussian_filter
 from ..core.config import logger
 
 
+def interpolate_path_between_points(pt1, pt2, num_points=None):
+    """
+    Interpolate points between two detection points to create a continuous path.
+    
+    Args:
+        pt1: (x, y) tuple of first point
+        pt2: (x, y) tuple of second point
+        num_points: Number of interpolated points (auto-calculated if None)
+    
+    Returns:
+        List of (x, y) tuples representing the interpolated path
+    """
+    x1, y1 = pt1
+    x2, y2 = pt2
+    
+    # Calculate distance between points
+    distance = np.sqrt((x2 - x1)**2 + (y2 - y1)**2) 
+    
+    # Auto-calculate number of points based on distance (1 point per 5 pixels)
+    if num_points is None:
+        num_points = max(2, int(distance / 5))
+    
+    # Generate interpolated points
+    points = []
+    for i in range(num_points + 1):
+        alpha = i / num_points if num_points > 0 else 0
+        x = int(x1 + alpha * (x2 - x1))
+        y = int(y1 + alpha * (y2 - y1))
+        points.append((x, y))
+    
+    return points
+
+
 # def test_homography_transformation(points, video_path, floorplan_path):
 #     """Test function to debug homography transformation"""
 #     print("=== HOMOGRAPHY TRANSFORMATION TEST ===")
@@ -84,19 +117,62 @@ def create_custom_heatmap(detections, floorplan_path, dimensions=(1920, 1080), p
     # Create base heatmap
     heatmap = np.zeros(floorplan.shape[:2], dtype=np.float32)
     
-    # Plot detections
+    # Group detections by track_id for path interpolation
+    detections_by_track = {}
     for det in detections:
-        bbox = det['bbox']
-        center_x = (bbox[0] + bbox[2]) / 2
-        center_y = (bbox[1] + bbox[3]) / 2
+        track_id = det.get('track_id', -1)
+        if track_id not in detections_by_track:
+            detections_by_track[track_id] = []
+        detections_by_track[track_id].append(det)
+    
+    # Sort detections by frame number within each track
+    for track_id in detections_by_track:
+        detections_by_track[track_id].sort(key=lambda d: d.get('frame', 0))
+    
+    # Process detections with interpolation between consecutive points
+    circle_radius = 20  # Increased from 15 for better overlap
+    line_thickness = 3  # Thickness for connecting lines
+    
+    for track_id, track_detections in detections_by_track.items():
+        prev_mapped_point = None
         
-        # Map coordinates to floorplan space
-        mx = int(center_x * floorplan_width / video_width)
-        my = int(center_y * floorplan_height / video_height)
-        mx = max(0, min(mx, floorplan_width - 1))
-        my = max(0, min(my, floorplan_height - 1))
-        
-        cv2.circle(heatmap, (mx, my), 15, 1.0, -1)
+        for det in track_detections:
+            bbox = det['bbox']
+            center_x = (bbox[0] + bbox[2]) / 2
+            center_y = (bbox[1] + bbox[3]) / 2
+            
+            # Map coordinates to floorplan space
+            mx = int(center_x * floorplan_width / video_width)
+            my = int(center_y * floorplan_height / video_height)
+            mx = max(0, min(mx, floorplan_width - 1))
+            my = max(0, min(my, floorplan_height - 1))
+            
+            current_mapped_point = (mx, my)
+            
+            # Draw circle at current detection point
+            cv2.circle(heatmap, current_mapped_point, circle_radius, 1.0, -1)
+            
+            # Interpolate and draw path from previous point to current point
+            if prev_mapped_point is not None:
+                # Calculate distance to determine if interpolation is needed
+                distance = np.sqrt((mx - prev_mapped_point[0])**2 + (my - prev_mapped_point[1])**2)
+                
+                if distance > circle_radius * 2:  # Only interpolate if points are far apart
+                    # Draw line between points with thickness
+                    cv2.line(heatmap, prev_mapped_point, current_mapped_point, 1.0, line_thickness)
+                    
+                    # Add interpolated points along the path for smoother heatmap
+                    interpolated_points = interpolate_path_between_points(prev_mapped_point, current_mapped_point)
+                    for interp_point in interpolated_points[1:-1]:  # Skip endpoints (already drawn)
+                        # Clamp to floorplan bounds
+                        interp_x = max(0, min(interp_point[0], floorplan_width - 1))
+                        interp_y = max(0, min(interp_point[1], floorplan_height - 1))
+                        cv2.circle(heatmap, (interp_x, interp_y), circle_radius // 2, 0.8, -1)
+                else:
+                    # Points are close, just draw a line
+                    cv2.line(heatmap, prev_mapped_point, current_mapped_point, 1.0, line_thickness)
+            
+            prev_mapped_point = current_mapped_point
     
     # Process heatmap
     heatmap = np.power(heatmap, 0.6)
@@ -197,34 +273,78 @@ def blend_heatmap(detections, floorplan_path, output_heatmap_path, output_video_
     total_detections = len(detections)
     print(f"DEBUG: Processing {total_detections} detections for heatmap")
     
-    for i, detection in enumerate(detections):
-        bbox = detection['bbox']
-        # Get bounding box center in video coordinates
-        center_x = (bbox[0] + bbox[2]) / 2
-        center_y = (bbox[1] + bbox[3]) / 2
+    # Group detections by track_id for path interpolation
+    detections_by_track = {}
+    for detection in detections:
+        track_id = detection.get('track_id', -1)
+        if track_id not in detections_by_track:
+            detections_by_track[track_id] = []
+        detections_by_track[track_id].append(detection)
+    
+    # Sort detections by frame number within each track
+    for track_id in detections_by_track:
+        detections_by_track[track_id].sort(key=lambda d: d.get('frame', 0))
+    
+    # Process detections with interpolation between consecutive points
+    circle_radius = 20  # Increased from 15 for better overlap
+    line_thickness = 3  # Thickness for connecting lines
+    
+    for track_id, track_detections in detections_by_track.items():
+        prev_mapped_point = None
         
-        # Use direct coordinate mapping (no homography)
-        # Check if coordinates are way outside video bounds (coordinate system mismatch)
-        if center_x > video_width * 1.5 or center_y > video_height * 1.5:
-            # Try to normalize coordinates if they're in a different coordinate space
-            if center_x > video_width * 2:
-                center_x = center_x % video_width
-                center_y = center_y % video_height
-        
-        # Alternative approach: if coordinates are still way out of bounds, use a different mapping
-        if center_x > video_width * 3 or center_y > video_height * 3:
-            # Use a simple center-based approach
-            mx = floorplan_width // 2 + int((center_x - video_width) * 0.1)
-            my = floorplan_height // 2 + int((center_y - video_height) * 0.1)
-            mx = max(0, min(mx, floorplan_width - 1))
-            my = max(0, min(my, floorplan_height - 1))
-        else:
-            mx = int(center_x * floorplan_width / video_width)
-            my = int(center_y * floorplan_height / video_height)
-            mx = max(0, min(mx, floorplan_width - 1))
-            my = max(0, min(my, floorplan_height - 1))
-        
-        cv2.circle(heatmap, (mx, my), 15, 1.0, -1)
+        for i, detection in enumerate(track_detections):
+            bbox = detection['bbox']
+            # Get bounding box center in video coordinates
+            center_x = (bbox[0] + bbox[2]) / 2
+            center_y = (bbox[1] + bbox[3]) / 2
+            
+            # Use direct coordinate mapping (no homography)
+            # Check if coordinates are way outside video bounds (coordinate system mismatch)
+            if center_x > video_width * 1.5 or center_y > video_height * 1.5:
+                # Try to normalize coordinates if they're in a different coordinate space
+                if center_x > video_width * 2:
+                    center_x = center_x % video_width
+                    center_y = center_y % video_height
+            
+            # Alternative approach: if coordinates are still way out of bounds, use a different mapping
+            if center_x > video_width * 3 or center_y > video_height * 3:
+                # Use a simple center-based approach
+                mx = floorplan_width // 2 + int((center_x - video_width) * 0.1)
+                my = floorplan_height // 2 + int((center_y - video_height) * 0.1)
+                mx = max(0, min(mx, floorplan_width - 1))
+                my = max(0, min(my, floorplan_height - 1))
+            else:
+                mx = int(center_x * floorplan_width / video_width)
+                my = int(center_y * floorplan_height / video_height)
+                mx = max(0, min(mx, floorplan_width - 1))
+                my = max(0, min(my, floorplan_height - 1))
+            
+            current_mapped_point = (mx, my)
+            
+            # Draw circle at current detection point
+            cv2.circle(heatmap, current_mapped_point, circle_radius, 1.0, -1)
+            
+            # Interpolate and draw path from previous point to current point
+            if prev_mapped_point is not None:
+                # Calculate distance to determine if interpolation is needed
+                distance = np.sqrt((mx - prev_mapped_point[0])**2 + (my - prev_mapped_point[1])**2)
+                
+                if distance > circle_radius * 2:  # Only interpolate if points are far apart
+                    # Draw line between points with thickness
+                    cv2.line(heatmap, prev_mapped_point, current_mapped_point, 1.0, line_thickness)
+                    
+                    # Add interpolated points along the path for smoother heatmap
+                    interpolated_points = interpolate_path_between_points(prev_mapped_point, current_mapped_point)
+                    for interp_point in interpolated_points[1:-1]:  # Skip endpoints (already drawn)
+                        # Clamp to floorplan bounds
+                        interp_x = max(0, min(interp_point[0], floorplan_width - 1))
+                        interp_y = max(0, min(interp_point[1], floorplan_height - 1))
+                        cv2.circle(heatmap, (interp_x, interp_y), circle_radius // 2, 0.8, -1)
+                else:
+                    # Points are close, just draw a line
+                    cv2.line(heatmap, prev_mapped_point, current_mapped_point, 1.0, line_thickness)
+            
+            prev_mapped_point = current_mapped_point
         
         # COMMENTED OUT: Homography transformation code (kept for future use)
         # pt = np.array([[center_x, center_y]], dtype=np.float32)
@@ -411,7 +531,7 @@ def create_progressive_heatmap_video_local(detections, floorplan, job_id, video_
 
         # Progressive accumulation - matching static heatmap parameters
         heat_accum = np.zeros((video_height, video_width), dtype=np.float32)
-        circle_radius = 15  # Match static heatmap
+        circle_radius = 20  # Increased from 15 for better overlap and continuity
         alpha = 0.7  # Match static heatmap
         frame_index = 0
 
