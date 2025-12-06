@@ -35,8 +35,11 @@ class StorageManager:
         """
         try:
             with open(local_path, "rb") as f:
+                self.logger.info(f"Uploading to Supabase storage: bucket={self.bucket} path={supabase_path}")
                 self.supabase.storage.from_(self.bucket).upload(
-                    supabase_path, f, {"content-type": content_type}
+                    supabase_path,
+                    f,
+                    {"content-type": content_type, "x-upsert": "true"}
                 )
             os.remove(local_path)
             self.logger.info(f"Uploaded and removed local: {local_path} -> {self.bucket}/{supabase_path}")
@@ -59,7 +62,7 @@ class StorageManager:
             self.supabase.storage.from_(self.bucket).upload(
                 supabase_path,
                 json_bytes,
-                {"content-type": "application/json"}
+                {"content-type": "application/json", "x-upsert": "true"}
             )
             self.logger.info(f"DEBUG: Successfully uploaded JSON to Supabase: {self.bucket}/{supabase_path}")
         except Exception as e:
@@ -79,10 +82,11 @@ class StorageManager:
         if not success:
             raise Exception("Failed to encode image to JPEG")
         img_bytes = img_encoded.tobytes()
+        self.logger.info(f"Uploading image to Supabase storage: bucket={self.bucket} path={supabase_path}")
         self.supabase.storage.from_(self.bucket).upload(
             supabase_path,
             img_bytes,
-            {"content-type": "image/jpg"}
+            {"content-type": "image/jpg", "x-upsert": "true"}
         )
         self.logger.info(f"Uploaded image to Supabase: {self.bucket}/{supabase_path}")
     
@@ -93,7 +97,7 @@ class StorageManager:
             supabase_path: Path in Supabase storage
             
         Returns:
-            Dictionary with JSON data or None if failed
+            Dictionary with JSON data or None if failed/not found
         """
         self.logger.info(f"DEBUG: download_json called with supabase_path='{supabase_path}', bucket='{self.bucket}'")
         self.logger.info(f"DEBUG: Full path will be: {self.bucket}/{supabase_path}")

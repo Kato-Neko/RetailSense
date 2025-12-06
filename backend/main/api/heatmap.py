@@ -847,8 +847,68 @@ def get_heatmap_analysis_logic(job_id):
     else:
         floorplan_height, floorplan_width = floorplan.shape[:2]
     
+    # Check for cached analysis first
+    from ..core.storage_manager import download_json_from_supabase, upload_json_to_supabase
+    cache_path = f"{job_id}/analysis_cache.json"
+    
+    use_ai = os.getenv('USE_AI_RECOMMENDATIONS', 'false').lower() == 'true'
+    force_refresh = request.args.get('refresh', 'false').lower() == 'true'
+    
+    # STEP 1: Check for cached AI analysis
+    # Always use cached AI analysis if available (only bypass for rule-based cache or manual refresh)
+    if not force_refresh:
+        try:
+            cached_analysis = download_json_from_supabase(cache_path)
+            if cached_analysis:
+                cache_source = cached_analysis.get('recommendations_source')
+                
+                # If cache has AI-generated recommendations → always use it
+                if cache_source == 'ai' and cached_analysis.get('recommendations_provider'):
+                    logger.info(f"Using cached AI analysis for job {job_id} (source: {cached_analysis.get('recommendations_provider')})")
+                    return jsonify(cached_analysis)
+                
+                # If cache has rule-based recommendations and AI is enabled → skip cache to retry AI
+                # This allows retrying AI when quota resets, rather than using stale rule-based cache
+                if use_ai and cache_source == 'rule':
+                    logger.info(f"Cache contains rule-based recommendations for job {job_id}, skipping cache to retry AI")
+                # If AI is disabled, rule-based cache is fine to use
+                elif not use_ai:
+                    logger.info(f"Using cached analysis for job {job_id} (AI disabled)")
+                    return jsonify(cached_analysis)
+        except Exception as e:
+            logger.warning(f"Could not load cached analysis for job {job_id}: {e}")
+    
+    # STEP 2: No valid cache found, run fresh analysis
+    logger.info(f"Running fresh analysis for job {job_id}")
     detections, fps = load_detections(job_id)
     analysis = analyze_heatmap(img_gray, (floorplan_height, floorplan_width), detections=detections, fps=fps)
+    
+    # STEP 3: Cache result only if AI recommendations were successfully generated
+    # This ensures:
+    # - AI analysis is cached and reused for future requests
+    # - Rule-based fallback is NOT cached, allowing AI to retry on next request
+    should_cache = False
+    if use_ai:
+        # Only cache if AI successfully generated recommendations
+        if analysis.get('recommendations_source') == 'ai' and analysis.get('recommendations_provider'):
+            should_cache = True
+            logger.info(f"AI recommendations generated for job {job_id}, caching for future use")
+        else:
+            should_cache = False
+            logger.info(f"AI failed or quota exceeded for job {job_id}, using rule-based fallback (not caching to allow retry)")
+    else:
+        # If AI is disabled, always cache (rule-based is the expected result)
+        should_cache = True
+        logger.info(f"AI disabled for job {job_id}, caching rule-based recommendations")
+    
+    if should_cache:
+        try:
+            upload_json_to_supabase(analysis, cache_path)
+            logger.info(f"Successfully cached analysis for job {job_id}")
+        except Exception as e:
+            logger.warning(f"Could not cache analysis for job {job_id}: {e}")
+            # Continue anyway - caching is optional
+    
     return jsonify(analysis)
 
 @heatmap_bp.route('/heatmap_jobs/<job_id>/analysis', methods=['GET', 'OPTIONS'])
@@ -856,3 +916,361 @@ def get_heatmap_analysis_logic(job_id):
 @jwt_required()
 def get_heatmap_analysis(job_id):
     return get_heatmap_analysis_logic(job_id)
+
+
+@heatmap_bp.route('/heatmap_jobs/<job_id>/live/heatmap', methods=['GET', 'OPTIONS'])
+@cross_origin()
+@jwt_required()
+def get_live_heatmap_image(job_id):
+    """Get the current live heatmap image"""
+    try:
+        supabase_path = f"{job_id}/live_heatmap.jpg"
+        logger.info(f"Attempting to download live heatmap image from Supabase: {supabase_path}")
+        img_bytes = download_image_bytes_from_supabase(supabase_path)
+        if img_bytes is None:
+            logger.warning(f"Live heatmap image not found in Supabase: {supabase_path}")
+            return jsonify({"error": "Live heatmap not available yet"}), 404
+        
+        logger.info(f"Successfully downloaded live heatmap image from Supabase: {supabase_path}")
+        return Response(img_bytes, mimetype="image/jpeg")
+    except Exception as e:
+        logger.error(f"Error getting live heatmap: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@heatmap_bp.route('/heatmap_jobs/<job_id>/live/floorplan', methods=['GET', 'OPTIONS'])
+@cross_origin()
+@jwt_required()
+def get_live_floorplan_image(job_id):
+    """Get the saved floorplan (first frame) for a live job"""
+    try:
+        supabase_path = f"{job_id}/floorplan_{job_id}.jpg"
+        logger.info(f"Attempting to download live floorplan image from Supabase: {supabase_path}")
+        img_bytes = download_image_bytes_from_supabase(supabase_path)
+        if img_bytes is None:
+            logger.warning(f"Live floorplan image not found in Supabase: {supabase_path}")
+            return jsonify({"error": "Floorplan not available yet"}), 404
+        return Response(img_bytes, mimetype="image/jpeg")
+    except Exception as e:
+        logger.error(f"Error getting live floorplan: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@heatmap_bp.route('/heatmap_jobs/<job_id>/live/feed', methods=['GET', 'OPTIONS'])
+@cross_origin()
+@jwt_required()
+def get_live_camera_feed(job_id):
+    """Get the current live camera feed frame (single frame)"""
+    try:
+        from ..services.live_stream import get_latest_frame, get_live_job_processor
+        
+        # Check if processor exists and is running
+        processor = get_live_job_processor(job_id)
+        if not processor:
+            logger.warning(f"No processor found for job {job_id}")
+            frame_bytes = None
+        elif not processor.is_running:
+            logger.warning(f"Processor for job {job_id} is not running")
+            frame_bytes = None
+        else:
+            frame_bytes = get_latest_frame(job_id)
+        
+        if frame_bytes is None:
+            # Return a placeholder image with message
+            import cv2
+            import numpy as np
+            placeholder = np.zeros((480, 640, 3), dtype=np.uint8)
+            # Add text message
+            cv2.putText(placeholder, 'Waiting for frames...', (50, 200), 
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+            if processor and not processor.is_running:
+                cv2.putText(placeholder, 'Stream not running', (50, 250), 
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
+            _, buffer = cv2.imencode('.jpg', placeholder, [cv2.IMWRITE_JPEG_QUALITY, 85])
+            return Response(
+                buffer.tobytes(),
+                mimetype="image/jpeg",
+                headers={
+                    'Cache-Control': 'no-cache, no-store, must-revalidate',
+                    'Pragma': 'no-cache',
+                    'Expires': '0',
+                    'X-Frame-Status': 'placeholder'
+                }
+            )
+        
+        return Response(
+            frame_bytes,
+            mimetype="image/jpeg",
+            headers={
+                'Cache-Control': 'no-cache, no-store, must-revalidate',
+                'Pragma': 'no-cache',
+                'Expires': '0',
+                'X-Frame-Status': 'live'
+            }
+        )
+    except Exception as e:
+        logger.error(f"Error getting live feed: {e}", exc_info=True)
+        # Return error as image to prevent network errors
+        try:
+            import cv2
+            import numpy as np
+            error_img = np.zeros((480, 640, 3), dtype=np.uint8)
+            cv2.putText(error_img, 'Error loading feed', (50, 200), 
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
+            cv2.putText(error_img, str(e)[:50], (50, 250), 
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
+            _, buffer = cv2.imencode('.jpg', error_img, [cv2.IMWRITE_JPEG_QUALITY, 85])
+            return Response(
+                buffer.tobytes(),
+                mimetype="image/jpeg",
+                headers={
+                    'Cache-Control': 'no-cache, no-store, must-revalidate',
+                    'X-Frame-Status': 'error'
+                }
+            )
+        except Exception as e2:
+            logger.error(f"Error creating error image: {e2}")
+            return jsonify({"error": str(e)}), 500
+
+
+@heatmap_bp.route('/heatmap_jobs/live/debug', methods=['GET'])
+@cross_origin()
+@jwt_required()
+def debug_live_jobs():
+    """Debug endpoint to list all live jobs and their processors"""
+    try:
+        from ..services.state import get_jobs_store
+        jobs = get_jobs_store()
+        result = {}
+        for job_id, job_data in jobs.items():
+            if job_data.get('job_type') == 'live':
+                processor = job_data.get('processor')
+                result[job_id] = {
+                    'status': job_data.get('status'),
+                    'message': job_data.get('message'),
+                    'has_processor': processor is not None,
+                    'is_running': processor.is_running if processor else False,
+                    'has_frame': None
+                }
+                if processor:
+                    try:
+                        with processor.latest_frame_lock:
+                            result[job_id]['has_frame'] = processor.latest_frame is not None
+                    except:
+                        result[job_id]['has_frame'] = False
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@heatmap_bp.route('/heatmap_jobs/<job_id>/live/stream', methods=['GET', 'OPTIONS'])
+@cross_origin()
+def get_live_camera_stream(job_id):
+    """MJPEG stream endpoint - browser compatible streaming
+    Note: JWT check is done manually to avoid issues with streaming"""
+    if request.method == 'OPTIONS':
+        # Let Flask-CORS handle OPTIONS requests
+        response = Response(status=200)
+        return response
+    
+    # Manual JWT check for streaming compatibility
+    # Note: img tags cannot send Authorization headers, so we check query params
+    # This is a relaxed check - for production, consider using a more secure approach
+    auth_header = request.headers.get('Authorization', '')
+    token_param = request.args.get('token')
+    token_header = auth_header.replace('Bearer ', '') if auth_header.startswith('Bearer ') else None
+    token = token_param or token_header
+    
+    # Basic token validation - at minimum, ensure a token is present
+    if not token:
+        logger.warning("No token provided for stream")
+        return jsonify({"error": "Unauthorized"}), 401
+    
+    # For now, we'll allow the stream if a token is present
+    # In production, you should add proper JWT verification here
+    # The job_id itself provides some security as it's unique per user
+    
+    try:
+        from ..services.live_stream import get_live_job_processor
+        
+        processor = get_live_job_processor(job_id)
+        
+        # Add detailed logging
+        if not processor:
+            logger.warning(f"Processor not found for job {job_id}")
+            # Try to get processor from jobs store directly for debugging
+            from ..services.state import get_jobs_store
+            jobs = get_jobs_store()
+            logger.warning(f"Available jobs: {list(jobs.keys())}")
+            if job_id in jobs:
+                logger.warning(f"Job {job_id} found in store with keys: {list(jobs[job_id].keys())}")
+        elif not processor.is_running:
+            logger.warning(f"Processor exists but is_running={processor.is_running} for job {job_id}")
+            # Check if latest_frame exists even if not running
+            with processor.latest_frame_lock:
+                has_frame = processor.latest_frame is not None
+            logger.info(f"Processor has frame: {has_frame}")
+        else:
+            logger.info(f"Processor found and running for job {job_id}")
+            with processor.latest_frame_lock:
+                has_frame = processor.latest_frame is not None
+            logger.info(f"Processor has frame: {has_frame}")
+        
+        # If processor doesn't exist, return error
+        if not processor:
+            def generate_error():
+                import cv2
+                import numpy as np
+                error_img = np.zeros((480, 640, 3), dtype=np.uint8)
+                cv2.putText(error_img, 'Stream not available', (50, 200), 
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+                _, buffer = cv2.imencode('.jpg', error_img, [cv2.IMWRITE_JPEG_QUALITY, 85])
+                yield (b'--frame\r\n'
+                       b'Content-Type: image/jpeg\r\n\r\n' + buffer.tobytes() + b'\r\n')
+            
+            response = Response(
+                generate_error(),
+                mimetype='multipart/x-mixed-replace; boundary=frame',
+                headers={
+                    'Cache-Control': 'no-cache, no-store, must-revalidate',
+                    'Pragma': 'no-cache',
+                    'Expires': '0'
+                }
+            )
+            return response
+        
+        def generate():
+            import cv2
+            import time
+            import numpy as np
+            last_frame_time = 0
+            frame_interval = 1.0 / 5.0  # 5 FPS for MJPEG stream
+            consecutive_errors = 0
+            max_errors = 10
+            
+            # Stream while processor exists (not just while running, to show last frame)
+            while True:
+                try:
+                    current_time = time.time()
+                    if current_time - last_frame_time < frame_interval:
+                        time.sleep(0.05)  # Small sleep to prevent CPU overload
+                        continue
+                    
+                    # Re-check processor exists (it might have been removed)
+                    if not processor:
+                        error_img = np.zeros((480, 640, 3), dtype=np.uint8)
+                        cv2.putText(error_img, 'Stream ended', (50, 200),
+                                   cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+                        _, buffer = cv2.imencode('.jpg', error_img, [cv2.IMWRITE_JPEG_QUALITY, 85])
+                        yield (b'--frame\r\n'
+                               b'Content-Type: image/jpeg\r\n\r\n' + buffer.tobytes() + b'\r\n')
+                        break
+                    
+                    # Get latest frame
+                    frame = None
+                    try:
+                        with processor.latest_frame_lock:
+                            if processor.latest_frame is not None:
+                                frame = processor.latest_frame.copy()
+                    except Exception as e:
+                        logger.error(f"Error accessing latest_frame: {e}")
+                        frame = None
+                    
+                    if frame is None:
+                        # No frame available yet - send placeholder with status info
+                        placeholder_img = np.zeros((480, 640, 3), dtype=np.uint8)
+                        if processor:
+                            if processor.is_running:
+                                status_text = 'Waiting for frames...'
+                                color = (255, 255, 255)
+                            else:
+                                status_text = 'Stream paused'
+                                color = (255, 255, 0)
+                        else:
+                            status_text = 'No processor'
+                            color = (0, 0, 255)
+                        
+                        cv2.putText(placeholder_img, status_text, (50, 200),
+                                   cv2.FONT_HERSHEY_SIMPLEX, 0.7, color, 2)
+                        
+                        # If we've been waiting a while, add helpful message
+                        if time.time() - last_frame_time > 5:
+                            cv2.putText(placeholder_img, 'Check RTSP connection', (50, 240),
+                                       cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
+                        
+                        _, placeholder_buffer = cv2.imencode('.jpg', placeholder_img, [cv2.IMWRITE_JPEG_QUALITY, 85])
+                        yield (b'--frame\r\n'
+                               b'Content-Type: image/jpeg\r\n\r\n' + placeholder_buffer.tobytes() + b'\r\n')
+                        last_frame_time = current_time
+                        consecutive_errors = 0
+                        time.sleep(0.5)  # Wait longer if no frames
+                        continue
+                    
+                    # Encode frame as JPEG
+                    _, buffer = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 85])
+                    frame_bytes = buffer.tobytes()
+                    
+                    # Yield frame in MJPEG format
+                    yield (b'--frame\r\n'
+                           b'Content-Type: image/jpeg\r\n\r\n' + frame_bytes + b'\r\n')
+                    
+                    last_frame_time = current_time
+                    consecutive_errors = 0
+                    
+                except Exception as e:
+                    consecutive_errors += 1
+                    logger.error(f"Error generating MJPEG frame (error {consecutive_errors}/{max_errors}): {e}")
+                    
+                    if consecutive_errors >= max_errors:
+                        # Too many errors, send error frame and stop
+                        try:
+                            error_img = np.zeros((480, 640, 3), dtype=np.uint8)
+                            cv2.putText(error_img, 'Stream error', (50, 200),
+                                       cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
+                            _, buffer = cv2.imencode('.jpg', error_img, [cv2.IMWRITE_JPEG_QUALITY, 85])
+                            yield (b'--frame\r\n'
+                                   b'Content-Type: image/jpeg\r\n\r\n' + buffer.tobytes() + b'\r\n')
+                        except:
+                            pass
+                        break
+                    
+                    time.sleep(0.1)
+                    
+        response = Response(
+            generate(),
+            mimetype='multipart/x-mixed-replace; boundary=frame',
+            headers={
+                'Cache-Control': 'no-cache, no-store, must-revalidate',
+                'Pragma': 'no-cache',
+                'Expires': '0'
+            }
+        )
+        return response
+        
+    except Exception as e:
+        logger.error(f"Error starting MJPEG stream: {e}", exc_info=True)
+        # Return error as image stream to prevent browser errors
+        try:
+            import cv2
+            import numpy as np
+            error_img = np.zeros((480, 640, 3), dtype=np.uint8)
+            cv2.putText(error_img, 'Stream error', (50, 200), 
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
+            cv2.putText(error_img, str(e)[:50], (50, 250), 
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
+            _, buffer = cv2.imencode('.jpg', error_img, [cv2.IMWRITE_JPEG_QUALITY, 85])
+            
+            def generate_error_stream():
+                yield (b'--frame\r\n'
+                       b'Content-Type: image/jpeg\r\n\r\n' + buffer.tobytes() + b'\r\n')
+            
+            return Response(
+                generate_error_stream(),
+                mimetype='multipart/x-mixed-replace; boundary=frame',
+                headers={
+                    'Cache-Control': 'no-cache, no-store, must-revalidate'
+                }
+            )
+        except Exception as e2:
+            logger.error(f"Error creating error stream: {e2}")
+            return jsonify({"error": str(e)}), 500

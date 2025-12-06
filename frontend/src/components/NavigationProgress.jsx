@@ -12,6 +12,7 @@ const NavigationProgress = () => {
     "/dashboard": "Dashboard",
     "/view-heatmap": "View Heatmaps",
     "/video-processing": "Create Heatmaps",
+    "/live-streaming": "Live Streaming",
     "/user-management": "Account Management",
   }
 
@@ -19,7 +20,7 @@ const NavigationProgress = () => {
   const getSection = (path) => {
     if (path === "/" || path === "/dashboard") {
       return { name: "Analytics", color: "text-orange-500 dark:text-orange-400" }
-    } else if (path === "/view-heatmap" || path === "/video-processing") {
+    } else if (path === "/view-heatmap" || path === "/video-processing" || path === "/live-streaming") {
       return { name: "Heatmap", color: "text-cyan-500 dark:text-cyan-400" }
     } else if (path === "/user-management") {
       return { name: "User", color: "text-purple-500 dark:text-purple-400" }
