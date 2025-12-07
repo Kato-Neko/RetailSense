@@ -42,8 +42,10 @@ class DatabaseManager:
         """Initialize the connection pool."""
         try:
             conn_params = self._get_connection_params()
-            minconn = int(os.getenv("DB_POOL_MIN", 1))
-            maxconn = int(os.getenv("DB_POOL_MAX", 10))
+            # Optimize pool size for Railway Pro plan (32 vCPU)
+            # Use smaller pool to reduce memory usage while maintaining efficiency
+            minconn = int(os.getenv("DB_POOL_MIN", 2))
+            maxconn = int(os.getenv("DB_POOL_MAX", 5))  # Reduced from 10 to save memory
             
             if isinstance(conn_params, str):
                 # URL-based connection
@@ -74,14 +76,21 @@ class DatabaseManager:
         """
         if self._connection_pool:
             try:
-                return self._connection_pool.getconn()
+                conn = self._connection_pool.getconn()
+                # Mark connection as from pool for proper cleanup
+                conn._from_pool = True
+                return conn
             except Exception as e:
                 logger.warning(f"Failed to get connection from pool: {e}, falling back to direct connection")
                 # Fallback to direct connection
-                return self._get_direct_connection()
+                conn = self._get_direct_connection()
+                conn._from_pool = False
+                return conn
         else:
             # Fallback to direct connection if pool not initialized
-            return self._get_direct_connection()
+            conn = self._get_direct_connection()
+            conn._from_pool = False
+            return conn
     
     def _get_direct_connection(self):
         """Get a direct connection (fallback when pool is unavailable)."""
@@ -103,15 +112,43 @@ class DatabaseManager:
     
     def return_connection(self, conn):
         """Return a connection to the pool."""
-        if self._connection_pool and conn:
-            try:
-                self._connection_pool.putconn(conn)
-            except Exception as e:
-                logger.warning(f"Failed to return connection to pool: {e}")
+        if not conn:
+            return
+        
+        try:
+            # Check if connection came from pool
+            from_pool = getattr(conn, '_from_pool', False)
+            
+            if from_pool and self._connection_pool:
+                # Connection from pool - return it
+                if conn.closed:
+                    logger.warning("Connection already closed, not returning to pool")
+                    return
                 try:
-                    conn.close()
+                    self._connection_pool.putconn(conn)
+                except Exception as e:
+                    logger.warning(f"Failed to return connection to pool: {e}")
+                    # If return fails, close the connection
+                    try:
+                        if not conn.closed:
+                            conn.close()
+                    except:
+                        pass
+            else:
+                # Direct connection (fallback) - just close it
+                try:
+                    if not conn.closed:
+                        conn.close()
                 except:
                     pass
+        except Exception as e:
+            logger.warning(f"Error in return_connection: {e}")
+            # Last resort - try to close
+            try:
+                if conn and not conn.closed:
+                    conn.close()
+            except:
+                pass
     
     def close_all(self):
         """Close all connections in the pool."""

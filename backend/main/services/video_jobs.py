@@ -18,14 +18,19 @@ def update_job_status_in_db(job_id: str, job: Dict[str, Any]):
     from ..core.db import get_db_connection_context
     with get_db_connection_context() as conn:
         cur = conn.cursor()
-        cur.execute('''
-            UPDATE jobs 
-            SET status = %s, message = %s, updated_at = CURRENT_TIMESTAMP
-            WHERE job_id = %s
-        ''', (job['status'], job['message'], job_id))
-    cur.close()
-    conn.commit()
-    conn.close()
+        try:
+            cur.execute('''
+                UPDATE jobs 
+                SET status = %s, message = %s, updated_at = CURRENT_TIMESTAMP
+                WHERE job_id = %s
+            ''', (job['status'], job['message'], job_id))
+            conn.commit()  # Commit INSIDE the with block
+        except Exception as e:
+            logger.error(f"Error updating job {job_id} status: {e}")
+            conn.rollback()
+        finally:
+            cur.close()
+            # Connection is automatically returned to pool by context manager
 
 
 def update_job_progress(job_id: str, stage: str, progress: float):

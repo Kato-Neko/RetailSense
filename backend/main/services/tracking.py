@@ -121,15 +121,17 @@ def detect_and_track(
             frame_count += 1
             continue
         
-        # Always write frame to output video (resized)
+        # Determine if we should process this frame for detection
+        should_process = (frame_count % frame_skip == 0)
+        
+        # Memory-efficient frame processing: resize once and reuse
         if scale_factor != 1.0:
             frame_resized = cv2.resize(frame, (width, height))
         else:
-            frame_resized = frame.copy()
-        out.write(frame_resized)
+            frame_resized = frame
         
-        # Determine if we should process this frame for detection
-        should_process = (frame_count % frame_skip == 0)
+        # Write frame to output video
+        out.write(frame_resized)
         
         if should_process:
             processed_frames += 1
@@ -138,9 +140,8 @@ def detect_and_track(
             if not warmup_done:
                 logger.info("Warming up YOLO model with first frame...")
                 try:
-                    # Use smaller warmup frame for faster initialization
-                    dummy_frame = cv2.resize(frame, (320, 320))
-                    model(dummy_frame, verbose=False, imgsz=320, conf=0.4, device='cpu', half=False)
+                    # Use resized frame directly (no extra copy)
+                    model(frame_resized, verbose=False, imgsz=320, conf=0.4, device='cpu', half=False)
                     logger.info("Model warmup completed")
                     warmup_done = True
                 except Exception as e:
@@ -157,8 +158,8 @@ def detect_and_track(
             start_time = time.time()
             
             try:
-                # YOLO inference - optimized for speed
-                results = model(frame, 
+                # YOLO inference - use resized frame directly (memory efficient)
+                results = model(frame_resized, 
                               classes=[0], 
                               verbose=False,
                               imgsz=320,  # Smaller input size for faster inference
@@ -192,9 +193,9 @@ def detect_and_track(
             if processed_frames <= 3:
                 logger.info(f"YOLO found {total_detections} total detections, {len(detections)} above threshold in processed frame {processed_frames}")
 
-            # Update tracks
+            # Update tracks - use resized frame for tracking (memory efficient)
             try:
-                tracks = tracker.update_tracks(detections, frame=frame)
+                tracks = tracker.update_tracks(detections, frame=frame_resized)
             except Exception as e:
                 logger.error(f"Error updating tracks for frame {frame_count}: {e}")
                 tracks = []
@@ -265,20 +266,36 @@ def detect_and_track(
             if should_report_progress:
                 progress_callback(progress)
                 # Minimal logging: suppress frequent progress logs
-            
-            # Periodic memory cleanup for long videos
-            if frame_count % 100 == 0:
-                import gc
-                gc.collect()
+        
+        # Memory cleanup after processing frame
+        # Delete original frame if we resized (frame_resized is a new array)
+        if scale_factor != 1.0:
+            del frame  # Original frame no longer needed
+        
+        # Periodic memory cleanup for long videos (every 50 frames)
+        if frame_count % 50 == 0:
+            import gc
+            gc.collect()
 
     # Explicitly release resources
     cap.release()
     out.release()
     cv2.destroyAllWindows()
     
-    # Memory cleanup
+    # Aggressive memory cleanup
     import gc
-    del frame
+    # Clear any remaining frame references
+    try:
+        if 'frame' in locals():
+            del frame
+        if 'frame_resized' in locals():
+            del frame_resized
+    except:
+        pass
+    # Clear detection list if it's large (keep only essential data)
+    if len(detections_for_heatmap) > 10000:
+        logger.warning(f"Large detection list ({len(detections_for_heatmap)} items), consider optimizing")
+    # Force garbage collection
     gc.collect()
     
     logger.info(f"Video processing completed: {frame_count} frames read, {processed_frames} processed")

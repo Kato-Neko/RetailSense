@@ -126,6 +126,9 @@ def get_job_queue() -> JobQueue:
     global _job_queue
     if _job_queue is None:
         import os
+        # For Railway Pro plan (32 vCPU), allow 2-3 concurrent jobs
+        # But keep default at 1 for memory efficiency
+        # Can be overridden with MAX_CONCURRENT_JOBS env var
         max_concurrent = int(os.getenv("MAX_CONCURRENT_JOBS", 1))
         _job_queue = JobQueue(max_concurrent=max_concurrent)
         _job_queue.start()
