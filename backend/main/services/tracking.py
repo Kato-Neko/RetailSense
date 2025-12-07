@@ -18,6 +18,7 @@ def _get_model():
     if _model is None:
         from ultralytics import YOLO
         import torch
+        import os
         
         # Load model with CPU optimizations
         # The model will be pre-downloaded during Docker build
@@ -25,9 +26,14 @@ def _get_model():
         
         # Optimize model for CPU inference
         _model.model.eval()  # Set to evaluation mode
-        torch.set_num_threads(1)  # Use single thread for better performance on small instances
         
-        logger.info("YOLO model loaded and optimized for CPU inference")
+        # Use more threads if available (but cap at 4 to avoid overhead)
+        # For Railway hobby plan (1 vCPU), this will typically be 1-2 threads
+        cpu_count = os.cpu_count() or 1
+        num_threads = min(cpu_count, 4)  # Cap at 4 to avoid thread overhead
+        torch.set_num_threads(num_threads)
+        
+        logger.info(f"YOLO model loaded and optimized for CPU inference ({num_threads} threads)")
     return _model
 
 
@@ -259,9 +265,21 @@ def detect_and_track(
             if should_report_progress:
                 progress_callback(progress)
                 # Minimal logging: suppress frequent progress logs
+            
+            # Periodic memory cleanup for long videos
+            if frame_count % 100 == 0:
+                import gc
+                gc.collect()
 
+    # Explicitly release resources
     cap.release()
     out.release()
+    cv2.destroyAllWindows()
+    
+    # Memory cleanup
+    import gc
+    del frame
+    gc.collect()
     
     logger.info(f"Video processing completed: {frame_count} frames read, {processed_frames} processed")
     return output_path, detections_for_heatmap, fps

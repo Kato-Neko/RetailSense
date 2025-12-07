@@ -69,6 +69,57 @@ app.register_blueprint(jobs_bp, url_prefix='/api')
 def test_route():
     return jsonify({"message": "API routing is working"})
 
+# Health check endpoint
+@app.route('/health')
+@app.route('/api/health')
+def health_check():
+    """Health check endpoint for monitoring system status."""
+    try:
+        from .services.job_queue import get_job_queue
+        from .services.tracking import _get_model
+        from .core.db import get_db_connection_context
+        
+        # Check job queue
+        job_queue = get_job_queue()
+        queue_status = job_queue.get_status()
+        
+        # Check model is loaded (cached)
+        model_loaded = False
+        try:
+            model = _get_model()
+            model_loaded = model is not None
+        except Exception as e:
+            logger.warning(f"Model check failed: {e}")
+        
+        # Check database connection
+        db_healthy = False
+        try:
+            with get_db_connection_context() as conn:
+                cur = conn.cursor()
+                cur.execute("SELECT 1")
+                cur.fetchone()
+                cur.close()
+                db_healthy = True
+        except Exception as e:
+            logger.warning(f"Database check failed: {e}")
+        
+        status = "healthy" if (model_loaded and db_healthy) else "degraded"
+        
+        return jsonify({
+            "status": status,
+            "model_loaded": model_loaded,
+            "database": "connected" if db_healthy else "disconnected",
+            "job_queue": queue_status,
+            "timestamp": __import__('datetime').datetime.now().isoformat()
+        }), 200 if status == "healthy" else 503
+        
+    except Exception as e:
+        logger.error(f"Health check failed: {e}")
+        return jsonify({
+            "status": "unhealthy",
+            "error": str(e)
+        }), 503
+
 # Direct routes for backward compatibility (without /api prefix)
 @app.route('/heatmap_jobs/<job_id>/result/image', methods=['GET', 'OPTIONS'])
 @cross_origin()

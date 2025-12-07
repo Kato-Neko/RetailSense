@@ -151,11 +151,11 @@ def create_heatmap_job():
         finally:
             conn.close()
 
-        import threading
-        processing_thread = threading.Thread(target=process_video_job, args=(job_id,))
-        processing_thread.daemon = True
-        processing_thread.start()
-        logger.info(f"Started processing thread for job {job_id}")
+        # Use job queue instead of direct threading
+        from ..services.job_queue import get_job_queue
+        job_queue = get_job_queue()
+        job_queue.add_job(job_id, process_video_job, job_id)
+        logger.info(f"Job {job_id} submitted to queue (queue size: {job_queue.get_queue_size()})")
 
         return jsonify({"job_id": job_id, "status": "pending", "message": "Job submitted for processing."}), 202
     except Exception as e:
@@ -169,12 +169,12 @@ def get_job_status(job_id):
     if job:
         return jsonify({"job_id": job_id, "status": job['status'], "message": job.get('message', '')})
     else:
-        conn = get_db_connection()
-        cur = conn.cursor()
-        cur.execute("SELECT job_id, status, message FROM jobs WHERE job_id = %s", (job_id,))
-        db_job = cur.fetchone()
-        cur.close()
-        conn.close()
+        from ..core.db import get_db_connection_context
+        with get_db_connection_context() as conn:
+            cur = conn.cursor()
+            cur.execute("SELECT job_id, status, message FROM jobs WHERE job_id = %s", (job_id,))
+            db_job = cur.fetchone()
+            cur.close()
         if db_job:
             return jsonify({"job_id": db_job['job_id'] if isinstance(db_job, dict) else db_job[0], "status": db_job['status'] if isinstance(db_job, dict) else db_job[1], "message": db_job['message'] if isinstance(db_job, dict) else db_job[2]})
         else:

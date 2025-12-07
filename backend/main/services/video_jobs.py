@@ -15,13 +15,14 @@ from .state import get_jobs_store
 
 
 def update_job_status_in_db(job_id: str, job: Dict[str, Any]):
-    conn = get_db_connection()
-    cur = conn.cursor()
-    cur.execute('''
-        UPDATE jobs 
-        SET status = %s, message = %s, updated_at = CURRENT_TIMESTAMP
-        WHERE job_id = %s
-    ''', (job['status'], job['message'], job_id))
+    from ..core.db import get_db_connection_context
+    with get_db_connection_context() as conn:
+        cur = conn.cursor()
+        cur.execute('''
+            UPDATE jobs 
+            SET status = %s, message = %s, updated_at = CURRENT_TIMESTAMP
+            WHERE job_id = %s
+        ''', (job['status'], job['message'], job_id))
     cur.close()
     conn.commit()
     conn.close()
@@ -34,22 +35,22 @@ def update_job_progress(job_id: str, stage: str, progress: float):
     
     # Minimal logging: progress updates are silent to avoid log flooding
     
-    conn = get_db_connection()
-    cur = conn.cursor()
-    try:
-        cur.execute('''
-            UPDATE jobs 
-            SET message = %s, updated_at = CURRENT_TIMESTAMP
-            WHERE job_id = %s
-        ''', (job['message'], job_id))
-        conn.commit()
-        # Minimal logging: suppress success spam for progress updates
-    except Exception as e:
-        logger.error(f"Error updating job {job_id} progress in database: {e}")
-        conn.rollback()
-    finally:
-        cur.close()
-        conn.close()
+    from ..core.db import get_db_connection_context
+    with get_db_connection_context() as conn:
+        cur = conn.cursor()
+        try:
+            cur.execute('''
+                UPDATE jobs 
+                SET message = %s, updated_at = CURRENT_TIMESTAMP
+                WHERE job_id = %s
+            ''', (job['message'], job_id))
+            conn.commit()
+            # Minimal logging: suppress success spam for progress updates
+        except Exception as e:
+            logger.error(f"Error updating job {job_id} progress in database: {e}")
+            conn.rollback()
+        finally:
+            cur.close()
 
 
 def process_video_job(job_id: str):
@@ -200,40 +201,40 @@ def process_video_job(job_id: str):
         logger.info(f"  - output_heatmap_path: {output_heatmap_image_path}")
         logger.info(f"  - output_video_path: {output_video_path}")
 
-        conn = get_db_connection()
-        cur = conn.cursor()
-        try:
-            # First, let's check if the job exists in the database
-            cur.execute("SELECT job_id, status FROM jobs WHERE job_id = %s", (job_id,))
-            existing_job = cur.fetchone()
-            if existing_job:
-                logger.info(f"Found existing job {job_id} with status: {existing_job[1]}")
-            else:
-                logger.error(f"Job {job_id} not found in database!")
-                return
-            
-            cur.execute('''
-                UPDATE jobs 
-                SET status = %s, message = %s, updated_at = CURRENT_TIMESTAMP, output_heatmap_path = %s, output_video_path = %s
-                WHERE job_id = %s
-            ''', (job['status'], job['message'], output_heatmap_image_path, output_video_path, job_id))
-            conn.commit()
-            logger.info(f"Successfully updated job {job_id} in database with output paths")
-            
-            # Verify the update worked
-            cur.execute("SELECT output_heatmap_path, output_video_path FROM jobs WHERE job_id = %s", (job_id,))
-            updated_job = cur.fetchone()
-            if updated_job:
-                logger.info(f"Verified database update - heatmap_path: {updated_job[0]}, video_path: {updated_job[1]}")
-            else:
-                logger.error(f"Failed to verify database update for job {job_id}")
+        from ..core.db import get_db_connection_context
+        with get_db_connection_context() as conn:
+            cur = conn.cursor()
+            try:
+                # First, let's check if the job exists in the database
+                cur.execute("SELECT job_id, status FROM jobs WHERE job_id = %s", (job_id,))
+                existing_job = cur.fetchone()
+                if existing_job:
+                    logger.info(f"Found existing job {job_id} with status: {existing_job[1]}")
+                else:
+                    logger.error(f"Job {job_id} not found in database!")
+                    return
                 
-        except Exception as e:
-            logger.error(f"Error updating job {job_id} in database: {e}")
-            conn.rollback()
-        finally:
-            cur.close()
-            conn.close()
+                cur.execute('''
+                    UPDATE jobs 
+                    SET status = %s, message = %s, updated_at = CURRENT_TIMESTAMP, output_heatmap_path = %s, output_video_path = %s
+                    WHERE job_id = %s
+                ''', (job['status'], job['message'], output_heatmap_image_path, output_video_path, job_id))
+                conn.commit()
+                logger.info(f"Successfully updated job {job_id} in database with output paths")
+                
+                # Verify the update worked
+                cur.execute("SELECT output_heatmap_path, output_video_path FROM jobs WHERE job_id = %s", (job_id,))
+                updated_job = cur.fetchone()
+                if updated_job:
+                    logger.info(f"Verified database update - heatmap_path: {updated_job[0]}, video_path: {updated_job[1]}")
+                else:
+                    logger.error(f"Failed to verify database update for job {job_id}")
+                    
+            except Exception as e:
+                logger.error(f"Error updating job {job_id} in database: {e}")
+                conn.rollback()
+            finally:
+                cur.close()
 
     except Exception as e:
         job = jobs.get(job_id, {})
@@ -244,27 +245,27 @@ def process_video_job(job_id: str):
 
 
 def _update_db_error(job_id: str, job: Dict[str, Any]):
-    conn = get_db_connection()
-    cur = conn.cursor()
-    cur.execute('''
-        UPDATE jobs 
-        SET status = %s, message = %s, updated_at = CURRENT_TIMESTAMP
-        WHERE job_id = %s
-    ''', (job['status'], job['message'], job_id))
-    cur.close()
-    conn.commit()
-    conn.close()
+    from ..core.db import get_db_connection_context
+    with get_db_connection_context() as conn:
+        cur = conn.cursor()
+        cur.execute('''
+            UPDATE jobs 
+            SET status = %s, message = %s, updated_at = CURRENT_TIMESTAMP
+            WHERE job_id = %s
+        ''', (job['status'], job['message'], job_id))
+        conn.commit()
+        cur.close()
 
 
 def run_custom_heatmap_job(job_id: str, start_time: float, end_time: float, set_progress: Callable[[float], None]):
     try:
         logger.info(f"Starting custom heatmap generation for job {job_id}, time range: {start_time}-{end_time}")
-        conn = get_db_connection()
-        cur = conn.cursor()
-        cur.execute("SELECT * FROM jobs WHERE job_id = %s", (job_id,))
-        job_row = cur.fetchone()
-        cur.close()
-        conn.close()
+        from ..core.db import get_db_connection_context
+        with get_db_connection_context() as conn:
+            cur = conn.cursor()
+            cur.execute("SELECT * FROM jobs WHERE job_id = %s", (job_id,))
+            job_row = cur.fetchone()
+            cur.close()
         if not job_row or job_row[6] != 'completed':
             logger.error(f"Job {job_id} not found or not completed")
             set_progress(1.0)
