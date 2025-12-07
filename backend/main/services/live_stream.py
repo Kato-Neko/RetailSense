@@ -13,6 +13,7 @@ from datetime import datetime
 from ..core.config import logger, UPLOAD_FOLDER, RESULTS_FOLDER
 from ..core.db import get_db_connection
 from ..core.storage import upload_json_to_supabase, upload_image_to_supabase
+from ..core.detection_config import get_detection_config
 from .tracking import _get_model, _get_tracker
 from .state import get_jobs_store
 
@@ -211,8 +212,12 @@ class LiveStreamProcessor:
     def _detect_and_track_frame(self, frame, frame_number: int) -> List[Dict[str, Any]]:
         """Run detection and tracking on a single frame"""
         try:
-            # Run YOLO detection
-            results = self.model(frame, verbose=False)
+            config = get_detection_config()
+            
+            # Run YOLO detection with config (use live stream confidence)
+            yolo_params = config.get_yolo_params()
+            yolo_params['conf'] = config.LIVE_STREAM_CONFIDENCE  # Override with live stream confidence
+            results = self.model(frame, verbose=False, **yolo_params)
             detections = []
             
             # Process detections (filter for persons only)
@@ -224,7 +229,7 @@ class LiveStreamProcessor:
                         x1, y1, x2, y2 = box.xyxy[0].cpu().numpy()
                         conf = float(box.conf[0].cpu().numpy())
                         
-                        if conf > 0.25:  # Confidence threshold
+                        if conf > config.LIVE_STREAM_CONFIDENCE:  # Use config
                             detections.append({
                                 'bbox': [float(x1), float(y1), float(x2), float(y2)],
                                 'confidence': conf,

@@ -7,6 +7,7 @@ import cv2
 import numpy as np
 from typing import Callable, Tuple, List, Dict, Any, Optional
 from ..core.config import logger
+from ..core.detection_config import get_detection_config
 
 # Lazy singletons for heavy models
 _model = None
@@ -19,15 +20,17 @@ def _get_model():
         from ultralytics import YOLO
         import torch
         
+        config = get_detection_config()
+        
         # Load model with CPU optimizations
         # The model will be pre-downloaded during Docker build
-        _model = YOLO('yolov8n.pt')
+        _model = YOLO(config.YOLO_MODEL)
         
         # Optimize model for CPU inference
         _model.model.eval()  # Set to evaluation mode
         torch.set_num_threads(1)  # Use single thread for better performance on small instances
         
-        logger.info("YOLO model loaded and optimized for CPU inference")
+        logger.info(f"YOLO model loaded: {config.YOLO_MODEL} (optimized for CPU inference)")
     return _model
 
 
@@ -35,7 +38,12 @@ def _get_tracker():
     global _tracker
     if _tracker is None:
         from deep_sort_realtime.deepsort_tracker import DeepSort
-        _tracker = DeepSort(max_age=30)
+        
+        config = get_detection_config()
+        deepsort_params = config.get_deepsort_params()
+        
+        _tracker = DeepSort(**deepsort_params)
+        logger.info(f"DeepSort tracker initialized: {deepsort_params}")
     return _tracker
 
 
@@ -51,6 +59,7 @@ def detect_and_track(
 
     Returns: (output_video_path, detections_for_heatmap, fps)
     """
+    config = get_detection_config()
     model = _get_model()
     tracker = _get_tracker()
 
@@ -66,8 +75,8 @@ def detect_and_track(
     fps = int(cap.get(cv2.CAP_PROP_FPS))
     total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
 
-    # Resize frames for faster processing - more aggressive resizing
-    max_width = 320  # Increased from 224 for better detection quality
+    # Resize frames for faster processing - use config
+    max_width = config.MAX_FRAME_WIDTH
     if original_width > max_width:
         scale_factor = max_width / original_width
         width = max_width
@@ -78,6 +87,7 @@ def detect_and_track(
         scale_factor = 1.0
 
     logger.info(f"Processing video: {original_width}x{original_height} -> {width}x{height} (scale: {scale_factor:.2f})")
+    logger.info(f"Detection config: {config}")
 
     fourcc = cv2.VideoWriter_fourcc(*'mp4v')
     out = cv2.VideoWriter(output_path, fourcc, fps, (width, height))
@@ -85,7 +95,7 @@ def detect_and_track(
     detections_for_heatmap: List[Dict[str, Any]] = []
     frame_count = 0
     processed_frames = 0  # Track actually processed frames
-    frame_skip = 10  # Process every 10th frame (2x faster)
+    frame_skip = config.FRAME_SKIP
     
     # Calculate total frames that will be processed
     total_processed_frames = (total_frames + frame_skip - 1) // frame_skip
@@ -132,9 +142,10 @@ def detect_and_track(
             if not warmup_done:
                 logger.info("Warming up YOLO model with first frame...")
                 try:
-                    # Use smaller warmup frame for faster initialization
-                    dummy_frame = cv2.resize(frame, (320, 320))
-                    model(dummy_frame, verbose=False, imgsz=320, conf=0.4, device='cpu', half=False)
+                    # Use config for warmup
+                    dummy_frame = cv2.resize(frame, (config.YOLO_INPUT_SIZE, config.YOLO_INPUT_SIZE))
+                    yolo_params = config.get_yolo_params()
+                    model(dummy_frame, verbose=False, **yolo_params)
                     logger.info("Model warmup completed")
                     warmup_done = True
                 except Exception as e:
@@ -151,16 +162,9 @@ def detect_and_track(
             start_time = time.time()
             
             try:
-                # YOLO inference - optimized for speed
-                results = model(frame, 
-                              classes=[0], 
-                              verbose=False,
-                              imgsz=320,  # Smaller input size for faster inference
-                              conf=0.4,   # Slightly lower confidence for better detection
-                              iou=0.5,    # Lower IoU for faster NMS
-                              max_det=5,  # Fewer max detections
-                              device='cpu',
-                              half=False) # Disable half precision on CPU
+                # YOLO inference - use config parameters
+                yolo_params = config.get_yolo_params()
+                results = model(frame, **yolo_params)
             except Exception as e:
                 logger.error(f"Error processing frame {frame_count} with YOLO: {e}")
                 frame_count += 1
@@ -179,7 +183,7 @@ def detect_and_track(
                     x1, y1, x2, y2 = map(int, box.xyxy[0])
                     conf = float(box.conf[0])
                     total_detections += 1
-                    if conf > 0.3:
+                    if conf > config.YOLO_POST_CONFIDENCE:
                         detections.append(([x1, y1, x2, y2], conf, 0))
 
             # Debug logging for first few processed frames

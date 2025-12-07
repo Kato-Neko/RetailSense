@@ -1,0 +1,119 @@
+warning: in the working copy of 'frontend/src/pages/Dashboard.jsx', LF will be replaced by CRLF the next time Git touches it
+[1mdiff --git a/frontend/src/pages/Dashboard.jsx b/frontend/src/pages/Dashboard.jsx[m
+[1mindex 5d8914d..3fb1966 100644[m
+[1m--- a/frontend/src/pages/Dashboard.jsx[m
+[1m+++ b/frontend/src/pages/Dashboard.jsx[m
+[36m@@ -129,12 +129,13 @@[m [mconst Dashboard = () => {[m
+         let allCompletedJobs = jobHistory.filter((job) => job.status === "completed")[m
+         [m
+         // Filter by date range when comparison mode is enabled[m
+[32m+[m[32m        // Use start_datetime (when video was recorded) not created_at (when job was created)[m
+         let completedJobs = allCompletedJobs[m
+         if (comparisonMode) {[m
+           const { currentStart, currentEnd } = getDateRanges()[m
+           completedJobs = allCompletedJobs.filter(job => {[m
+[31m-            const jobCreated = new Date(job.created_at)[m
+[31m-            return jobCreated >= currentStart && jobCreated < currentEnd[m
+[32m+[m[32m            const jobStartDateTime = job.start_datetime ? new Date(job.start_datetime) : new Date(job.created_at)[m
+[32m+[m[32m            return jobStartDateTime >= currentStart && jobStartDateTime < currentEnd[m
+           })[m
+         }[m
+         [m
+[36m@@ -164,18 +165,13 @@[m [mconst Dashboard = () => {[m
+           // Fetch detections from the new API endpoint - ONLY ONCE[m
+           try {[m
+             const detectionsResponse = await heatmapService.getDetections(job.job_id)[m
+[31m-            console.log(`Detections Response for job ${job.job_id}:`, detectionsResponse)[m
+[32m+[m[32m            console.log("Detections Response:", detectionsResponse)[m
+ [m
+             if (detectionsResponse && detectionsResponse.detections) {[m
+               const detections = detectionsResponse.detections[m
+               const fps = detectionsResponse.fps[m
+               const startDate = job.start_datetime ? new Date(job.start_datetime) : null[m
+ [m
+[31m-              if (!detections || detections.length === 0) {[m
+[31m-                console.warn(`Job ${job.job_id} has empty detections array`)[m
+[31m-                continue[m
+[31m-              }[m
+[31m-[m
+               detections.forEach((det) => {[m
+                 const trackId = det.track_id[m
+                 const timeInSeconds = det.timestamp || (det.frame / fps)[m
+[36m@@ -195,18 +191,11 @@[m [mconst Dashboard = () => {[m
+                   monthlyUniqueVisitors[month].add(`${job.job_id}_${trackId}`)[m
+                 }[m
+               })[m
+[31m-              console.log(`Successfully processed ${detections.length} detections for job ${job.job_id}`)[m
+             } else {[m
+[31m-              console.warn(`No detections found for job ${job.job_id} - response:`, detectionsResponse)[m
+[32m+[m[32m              console.warn(`No detections found for job ${job.job_id}`)[m
+             }[m
+           } catch (error) {[m
+             console.error(`Error fetching detections for job ${job.job_id}:`, error)[m
+[31m-            // Log more details about the error[m
+[31m-            if (error.response) {[m
+[31m-              console.error(`API Error Status: ${error.response.status}, Data:`, error.response.data)[m
+[31m-            } else if (error.message) {[m
+[31m-              console.error(`Error Message: ${error.message}`)[m
+[31m-            }[m
+           }[m
+         }[m
+ [m
+[36m@@ -271,9 +260,10 @@[m [mconst Dashboard = () => {[m
+           const { comparisonStart, comparisonEnd } = getDateRanges()[m
+           [m
+           // Filter jobs for comparison period[m
+[32m+[m[32m          // Use start_datetime (when video was recorded) not created_at (when job was created)[m
+           const comparisonJobs = allCompletedJobs.filter(job => {[m
+[31m-            const jobCreated = new Date(job.created_at)[m
+[31m-            return jobCreated >= comparisonStart && jobCreated < comparisonEnd[m
+[32m+[m[32m            const jobStartDateTime = job.start_datetime ? new Date(job.start_datetime) : new Date(job.created_at)[m
+[32m+[m[32m            return jobStartDateTime >= comparisonStart && jobStartDateTime < comparisonEnd[m
+           })[m
+           [m
+           if (comparisonJobs.length > 0) {[m
+[36m@@ -291,11 +281,6 @@[m [mconst Dashboard = () => {[m
+                   const fps = detectionsResponse.fps[m
+                   const startDate = job.start_datetime ? new Date(job.start_datetime) : null[m
+ [m
+[31m-                  if (!detections || detections.length === 0) {[m
+[31m-                    console.warn(`Comparison job ${job.job_id} has empty detections array`)[m
+[31m-                    continue[m
+[31m-                  }[m
+[31m-[m
+                   detections.forEach((det) => {[m
+                     const trackId = det.track_id[m
+                     const timeInSeconds = det.timestamp || (det.frame / fps)[m
+[36m@@ -315,15 +300,9 @@[m [mconst Dashboard = () => {[m
+                       compMonthlyVisitors[month].add(`${job.job_id}_${trackId}`)[m
+                     }[m
+                   })[m
+[31m-                  console.log(`Successfully processed ${detections.length} comparison detections for job ${job.job_id}`)[m
+[31m-                } else {[m
+[31m-                  console.warn(`No comparison detections found for job ${job.job_id}`)[m
+                 }[m
+               } catch (error) {[m
+                 console.error(`Error fetching comparison detections for job ${job.job_id}:`, error)[m
+[31m-                if (error.response) {[m
+[31m-                  console.error(`API Error Status: ${error.response.status}, Data:`, error.response.data)[m
+[31m-                }[m
+               }[m
+             }[m
+ [m
+[36m@@ -651,12 +630,12 @@[m [mconst Dashboard = () => {[m
+                 <div className="text-xs text-muted-foreground">Growth Rate</div>[m
+               </div>[m
+               <div className="text-center">[m
+[31m-                <div className="text-lg font-bold text-blue-400">Current: {stats.totalVisitors}</div>[m
+[31m-                <div className="text-xs text-muted-foreground">Total Visitors</div>[m
+[32m+[m[32m                <div className="text-lg font-bold text-yellow-400">Current: {stats.peakHour}</div>[m
+[32m+[m[32m                <div className="text-xs text-muted-foreground">Peak Hour</div>[m
+               </div>[m
+               <div className="text-center">[m
+[31m-                <div className="text-lg font-bold text-slate-400">Previous: {comparisonStats.totalVisitors}</div>[m
+[31m-                <div className="text-xs text-muted-foreground">Total Visitors</div>[m
+[32m+[m[32m                <div className="text-lg font-bold text-slate-400">Previous: {comparisonStats.peakHour}</div>[m
+[32m+[m[32m                <div className="text-xs text-muted-foreground">Peak Hour</div>[m
+               </div>[m
+             </div>[m
+           </Card>[m
