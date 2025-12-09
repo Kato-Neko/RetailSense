@@ -537,9 +537,16 @@ def get_storage_manager() -> StorageManager:
     global _storage_manager
     if _storage_manager is None:
         from .config_manager import get_config_manager
+        from supabase import create_client
+
         config = get_config_manager()
-        config.logger.info("DEBUG: Creating new StorageManager instance")
-        _storage_manager = StorageManager(config.supabase, config.logger)
+        config.logger.info("DEBUG: Creating new StorageManager instance (dedicated service client)")
+
+        # Always use a fresh service-role client for storage to avoid auth session
+        # mutations (e.g., login flows) downgrading the token and tripping RLS.
+        service_supabase = create_client(config.supabase_url, config.supabase_key)
+
+        _storage_manager = StorageManager(service_supabase, config.logger)
         config.logger.info("DEBUG: StorageManager instance created successfully")
     else:
         _storage_manager.logger.info("DEBUG: Returning existing StorageManager instance")
