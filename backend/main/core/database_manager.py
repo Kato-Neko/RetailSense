@@ -66,6 +66,32 @@ class DatabaseManager:
         except Exception as e:
             logger.error(f"Failed to initialize connection pool: {e}")
             self._connection_pool = None
+
+    def _set_from_pool_flag(self, conn, from_pool: bool):
+        """Safely tag a connection as pooled or direct without relying on attributes."""
+        try:
+            # psycopg2 connections may block setting arbitrary attributes
+            conn._from_pool = from_pool  # type: ignore[attr-defined]
+            return
+        except Exception:
+            pass
+        try:
+            # Use connection info dict as a fallback
+            conn.info["from_pool"] = from_pool  # type: ignore[index]
+        except Exception:
+            # If we cannot tag the connection, default to treating it as direct
+            logger.warning("Could not tag connection with from_pool flag; treating as direct")
+
+    def _get_from_pool_flag(self, conn) -> bool:
+        """Retrieve pooled flag set by _set_from_pool_flag."""
+        try:
+            return bool(getattr(conn, "_from_pool"))
+        except Exception:
+            pass
+        try:
+            return bool(getattr(conn, "info", {}).get("from_pool"))
+        except Exception:
+            return False
     
     def get_connection(self):
         """Get a PostgreSQL connection from the pool.
@@ -78,18 +104,18 @@ class DatabaseManager:
             try:
                 conn = self._connection_pool.getconn()
                 # Mark connection as from pool for proper cleanup
-                conn._from_pool = True
+                self._set_from_pool_flag(conn, True)
                 return conn
             except Exception as e:
                 logger.warning(f"Failed to get connection from pool: {e}, falling back to direct connection")
                 # Fallback to direct connection
                 conn = self._get_direct_connection()
-                conn._from_pool = False
+                self._set_from_pool_flag(conn, False)
                 return conn
         else:
             # Fallback to direct connection if pool not initialized
             conn = self._get_direct_connection()
-            conn._from_pool = False
+            self._set_from_pool_flag(conn, False)
             return conn
     
     def _get_direct_connection(self):
@@ -117,7 +143,7 @@ class DatabaseManager:
         
         try:
             # Check if connection came from pool
-            from_pool = getattr(conn, '_from_pool', False)
+            from_pool = self._get_from_pool_flag(conn)
             
             if from_pool and self._connection_pool:
                 # Connection from pool - return it
