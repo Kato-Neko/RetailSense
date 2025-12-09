@@ -202,39 +202,48 @@ def get_processed_video(job_id):
 @cross_origin()
 @jwt_required()
 def get_job_history():
+    """Return job history for the current user with safe pooled connections."""
+    from ..core.db import get_db_connection_context
     current_user = get_jwt_identity()
-    conn = get_db_connection()
-    cur = conn.cursor()
-    cur.execute('''
-        SELECT job_id,
-               input_video_name,
-               input_floorplan_name,
-               status,
-               message,
-               start_datetime,
-               end_datetime,
-               created_at,
-               updated_at
-        FROM jobs WHERE "user" = %s ORDER BY created_at DESC
-    ''', (current_user,))
-    rows = cur.fetchall()
-    history_jobs = [
-        {
-            "job_id": row[0],
-            "input_video_name": row[1],
-            "input_floorplan_name": row[2],
-            "status": row[3],
-            "message": row[4],
-            "start_datetime": to_manila_iso(row[5]),
-            "end_datetime": to_manila_iso(row[6]),
-            "created_at": to_manila_iso(row[7]),
-            "updated_at": to_manila_iso(row[8]),
-        }
-        for row in rows
-    ]
-    cur.close()
-    conn.close()
-    return jsonify(history_jobs)
+
+    try:
+        with get_db_connection_context() as conn:
+            cur = conn.cursor()
+            cur.execute('''
+                SELECT job_id,
+                       input_video_name,
+                       input_floorplan_name,
+                       status,
+                       message,
+                       start_datetime,
+                       end_datetime,
+                       created_at,
+                       updated_at
+                FROM jobs WHERE "user" = %s ORDER BY created_at DESC
+            ''', (current_user,))
+            rows = cur.fetchall()
+            cur.close()
+
+        history_jobs = [
+            {
+                "job_id": row[0],
+                "input_video_name": row[1],
+                "input_floorplan_name": row[2],
+                "status": row[3],
+                "message": row[4],
+                "start_datetime": to_manila_iso(row[5]),
+                "end_datetime": to_manila_iso(row[6]),
+                "created_at": to_manila_iso(row[7]),
+                "updated_at": to_manila_iso(row[8]),
+            }
+            for row in rows
+        ]
+        return jsonify(history_jobs)
+    except Exception as e:
+        # Defensive logging to diagnose 500s
+        from ..core.config import logger
+        logger.error(f"Error fetching job history for user {current_user}: {e}")
+        return jsonify({"error": "Failed to fetch job history"}), 500
 
 
 @jobs_bp.route('/heatmap_jobs/<job_id>', methods=['DELETE'])
