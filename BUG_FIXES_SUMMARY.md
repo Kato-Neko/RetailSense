@@ -139,3 +139,4 @@ DB_POOL_MAX=5                  # Maximum connections (optimized)
 - Performance improvements are automatic
 - Memory optimizations are transparent to users
 
+
