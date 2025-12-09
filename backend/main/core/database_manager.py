@@ -7,6 +7,7 @@ import psycopg2
 from psycopg2 import pool
 from urllib.parse import urlparse
 from ..core.config import logger
+import weakref
 
 
 class DatabaseManager:
@@ -15,6 +16,8 @@ class DatabaseManager:
     def __init__(self):
         """Initialize the database manager with connection pool."""
         self._connection_pool = None
+        # Track flags per connection without mutating psycopg2 connection objects
+        self._conn_flags = weakref.WeakKeyDictionary()
         self._init_pool()
     
     def _get_connection_params(self):
@@ -68,30 +71,58 @@ class DatabaseManager:
             self._connection_pool = None
 
     def _set_from_pool_flag(self, conn, from_pool: bool):
-        """Safely tag a connection as pooled or direct without relying on attributes."""
+        """Record pooled flag using a side table to avoid mutating connection."""
         try:
-            # psycopg2 connections may block setting arbitrary attributes
-            conn._from_pool = from_pool  # type: ignore[attr-defined]
-            return
+            self._conn_flags[conn] = {"from_pool": from_pool, "returned": False}
         except Exception:
-            pass
-        try:
-            # Use connection info dict as a fallback
-            conn.info["from_pool"] = from_pool  # type: ignore[index]
-        except Exception:
-            # If we cannot tag the connection, default to treating it as direct
             logger.warning("Could not tag connection with from_pool flag; treating as direct")
 
     def _get_from_pool_flag(self, conn) -> bool:
         """Retrieve pooled flag set by _set_from_pool_flag."""
         try:
-            return bool(getattr(conn, "_from_pool"))
-        except Exception:
-            pass
-        try:
-            return bool(getattr(conn, "info", {}).get("from_pool"))
+            return bool(self._conn_flags.get(conn, {}).get("from_pool", False))
         except Exception:
             return False
+
+    def _mark_returned(self, conn):
+        try:
+            flags = self._conn_flags.get(conn)
+            if flags is not None:
+                flags["returned"] = True
+        except Exception:
+            pass
+
+    def _wrap_close(self, conn):
+        """Wrap conn.close so accidental close() returns to pool instead of leaking."""
+        try:
+            original_close = conn.close
+        except Exception:
+            return
+
+        def close_wrapper():
+            try:
+                from_pool = self._get_from_pool_flag(conn)
+                already_returned = self._conn_flags.get(conn, {}).get("returned", False)
+                if from_pool and self._connection_pool and not already_returned:
+                    self._mark_returned(conn)
+                    try:
+                        self._connection_pool.putconn(conn)
+                        return
+                    except Exception as e:
+                        logger.warning(f"Failed to return connection to pool via close(): {e}")
+                # Fall back to original close
+                original_close()
+            except Exception:
+                try:
+                    original_close()
+                except Exception:
+                    pass
+
+        try:
+            conn.close = close_wrapper  # type: ignore[assignment]
+        except Exception:
+            # If we cannot wrap, just proceed; worst case the caller must return manually.
+            pass
     
     def get_connection(self):
         """Get a PostgreSQL connection from the pool.
@@ -105,17 +136,20 @@ class DatabaseManager:
                 conn = self._connection_pool.getconn()
                 # Mark connection as from pool for proper cleanup
                 self._set_from_pool_flag(conn, True)
+                self._wrap_close(conn)
                 return conn
             except Exception as e:
                 logger.warning(f"Failed to get connection from pool: {e}, falling back to direct connection")
                 # Fallback to direct connection
                 conn = self._get_direct_connection()
                 self._set_from_pool_flag(conn, False)
+                self._wrap_close(conn)
                 return conn
         else:
             # Fallback to direct connection if pool not initialized
             conn = self._get_direct_connection()
             self._set_from_pool_flag(conn, False)
+            self._wrap_close(conn)
             return conn
     
     def _get_direct_connection(self):
@@ -151,6 +185,7 @@ class DatabaseManager:
                     logger.warning("Connection already closed, not returning to pool")
                     return
                 try:
+                    self._mark_returned(conn)
                     self._connection_pool.putconn(conn)
                 except Exception as e:
                     logger.warning(f"Failed to return connection to pool: {e}")

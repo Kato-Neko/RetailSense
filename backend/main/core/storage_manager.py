@@ -59,14 +59,25 @@ class StorageManager:
         try:
             json_bytes = json.dumps(data).encode("utf-8")
             self.logger.info(f"DEBUG: Serialized JSON to {len(json_bytes)} bytes")
-            self.supabase.storage.from_(self.bucket).upload(
+            resp = self.supabase.storage.from_(self.bucket).upload(
                 supabase_path,
                 json_bytes,
                 {"content-type": "application/json", "x-upsert": "true"}
             )
+            self.logger.info(f"DEBUG: Supabase upload_json response: {resp}")
             self.logger.info(f"DEBUG: Successfully uploaded JSON to Supabase: {self.bucket}/{supabase_path}")
         except Exception as e:
+            # Log as much detail as possible from StorageApiError/httpx
             self.logger.error(f"DEBUG: Failed to upload JSON to Supabase: {type(e).__name__}: {e}")
+            try:
+                if hasattr(e, "args") and e.args:
+                    self.logger.error(f"DEBUG: Exception args: {e.args}")
+                if hasattr(e, "response"):
+                    self.logger.error(f"DEBUG: Exception response: {getattr(e, 'response', None)}")
+                if hasattr(e, "message"):
+                    self.logger.error(f"DEBUG: Exception message: {getattr(e, 'message', None)}")
+            except Exception:
+                pass
             import traceback
             self.logger.error(f"DEBUG: Traceback:\n{traceback.format_exc()}")
             raise
