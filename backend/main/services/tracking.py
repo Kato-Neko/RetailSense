@@ -18,7 +18,6 @@ def _get_model():
     if _model is None:
         from ultralytics import YOLO
         import torch
-        import os
         
         # Load model with CPU optimizations
         # The model will be pre-downloaded during Docker build
@@ -26,14 +25,9 @@ def _get_model():
         
         # Optimize model for CPU inference
         _model.model.eval()  # Set to evaluation mode
+        torch.set_num_threads(1)  # Use single thread for better performance on small instances
         
-        # Use more threads if available (but cap at 4 to avoid overhead)
-        # For Railway hobby plan (1 vCPU), this will typically be 1-2 threads
-        cpu_count = os.cpu_count() or 1
-        num_threads = min(cpu_count, 4)  # Cap at 4 to avoid thread overhead
-        torch.set_num_threads(num_threads)
-        
-        logger.info(f"YOLO model loaded and optimized for CPU inference ({num_threads} threads)")
+        logger.info("YOLO model loaded and optimized for CPU inference")
     return _model
 
 
@@ -73,7 +67,7 @@ def detect_and_track(
     total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
 
     # Resize frames for faster processing - more aggressive resizing
-    max_width = 320  # Increased from 224 for better detection quality
+    max_width = 256  # More aggressive resizing for speed
     if original_width > max_width:
         scale_factor = max_width / original_width
         width = max_width
@@ -86,12 +80,13 @@ def detect_and_track(
     logger.info(f"Processing video: {original_width}x{original_height} -> {width}x{height} (scale: {scale_factor:.2f})")
 
     fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-    out = cv2.VideoWriter(output_path, fourcc, fps, (width, height))
+    # Use original dimensions for the final output video
+    out = cv2.VideoWriter(output_path, fourcc, fps, (original_width, original_height))
 
     detections_for_heatmap: List[Dict[str, Any]] = []
     frame_count = 0
     processed_frames = 0  # Track actually processed frames
-    frame_skip = 10  # Process every 10th frame (2x faster)
+    frame_skip = 5  # Process every 5th frame for a balance of speed and accuracy
     
     # Calculate total frames that will be processed
     total_processed_frames = (total_frames + frame_skip - 1) // frame_skip
@@ -121,17 +116,10 @@ def detect_and_track(
             frame_count += 1
             continue
         
+        out.write(frame) # Write original frame, annotations will be added later
+        
         # Determine if we should process this frame for detection
         should_process = (frame_count % frame_skip == 0)
-        
-        # Memory-efficient frame processing: resize once and reuse
-        if scale_factor != 1.0:
-            frame_resized = cv2.resize(frame, (width, height))
-        else:
-            frame_resized = frame
-        
-        # Write frame to output video
-        out.write(frame_resized)
         
         if should_process:
             processed_frames += 1
@@ -140,8 +128,8 @@ def detect_and_track(
             if not warmup_done:
                 logger.info("Warming up YOLO model with first frame...")
                 try:
-                    # Use resized frame directly (no extra copy)
-                    model(frame_resized, verbose=False, imgsz=320, conf=0.4, device='cpu', half=False)
+                    # Use smaller warmup frame for faster initialization
+                    model(np.zeros((128, 128, 3), dtype=np.uint8), verbose=False, device='cpu')
                     logger.info("Model warmup completed")
                     warmup_done = True
                 except Exception as e:
@@ -158,15 +146,16 @@ def detect_and_track(
             start_time = time.time()
             
             try:
-                # YOLO inference - use resized frame directly (memory efficient)
+                # Resize frame for detection
+                frame_resized = cv2.resize(frame, (width, height))
+                # YOLO inference - optimized for speed
                 results = model(frame_resized, 
                               classes=[0], 
                               verbose=False,
-                              imgsz=320,  # Smaller input size for faster inference
-                              conf=0.4,   # Slightly lower confidence for better detection
-                              iou=0.5,    # Lower IoU for faster NMS
-                              max_det=5,  # Fewer max detections
+                              conf=0.3,   # Confidence threshold
+                              iou=0.5,    # NMS IoU threshold
                               device='cpu',
+                              max_det=10, # Max detections per image
                               half=False) # Disable half precision on CPU
             except Exception as e:
                 logger.error(f"Error processing frame {frame_count} with YOLO: {e}")
@@ -193,7 +182,7 @@ def detect_and_track(
             if processed_frames <= 3:
                 logger.info(f"YOLO found {total_detections} total detections, {len(detections)} above threshold in processed frame {processed_frames}")
 
-            # Update tracks - use resized frame for tracking (memory efficient)
+            # Update tracks
             try:
                 tracks = tracker.update_tracks(detections, frame=frame_resized)
             except Exception as e:
@@ -225,27 +214,18 @@ def detect_and_track(
                     'timestamp': timestamp
                 })
 
-                # Draw bounding box and ID
-                cv2.rectangle(frame_resized, (x1, y1), (x2, y2), (0, 255, 0), 2)
-                text = f"ID: {track_id}"
-                (text_width, text_height), _ = cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, 0.9, 2)
-                cv2.rectangle(frame_resized, (x1, y1-text_height-10), (x1+text_width, y1), (0, 0, 0), -1)
-                cv2.putText(frame_resized, text, (x1, y1-5),
-                           cv2.FONT_HERSHEY_SIMPLEX, 0.9, (255, 255, 255), 2)
-
-                # Draw center dot
-                center_x = int((x1 + x2) / 2)
-                center_y = int((y1 + y2) / 2)
-                cv2.circle(frame_resized, (center_x, center_y), 4, (255, 255, 255), -1)
-
-            # Update the output video with the annotated frame
-            out.write(frame_resized)
-
             # Save preview
-            if preview_folder and processed_frames % 2 == 0:  # Every 2nd processed frame
+            if preview_folder and processed_frames % 5 == 0:  # Every 5th processed frame
                 os.makedirs(preview_folder, exist_ok=True)
                 preview_path = os.path.join(preview_folder, 'preview_detections.jpg')
-                cv2.imwrite(preview_path, frame_resized)
+                # Draw boxes on a copy for the preview
+                preview_frame = frame_resized.copy()
+                for track in tracks:
+                    if track.is_confirmed():
+                        ltrb = track.to_ltrb()
+                        x1, y1, x2, y2 = map(int, ltrb)
+                        cv2.rectangle(preview_frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
+                cv2.imwrite(preview_path, preview_frame)
 
         # Increment frame counter
         frame_count += 1
@@ -266,37 +246,9 @@ def detect_and_track(
             if should_report_progress:
                 progress_callback(progress)
                 # Minimal logging: suppress frequent progress logs
-        
-        # Memory cleanup after processing frame
-        # Delete original frame if we resized (frame_resized is a new array)
-        if scale_factor != 1.0:
-            del frame  # Original frame no longer needed
-        
-        # Periodic memory cleanup for long videos (every 50 frames)
-        if frame_count % 50 == 0:
-            import gc
-            gc.collect()
 
-    # Explicitly release resources
     cap.release()
     out.release()
-    cv2.destroyAllWindows()
-    
-    # Aggressive memory cleanup
-    import gc
-    # Clear any remaining frame references
-    try:
-        if 'frame' in locals():
-            del frame
-        if 'frame_resized' in locals():
-            del frame_resized
-    except:
-        pass
-    # Clear detection list if it's large (keep only essential data)
-    if len(detections_for_heatmap) > 10000:
-        logger.warning(f"Large detection list ({len(detections_for_heatmap)} items), consider optimizing")
-    # Force garbage collection
-    gc.collect()
     
     logger.info(f"Video processing completed: {frame_count} frames read, {processed_frames} processed")
     return output_path, detections_for_heatmap, fps
