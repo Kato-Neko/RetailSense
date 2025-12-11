@@ -244,15 +244,21 @@ export default function ViewHeatmap() {
             endDate.setHours(...customTimeRange.end.split(":").map(Number));
             const startTimeInSeconds = (startDate - videoStart) / 1000;
             const endTimeInSeconds = (endDate - videoStart) / 1000;
-            const customUrl = heatmapService.getCustomHeatmapImageUrl(
-              selectedJob.job_id,
-              startTimeInSeconds,
-              endTimeInSeconds,
-              newHeatmapMeta?.timestamp,
-              newHeatmapMeta?.uuid
-            );
-            console.log('[CustomHeatmap] Generated image URL:', customUrl);
-            setCustomHeatmapUrl(customUrl);
+            // If backend provided a signed Supabase URL, use it (more reliable for image rendering)
+            if (data.signed_url) {
+              console.log('[CustomHeatmap] Using signed_url from progress endpoint');
+              setCustomHeatmapUrl(data.signed_url);
+            } else {
+              const customUrl = heatmapService.getCustomHeatmapImageUrl(
+                selectedJob.job_id,
+                startTimeInSeconds,
+                endTimeInSeconds,
+                newHeatmapMeta?.timestamp,
+                newHeatmapMeta?.uuid
+              );
+              console.log('[CustomHeatmap] Generated image URL:', customUrl);
+              setCustomHeatmapUrl(customUrl);
+            }
             // Fetch custom analytics
             setAnalysisLoading(true);
             try {

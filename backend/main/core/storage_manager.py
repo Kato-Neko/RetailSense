@@ -538,6 +538,35 @@ class StorageManager:
             self.logger.error(f"DEBUG: Traceback:\n{traceback.format_exc()}")
             return None
 
+def get_signed_url(supabase_path: str, expires_in: int = 3600) -> Optional[str]:
+    """Generate a signed URL for a file in Supabase storage.
+
+    Args:
+        supabase_path: Path in Supabase storage (e.g., 'job_id/filename.jpg')
+        expires_in: Expiration time in seconds for the signed URL
+
+    Returns:
+        Signed URL string or None if generation failed
+    """
+    manager = get_storage_manager()
+    manager.logger.info(f"DEBUG: get_signed_url called for {supabase_path}, expires_in={expires_in}")
+    try:
+        # supabase-py create_signed_url usually returns a dict with 'signedURL'
+        result = manager.supabase.storage.from_(manager.bucket).create_signed_url(supabase_path, expires_in)
+        manager.logger.info(f"DEBUG: create_signed_url result: {result}")
+        if isinstance(result, dict):
+            # common keys
+            return result.get('signedURL') or result.get('signed_url') or result.get('signedUrl')
+        # If client returns a tuple or string, try to handle
+        if isinstance(result, (list, tuple)) and len(result) > 0:
+            return result[0]
+        if isinstance(result, str):
+            return result
+    except Exception as e:
+        manager.logger.error(f"DEBUG: Failed to generate signed URL for {supabase_path}: {e}")
+        import traceback
+        manager.logger.error(f"DEBUG: Traceback:\n{traceback.format_exc()}")
+    return None
 
 # Global instance
 _storage_manager = None

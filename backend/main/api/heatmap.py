@@ -774,11 +774,29 @@ def get_custom_heatmap_progress(job_id):
     from ..services.state import get_jobs_store
     jobs = get_jobs_store()
     meta = jobs.get(job_id, {}).get('custom_heatmap_meta', {})
-    return jsonify({
+    resp = {
         "progress": progress,
         "timestamp": meta.get('timestamp'),
         "uuid": meta.get('uuid')
-    })
+    }
+
+    # If we have metadata, try to generate a signed Supabase URL for direct image access
+    try:
+        if meta.get('timestamp') and meta.get('uuid'):
+            from ..core.storage import list_files_in_supabase, get_signed_url
+            files = list_files_in_supabase(f"{job_id}")
+            # Look for exact match containing timestamp and uuid
+            match_token = f"_{meta.get('timestamp')}_{meta.get('uuid')}.jpg"
+            matched = [f for f in files if f.endswith(match_token) or match_token in f]
+            if matched:
+                supa_path = matched[-1]
+                signed = get_signed_url(supa_path)
+                if signed:
+                    resp['signed_url'] = signed
+    except Exception as e:
+        logger.warning(f"Failed to generate signed URL in progress endpoint: {e}")
+
+    return jsonify(resp)
 
 
 def get_heatmap_analysis_logic(job_id):
