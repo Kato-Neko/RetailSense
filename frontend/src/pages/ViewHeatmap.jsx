@@ -12,6 +12,7 @@ import { Pagination, PaginationContent, PaginationItem, PaginationLink, Paginati
 import CustomDateTimeStep from "@/modules/module2/CustomDateTimeStep"
 import CustomConfirmationStep from "@/modules/module2/CustomConfirmationStep"
 
+import { Input } from "@/components/ui/input"
 import { toast } from "sonner"
 import AnalyticsSummaryBox from "@/modules/module2/CustomExportStep"
 import apiClient from "../services/api"
@@ -69,6 +70,7 @@ export default function ViewHeatmap() {
   // --- State ---
   const [jobHistory, setJobHistory] = useState([])
   const [selectedJob, setSelectedJob] = useState(null)
+  const [searchQuery, setSearchQuery] = useState("")
   const [heatmapGenerated, setHeatmapGenerated] = useState(false)
   const [analysis, setAnalysis] = useState(null)
   const [analysisLoading, setAnalysisLoading] = useState(false)
@@ -444,6 +446,61 @@ export default function ViewHeatmap() {
     }
   };
 
+  // Refactored export handler for custom heatmaps
+  const handleCustomExport = async (type) => {
+    if (!selectedJob || !customDateRange || !customTimeRange) {
+      toast.error("Cannot export: Missing job or custom time range information.");
+      return;
+    }
+    if (!heatmapMeta?.timestamp || !heatmapMeta?.uuid) {
+      toast.error('Custom heatmap metadata not found. Please generate the custom heatmap first.');
+      return;
+    }
+
+    let url, filename;
+    const videoStart = new Date(selectedJob.start_datetime);
+    const startDate = new Date(customDateRange.start);
+    startDate.setHours(...customTimeRange.start.split(":").map(Number));
+    const endDate = new Date(customDateRange.end);
+    endDate.setHours(...customTimeRange.end.split(":").map(Number));
+    const startTimeInSeconds = (startDate - videoStart) / 1000;
+    const endTimeInSeconds = (endDate - videoStart) / 1000;
+
+    const params = {
+      start_time: startTimeInSeconds,
+      end_time: endTimeInSeconds,
+      start_datetime: `${startDate.toLocaleDateString()} ${startDate.toLocaleTimeString()}`,
+      end_datetime: `${endDate.toLocaleDateString()} ${endDate.toLocaleTimeString()}`,
+      timestamp: heatmapMeta.timestamp,
+      uuid: heatmapMeta.uuid
+    };
+
+    if (type === 'image') {
+      url = `/heatmap_jobs/${selectedJob.job_id}/custom_heatmap_image`;
+      filename = `custom_heatmap_${selectedJob.job_id}.jpg`;
+      // Image export has slightly different param names
+      params.start = params.start_time;
+      params.end = params.end_time;
+    } else {
+      url = `/heatmap_jobs/${selectedJob.job_id}/export/${type}`;
+      filename = `custom_heatmap_${selectedJob.job_id}.${type}`;
+    }
+
+    try {
+      const res = await apiClient.get(url, { params, responseType: 'blob' });
+      const downloadUrl = window.URL.createObjectURL(res.data);
+      const a = document.createElement('a');
+      a.href = downloadUrl;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(downloadUrl);
+    } catch (err) {
+      toast.error(`Failed to export ${type.toUpperCase()}`);
+    }
+  };
+
   return (
     <div className="relative h-[800px] w-full bg-gradient-to-b from-background via-muted to-background dark:from-slate-950 dark:via-slate-900 dark:to-slate-950 py-6 px-1 md:px-0 overflow-hidden">
       {/* Soft background blur and gradient effects */}
@@ -458,13 +515,23 @@ export default function ViewHeatmap() {
           <div className="flex gap-4 items-start w-full">
             {/* History container */}
             <Card className="w-56 shrink-0 h-[calc(100vh-220px)] box-border flex flex-col shadow-xl rounded-xl bg-gradient-to-br from-background/80 to-muted/90">
-              <CardHeader className="pb-2 pt-4"></CardHeader>
+              <CardHeader className="pb-2 pt-4 px-3">
+                <Input
+                  type="search"
+                  placeholder="Search history..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="h-8 text-xs"
+                />
+              </CardHeader>
               <CardContent className="h-full flex-1 overflow-y-auto pt-0">
                 {jobHistory.length === 0 ? (
                   <div className="text-muted-foreground text-center mt-8">No heatmaps found.</div>
                 ) : (
                   <div className="space-y-2">
-                    {jobHistory.map((job) => (
+                    {jobHistory
+                      .filter(job => (job.input_video_name || job.input_floorplan_name || '').toLowerCase().includes(searchQuery.toLowerCase()))
+                      .map((job) => (
                       <div
                         key={job.job_id}
                         className={`flex items-center justify-between px-2 py-2 rounded-md cursor-pointer transition-colors ${selectedJob && selectedJob.job_id === job.job_id ? "bg-primary/20 dark:bg-blue-900/40" : "hover:bg-muted/60 dark:hover:bg-slate-800/60"}`}
@@ -682,136 +749,17 @@ export default function ViewHeatmap() {
                               <div className="flex gap-2 mt-2">
                                 <Button
                                   className="bg-gradient-to-r from-white to-cyan-200 text-black font-semibold shadow-md border border-border py-2 text-sm hover:opacity-90 dark:from-blue-900 dark:to-cyan-800 dark:text-white flex-1"
-                                  onClick={async () => {
-                                    if (!selectedJob || !customDateRange || !customTimeRange) return;
-                                    
-                                    if (!heatmapMeta?.timestamp || !heatmapMeta?.uuid) {
-                                      toast.error('Custom heatmap metadata not found. Please generate the custom heatmap first.');
-                                      return;
-                                    }
-                                    
-                                    try {
-                                      const videoStart = new Date(selectedJob.start_datetime);
-                                      const startDate = new Date(customDateRange.start);
-                                      startDate.setHours(...customTimeRange.start.split(":").map(Number));
-                                      const endDate = new Date(customDateRange.end);
-                                      endDate.setHours(...customTimeRange.end.split(":").map(Number));
-                                      const startTimeInSeconds = (startDate - videoStart) / 1000;
-                                      const endTimeInSeconds = (endDate - videoStart) / 1000;
-                                      const startDatetimeStr = `${startDate.toLocaleDateString()} ${startDate.toLocaleTimeString()}`;
-                                      const endDatetimeStr = `${endDate.toLocaleDateString()} ${endDate.toLocaleTimeString()}`;
-                                      const res = await apiClient.get(
-                                        `/heatmap_jobs/${selectedJob.job_id}/export/csv`,
-                                        {
-                                          params: {
-                                            start_time: startTimeInSeconds,
-                                            end_time: endTimeInSeconds,
-                                            start_datetime: startDatetimeStr,
-                                            end_datetime: endDatetimeStr,
-                                            timestamp: heatmapMeta.timestamp,
-                                            uuid: heatmapMeta.uuid
-                                          },
-                                          responseType: 'blob'
-                                        }
-                                      );
-                                      const url = window.URL.createObjectURL(res.data);
-                                      const a = document.createElement('a');
-                                      a.href = url;
-                                      a.download = `custom_heatmap_${selectedJob.job_id}.csv`;
-                                      document.body.appendChild(a);
-                                      a.click();
-                                      a.remove();
-                                      window.URL.revokeObjectURL(url);
-                                    } catch (err) {
-                                      toast.error('Failed to export CSV');
-                                    }
-                                  }}>
+                                  onClick={() => handleCustomExport('csv')}>
                                     Export CSV
                                   </Button>
                                 <Button
                                   className="bg-gradient-to-r from-white to-cyan-200 text-black font-semibold shadow-md border border-border py-2 text-sm hover:opacity-90 dark:from-blue-900 dark:to-cyan-800 dark:text-white flex-1"
-                                  onClick={async () => {
-                                    if (!selectedJob || !customDateRange || !customTimeRange) return;
-                                    
-                                    if (!heatmapMeta?.timestamp || !heatmapMeta?.uuid) {
-                                      toast.error('Custom heatmap metadata not found. Please generate the custom heatmap first.');
-                                      return;
-                                    }
-                                    
-                                    try {
-                                      const videoStart = new Date(selectedJob.start_datetime);
-                                      const startDate = new Date(customDateRange.start);
-                                      startDate.setHours(...customTimeRange.start.split(":").map(Number));
-                                      const endDate = new Date(customDateRange.end);
-                                      endDate.setHours(...customTimeRange.end.split(":").map(Number));
-                                      const startTimeInSeconds = (startDate - videoStart) / 1000;
-                                      const endTimeInSeconds = (endDate - videoStart) / 1000;
-                                      const startDatetimeStr = `${startDate.toLocaleDateString()} ${startDate.toLocaleTimeString()}`;
-                                      const endDatetimeStr = `${endDate.toLocaleDateString()} ${endDate.toLocaleTimeString()}`;
-                                      const res = await apiClient.get(
-                                        `/heatmap_jobs/${selectedJob.job_id}/export/pdf`,
-                                        {
-                                          params: {
-                                            start_time: startTimeInSeconds,
-                                            end_time: endTimeInSeconds,
-                                            start_datetime: startDatetimeStr,
-                                            end_datetime: endDatetimeStr,
-                                            timestamp: heatmapMeta.timestamp,
-                                            uuid: heatmapMeta.uuid
-                                          },
-                                          responseType: 'blob'
-                                        }
-                                      );
-                                      const url = window.URL.createObjectURL(res.data);
-                                      const a = document.createElement('a');
-                                      a.href = url;
-                                      a.download = `custom_heatmap_${selectedJob.job_id}.pdf`;
-                                      document.body.appendChild(a);
-                                      a.click();
-                                      a.remove();
-                                      window.URL.revokeObjectURL(url);
-                                    } catch (err) {
-                                      toast.error('Failed to export PDF');
-                                    }
-                                  }}>
+                                  onClick={() => handleCustomExport('pdf')}>
                                     Export PDF
                                   </Button>
                                 <Button
                                   className="bg-gradient-to-r from-white to-cyan-200 text-black font-semibold shadow-md border border-border py-2 text-sm hover:opacity-90 dark:from-blue-900 dark:to-cyan-800 dark:text-white flex-1"
-                                  onClick={async () => {
-                                    if (!selectedJob || !customDateRange || !customTimeRange) return;
-                                    try {
-                                      const videoStart = new Date(selectedJob.start_datetime);
-                                      const startDate = new Date(customDateRange.start);
-                                      startDate.setHours(...customTimeRange.start.split(":").map(Number));
-                                      const endDate = new Date(customDateRange.end);
-                                      endDate.setHours(...customTimeRange.end.split(":").map(Number));
-                                      const startTimeInSeconds = (startDate - videoStart) / 1000;
-                                      const endTimeInSeconds = (endDate - videoStart) / 1000;
-                                      const res = await apiClient.get(
-                                        `/heatmap_jobs/${selectedJob.job_id}/custom_heatmap_image`,
-                                        {
-                                          params: { 
-                                            start: startTimeInSeconds, 
-                                            end: endTimeInSeconds,
-                                            timestamp: heatmapMeta?.timestamp,
-                                            uuid: heatmapMeta?.uuid
-                                          },
-                                          responseType: 'blob'
-                                        }
-                                      );
-                                      const url = window.URL.createObjectURL(res.data);
-                                      const a = document.createElement('a');
-                                      a.href = url;
-                                      a.download = `custom_heatmap_${selectedJob.job_id}.jpg`;
-                                      document.body.appendChild(a);
-                                      a.click();
-                                      a.remove();
-                                      window.URL.revokeObjectURL(url);
-                                    } catch (err) {
-                                      toast.error('Failed to export image');
-                                    }
-                                  }}>
+                                  onClick={() => handleCustomExport('image')}>
                                     Export JPG
                                   </Button>
                               </div>
