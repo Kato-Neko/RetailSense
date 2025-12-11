@@ -103,6 +103,7 @@ def detect_and_track(
     
     # Warmup flag
     warmup_done = False
+    active_tracks = {} # To hold track data between skipped frames
     
     try:
         while cap.isOpened():
@@ -120,12 +121,11 @@ def detect_and_track(
                 frame_count += 1
                 continue
             
-            out.write(frame) # Write original frame, annotations will be added later
-            
             # Determine if we should process this frame for detection
             should_process = (frame_count % frame_skip == 0)
             
             if should_process:
+                active_tracks = {} # Reset active tracks for this processed frame
                 processed_frames += 1
                 
                 # Warm up the model on the first processed frame
@@ -230,6 +230,20 @@ def detect_and_track(
                             x1, y1, x2, y2 = map(int, ltrb)
                             cv2.rectangle(preview_frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
                     cv2.imwrite(preview_path, preview_frame)
+
+                    # Store track data for annotating skipped frames
+                    active_tracks[track_id] = (x1_orig, y1_orig, x2_orig, y2_orig)
+
+            # --- Annotation Drawing ---
+            # Draw boxes on the original frame using the latest track data
+            annotated_frame = frame.copy()
+            for track_id, (x1, y1, x2, y2) in active_tracks.items():
+                # Draw bounding box
+                cv2.rectangle(annotated_frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
+                # Draw track ID
+                cv2.putText(annotated_frame, f"ID: {track_id}", (x1, y1 - 10), 
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
+            out.write(annotated_frame)
 
             # Increment frame counter
             frame_count += 1

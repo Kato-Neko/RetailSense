@@ -10,6 +10,32 @@ from typing import Dict, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
+def _get_ai_provider(provider: Optional[str] = None) -> Optional[str]:
+    """
+    Determines the AI provider to use based on the provided argument and available API keys.
+    """
+    if provider:
+        return provider
+    
+    # Auto-detect provider if not specified, with a preferred order
+    if os.getenv('GROQ_API_KEY'):
+        return 'groq'
+    if os.getenv('GEMINI_API_KEY'):
+        return 'gemini'
+    if os.getenv('OPENAI_API_KEY'):
+        return 'openai'
+    
+    return None
+
+
+# --- Non-Streaming Functions ---
+
+_PROVIDER_FUNCTIONS = {
+    'groq': lambda p, c: _call_groq(p, c),
+    'gemini': lambda p, c: _call_gemini_with_fallback(p, c),
+    'openai': lambda p, c: _call_openai(p, c),
+}
+
 def generate_ai_recommendations(
     areas: Dict,
     total_visitors: int,
@@ -21,17 +47,10 @@ def generate_ai_recommendations(
 
     Returns (recommendations, used_ai)
     """
-    # Auto-detect provider if not specified
-    if provider is None:
-        if os.getenv('GROQ_API_KEY'):
-            provider = 'groq'
-        elif os.getenv('GEMINI_API_KEY'):
-            provider = 'gemini'
-        elif os.getenv('OPENAI_API_KEY'):
-            provider = 'openai'
-        else:
-            logger.info("No AI API keys found, using rule-based recommendations")
-            return _generate_rule_based_recommendations(areas, total_visitors), False
+    selected_provider = _get_ai_provider(provider)
+    if not selected_provider:
+        logger.info("No AI provider specified or API keys found, using rule-based recommendations")
+        return _generate_rule_based_recommendations(areas, total_visitors), False
 
     # Prepare context
     context = {
@@ -50,18 +69,12 @@ def generate_ai_recommendations(
     prompt = _build_prompt(context, total_visitors, peak_hours)
 
     # Try different providers
-    try:
-        if provider == 'groq':
-            recs = _call_groq(prompt, context)
-            return recs, True
-        if provider == 'gemini':
-            recs = _call_gemini_with_fallback(prompt, context)
-            return recs, True
-        if provider == 'openai':
-            recs = _call_openai(prompt, context)
-            return recs, True
-    except Exception as e:
-        logger.error(f"AI provider '{provider}' failed: {e}")
+    provider_func = _PROVIDER_FUNCTIONS.get(selected_provider)
+    if provider_func:
+        try:
+            return provider_func(prompt, context), True
+        except Exception as e:
+            logger.error(f"AI provider '{selected_provider}' failed: {e}")
 
     # Fallback
     return _generate_rule_based_recommendations(areas, total_visitors), False
@@ -246,6 +259,13 @@ def _generate_rule_based_recommendations(areas: Dict, total_visitors: int) -> Li
 
 # --- Streaming Functions ---
 
+_STREAM_PROVIDER_FUNCTIONS = {
+    'groq': _call_groq_stream,
+    'gemini': _call_gemini_stream,
+    'openai': _call_openai_stream,
+}
+
+
 def generate_ai_recommendations_stream(
     areas: Dict,
     total_visitors: int,
@@ -256,17 +276,11 @@ def generate_ai_recommendations_stream(
     Generate and stream AI-powered recommendations.
     Yields recommendations as they are generated.
     """
-    if provider is None:
-        if os.getenv('GROQ_API_KEY'):
-            provider = 'groq'
-        elif os.getenv('GEMINI_API_KEY'):
-            provider = 'gemini'
-        elif os.getenv('OPENAI_API_KEY'):
-            provider = 'openai'
-        else:
-            for rec in _generate_rule_based_recommendations(areas, total_visitors):
-                yield rec
-            return
+    selected_provider = _get_ai_provider(provider)
+    if not selected_provider:
+        for rec in _generate_rule_based_recommendations(areas, total_visitors):
+            yield rec
+        return
 
     context = {
         "traffic_distribution": {
@@ -373,4 +387,3 @@ def _parse_ai_stream(response_stream):
                     yield line[2:]
                 elif line:
                     yield line
-
