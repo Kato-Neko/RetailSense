@@ -712,44 +712,58 @@ def get_custom_heatmap_image(job_id):
     timestamp = request.args.get('timestamp')
     unique_id = request.args.get('uuid')
     
+    logger.info(f"[CustomHeatmapImage] Request for job_id={job_id}, start={start}, end={end}, timestamp={timestamp}, uuid={unique_id}")
+    
     if not all([start, end]):
+        logger.error(f"[CustomHeatmapImage] Missing parameters: start={start}, end={end}")
         return jsonify({"error": "Missing start or end parameters"}), 400
         
     # List all files in the job's folder to find the right one
     from ..core.storage import list_files_in_supabase
     files = list_files_in_supabase(f"{job_id}")
+    logger.info(f"[CustomHeatmapImage] Found {len(files)} files in job folder: {[f for f in files if 'custom_heatmap' in f]}")
     
     if timestamp and unique_id:
         # Try exact match first
         supabase_path = f"{job_id}/custom_heatmap_{float(start):.1f}_{float(end):.1f}_{timestamp}_{unique_id}.jpg"
+        logger.info(f"[CustomHeatmapImage] Trying exact match: {supabase_path}")
     else:
         # Try to find most recent matching file
         matching_files = [f for f in files if f.startswith(f"{job_id}/custom_heatmap_{float(start):.1f}_{float(end):.1f}_")]
+        logger.info(f"[CustomHeatmapImage] Searching for files matching pattern: {job_id}/custom_heatmap_{float(start):.1f}_{float(end):.1f}_*, found {len(matching_files)}")
         if matching_files:
             supabase_path = sorted(matching_files)[-1]  # Get most recent
+            logger.info(f"[CustomHeatmapImage] Using most recent: {supabase_path}")
         else:
             supabase_path = f"{job_id}/custom_heatmap_{float(start):.1f}_{float(end):.1f}.jpg"
+            logger.warning(f"[CustomHeatmapImage] No matching files found, trying default path: {supabase_path}")
     
-    logger.info(f"Attempting to download: {supabase_path}")
+    logger.info(f"[CustomHeatmapImage] Attempting to download: {supabase_path}")
     img_bytes = download_image_bytes_from_supabase(supabase_path)
     
     if img_bytes is None:
+        logger.error(f"[CustomHeatmapImage] Failed to download image from {supabase_path}")
         return jsonify({
             "error": "Custom heatmap not found in Supabase",
             "path": supabase_path,
-            "available_files": files
+            "available_files": [f for f in files if 'custom_heatmap' in f]
         }), 404
+    
+    logger.info(f"[CustomHeatmapImage] Successfully downloaded image, size: {len(img_bytes)} bytes")
     
     # Return image bytes directly without saving to disk
     response = Response(
         img_bytes,
         mimetype="image/jpeg",
         headers={
-            'Content-Disposition': f'inline; filename=heatmap_{job_id}.jpg',
-            'Cache-Control': 'no-cache'
+            'Content-Disposition': 'inline; filename="heatmap.jpg"',
+            'Cache-Control': 'public, max-age=3600',
+            'Content-Length': str(len(img_bytes)),
+            'Access-Control-Allow-Origin': '*'
         }
     )
     
+    logger.info(f"[CustomHeatmapImage] Returning image response with status 200")
     return response
 
 

@@ -632,8 +632,15 @@ export default function ViewHeatmap() {
                         }
                         alt="Foot traffic heatmap"
                         className={`rounded-lg ${showSettings ? 'w-full h-full object-contain' : 'w-full h-[500px] object-contain'}`}
-                        onLoad={() => setIsLoading(false)}
-                        onError={() => setIsLoading(false)}
+                        onLoad={() => {
+                          console.log('[CustomHeatmap] Image loaded successfully');
+                          setIsLoading(false);
+                        }}
+                        onError={(e) => {
+                          console.error('[CustomHeatmap] Image failed to load:', e);
+                          console.error('[CustomHeatmap] Image src:', customHeatmapUrl || (isLiveMode && liveHeatmapUrl) || (selectedJob ? heatmapService.getHeatmapImageUrl(selectedJob.job_id) : null));
+                          setIsLoading(false);
+                        }}
                       />
                     )}
                   </div>
