@@ -231,29 +231,28 @@ def direct_export_csv(job_id):
 # On backend startup, clean up orphaned jobs left as 'pending' or 'processing' if not running in memory
 
 def cleanup_orphaned_jobs():
-    conn = get_db_connection()
-    cur = conn.cursor()
-    # Find jobs that are not completed/cancelled/errored
-    cur.execute(
-        "SELECT job_id FROM jobs WHERE status IN ('pending', 'processing')"
-    )
-    orphaned = cur.fetchall()
-    for row in orphaned:
-        job_id = row[0]  # psycopg2 returns tuples, not dicts
-        # If job is not in memory (not running), mark as error
-        if job_id not in jobs:
-            cur.execute(
-                "UPDATE jobs SET status = %s, message = %s, updated_at = CURRENT_TIMESTAMP WHERE job_id = %s",
-                ('error', 'Job was interrupted by server shutdown.', job_id)
-            )
-    cur.close()
-    conn.commit()
-    conn.close()
+    from .core.db import get_db_connection_context
+    with get_db_connection_context() as conn:
+        cur = conn.cursor()
+        # Find jobs that are not completed/cancelled/errored
+        cur.execute(
+            "SELECT job_id FROM jobs WHERE status IN ('pending', 'processing')"
+        )
+        orphaned = cur.fetchall()
+        for row in orphaned:
+            job_id = row[0]  # psycopg2 returns tuples, not dicts
+            # If job is not in memory (not running), mark as error
+            if job_id not in jobs:
+                cur.execute(
+                    "UPDATE jobs SET status = %s, message = %s, updated_at = CURRENT_TIMESTAMP WHERE job_id = %s",
+                    ('error', 'Job was interrupted by server shutdown.', job_id)
+                )
+        conn.commit()
 
 
 if __name__ == '__main__':
     # init_db()  # No longer needed, handled by Supabase
-    # cleanup_orphaned_jobs()  # Clean up jobs on startup - DISABLED due to database connection issues
+    cleanup_orphaned_jobs()  # Clean up jobs on startup
     debug_mode = os.getenv('FLASK_DEBUG', 'False').lower() == 'true'
     port = int(os.getenv('PORT', 5000))
     app.run(host='0.0.0.0', port=port, debug=debug_mode)

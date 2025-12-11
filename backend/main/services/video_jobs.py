@@ -14,6 +14,13 @@ from .heatmap_processing import blend_heatmap
 from .state import get_jobs_store
 
 
+
+# --- Time-based throttling for database updates ---
+# Dictionary to store the last update timestamp for each job
+_last_db_update_time: Dict[str, float] = {}
+DB_UPDATE_INTERVAL = 5  # seconds
+
+
 def update_job_status_in_db(job_id: str, job: Dict[str, Any]):
     from ..core.db import get_db_connection_context
     with get_db_connection_context() as conn:
@@ -38,8 +45,14 @@ def update_job_progress(job_id: str, stage: str, progress: float):
     job = jobs[job_id]
     job['message'] = f'{stage} ({int(progress * 100)}%)'
     
-    # Minimal logging: progress updates are silent to avoid log flooding
+    # Time-based throttling to prevent database spam
+    now = time.time()
+    last_update = _last_db_update_time.get(job_id, 0)
     
+    # Do not update if the interval has not passed
+    if now - last_update < DB_UPDATE_INTERVAL:
+        return
+
     from ..core.db import get_db_connection_context
     with get_db_connection_context() as conn:
         cur = conn.cursor()
@@ -50,7 +63,7 @@ def update_job_progress(job_id: str, stage: str, progress: float):
                 WHERE job_id = %s
             ''', (job['message'], job_id))
             conn.commit()
-            # Minimal logging: suppress success spam for progress updates
+            _last_db_update_time[job_id] = now
         except Exception as e:
             logger.error(f"Error updating job {job_id} progress in database: {e}")
             conn.rollback()
@@ -91,8 +104,6 @@ def process_video_job(job_id: str):
             update_job_status_in_db(job_id, job)
             return
 
-        job['message'] = 'Running YOLO detection (0%)'
-        update_job_status_in_db(job_id, job)  # Update database with initial progress
         
         output_video_path, detections, fps = detect_and_track(
             video_path,

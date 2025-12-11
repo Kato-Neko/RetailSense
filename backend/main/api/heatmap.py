@@ -58,30 +58,28 @@ def get_detections_logic(job_id, current_user=None):
     # Validate user ownership if user is provided
     if current_user is not None:
         logger.info(f"DEBUG: Validating user ownership for job_id='{job_id}', user='{current_user}'")
-        conn = get_db_connection()
-        cur = conn.cursor()
-        try:
-            cur.execute('SELECT "user" FROM jobs WHERE job_id = %s', (job_id,))
-            job_row = cur.fetchone()
-            logger.info(f"DEBUG: Database query result: {job_row}")
-            if not job_row:
-                logger.error(f"DEBUG: Job {job_id} not found in database")
-                return jsonify({"error": "Job not found"}), 404
-            # Extract user from row (handles both tuple and dict-like results)
-            job_user = job_row['user'] if isinstance(job_row, dict) else job_row[0]
-            logger.info(f"DEBUG: Job owner: '{job_user}', requesting user: '{current_user}'")
-            if job_user != current_user:
-                logger.error(f"DEBUG: User {current_user} attempted to access job {job_id} owned by {job_user}")
-                return jsonify({"error": "Unauthorized: Job not found or not authorized"}), 403
-            logger.info(f"DEBUG: User ownership validated successfully")
-        except Exception as e:
-            logger.error(f"DEBUG: Error validating job ownership: {type(e).__name__}: {e}")
-            import traceback
-            logger.error(f"DEBUG: Traceback:\n{traceback.format_exc()}")
-            return jsonify({"error": "Error validating job ownership"}), 500
-        finally:
-            cur.close()
-            conn.close()
+        from ..core.db import get_db_connection_context
+        with get_db_connection_context() as conn:
+            cur = conn.cursor()
+            try:
+                cur.execute('SELECT "user" FROM jobs WHERE job_id = %s', (job_id,))
+                job_row = cur.fetchone()
+                logger.info(f"DEBUG: Database query result: {job_row}")
+                if not job_row:
+                    logger.error(f"DEBUG: Job {job_id} not found in database")
+                    return jsonify({"error": "Job not found"}), 404
+                # Extract user from row (handles both tuple and dict-like results)
+                job_user = job_row['user'] if isinstance(job_row, dict) else job_row[0]
+                logger.info(f"DEBUG: Job owner: '{job_user}', requesting user: '{current_user}'")
+                if job_user != current_user:
+                    logger.error(f"DEBUG: User {current_user} attempted to access job {job_id} owned by {job_user}")
+                    return jsonify({"error": "Unauthorized: Job not found or not authorized"}), 403
+                logger.info(f"DEBUG: User ownership validated successfully")
+            except Exception as e:
+                logger.error(f"DEBUG: Error validating job ownership: {type(e).__name__}: {e}")
+                import traceback
+                logger.error(f"DEBUG: Traceback:\n{traceback.format_exc()}")
+                return jsonify({"error": "Error validating job ownership"}), 500
     else:
         logger.info(f"DEBUG: No user validation required (current_user is None)")
     
@@ -120,34 +118,32 @@ def regenerate_detections(job_id):
     logger.info(f"DEBUG: regenerate_detections called for job_id='{job_id}', user='{current_user}'")
     
     # Validate user ownership
-    conn = get_db_connection()
-    cur = conn.cursor()
-    try:
-        cur.execute('SELECT "user", input_video_name, status FROM jobs WHERE job_id = %s', (job_id,))
-        job_row = cur.fetchone()
-        if not job_row:
-            logger.error(f"DEBUG: Job {job_id} not found in database")
-            return jsonify({"error": "Job not found"}), 404
-        
-        job_user = job_row[0] if isinstance(job_row, tuple) else job_row['user']
-        input_video_name = job_row[1] if isinstance(job_row, tuple) else job_row.get('input_video_name')
-        job_status = job_row[2] if isinstance(job_row, tuple) else job_row.get('status')
-        
-        if job_user != current_user:
-            logger.error(f"DEBUG: User {current_user} attempted to regenerate detections for job {job_id} owned by {job_user}")
-            return jsonify({"error": "Unauthorized"}), 403
-        
-        if job_status != 'completed':
-            logger.error(f"DEBUG: Job {job_id} is not completed (status: {job_status})")
-            return jsonify({"error": "Job must be completed to regenerate detections"}), 400
-    except Exception as e:
-        logger.error(f"DEBUG: Error validating job: {type(e).__name__}: {e}")
-        import traceback
-        logger.error(f"DEBUG: Traceback:\n{traceback.format_exc()}")
-        return jsonify({"error": "Error validating job"}), 500
-    finally:
-        cur.close()
-        conn.close()
+    from ..core.db import get_db_connection_context
+    with get_db_connection_context() as conn:
+        cur = conn.cursor()
+        try:
+            cur.execute('SELECT "user", input_video_name, status FROM jobs WHERE job_id = %s', (job_id,))
+            job_row = cur.fetchone()
+            if not job_row:
+                logger.error(f"DEBUG: Job {job_id} not found in database")
+                return jsonify({"error": "Job not found"}), 404
+            
+            job_user = job_row[0] if isinstance(job_row, tuple) else job_row['user']
+            input_video_name = job_row[1] if isinstance(job_row, tuple) else job_row.get('input_video_name')
+            job_status = job_row[2] if isinstance(job_row, tuple) else job_row.get('status')
+            
+            if job_user != current_user:
+                logger.error(f"DEBUG: User {current_user} attempted to regenerate detections for job {job_id} owned by {job_user}")
+                return jsonify({"error": "Unauthorized"}), 403
+            
+            if job_status != 'completed':
+                logger.error(f"DEBUG: Job {job_id} is not completed (status: {job_status})")
+                return jsonify({"error": "Job must be completed to regenerate detections"}), 400
+        except Exception as e:
+            logger.error(f"DEBUG: Error validating job: {type(e).__name__}: {e}")
+            import traceback
+            logger.error(f"DEBUG: Traceback:\n{traceback.format_exc()}")
+            return jsonify({"error": "Error validating job"}), 500
     
     # Check if detections already exist
     detections, fps = load_detections(job_id)
@@ -253,12 +249,11 @@ def regenerate_detections(job_id):
 def get_heatmap_image_logic(job_id):
     """Shared logic for getting heatmap image"""
     # First check if job is completed
-    conn = get_db_connection()
-    cur = conn.cursor()
-    cur.execute("SELECT status FROM jobs WHERE job_id = %s", (job_id,))
-    job_status = cur.fetchone()
-    cur.close()
-    conn.close()
+    from ..core.db import get_db_connection_context
+    with get_db_connection_context() as conn:
+        cur = conn.cursor()
+        cur.execute("SELECT status FROM jobs WHERE job_id = %s", (job_id,))
+        job_status = cur.fetchone()
     
     if not job_status:
         return jsonify({"error": "Job not found"}), 404
@@ -290,21 +285,16 @@ def export_heatmap_csv(job_id):
         return '', 204
         
     try:
-        conn = None
-        try:
-            conn = get_db_connection()
+        from ..core.db import get_db_connection_context
+        with get_db_connection_context() as conn:
             cur = conn.cursor()
             cur.execute("SELECT * FROM jobs WHERE job_id = %s", (job_id,))
             job_row = cur.fetchone()
-            cur.close()
             
             if not job_row:
                 return jsonify({"error": "Job not found"}), 404
             if job_row[6] != 'completed':
                 return jsonify({"error": "Job not completed"}), 404
-        finally:
-            if conn:
-                conn.close()
 
         start_datetime = request.args.get('start_datetime', '')
         end_datetime = request.args.get('end_datetime', '')
@@ -449,12 +439,11 @@ def export_heatmap_pdf(job_id):
         start_time = request.args.get('start_time', type=float)
         end_time = request.args.get('end_time', type=float)
 
-        conn = get_db_connection()
-        cur = conn.cursor()
-        cur.execute("SELECT * FROM jobs WHERE job_id = %s", (job_id,))
-        job_row = cur.fetchone()
-        cur.close()
-        conn.close()
+        from ..core.db import get_db_connection_context
+        with get_db_connection_context() as conn:
+            cur = conn.cursor()
+            cur.execute("SELECT * FROM jobs WHERE job_id = %s", (job_id,))
+            job_row = cur.fetchone()
         if not job_row:
             return jsonify({'error': 'Job not found'}), 404
         if job_row[6] != 'completed':
@@ -780,12 +769,11 @@ def get_custom_heatmap_progress(job_id):
 
 def get_heatmap_analysis_logic(job_id):
     """Shared logic for getting heatmap analysis"""
-    conn = get_db_connection()
-    cur = conn.cursor()
-    cur.execute("SELECT * FROM jobs WHERE job_id = %s", (job_id,))
-    job_row = cur.fetchone()
-    cur.close()
-    conn.close()
+    from ..core.db import get_db_connection_context
+    with get_db_connection_context() as conn:
+        cur = conn.cursor()
+        cur.execute("SELECT * FROM jobs WHERE job_id = %s", (job_id,))
+        job_row = cur.fetchone()
     if not job_row:
         return jsonify({"error": "Job not found"}), 404
     if job_row[6] != 'completed':

@@ -243,3 +243,134 @@ def _generate_rule_based_recommendations(areas: Dict, total_visitors: int) -> Li
     elif total_visitors < 10 and low_pct > 50:
         recommendations.append("Low overall traffic detected - review store hours or marketing strategies")
     return recommendations if recommendations else ["Monitor traffic patterns over time to identify optimization opportunities"]
+
+# --- Streaming Functions ---
+
+def generate_ai_recommendations_stream(
+    areas: Dict,
+    total_visitors: int,
+    peak_hours: List[Dict],
+    provider: Optional[str] = None
+):
+    """
+    Generate and stream AI-powered recommendations.
+    Yields recommendations as they are generated.
+    """
+    if provider is None:
+        if os.getenv('GROQ_API_KEY'):
+            provider = 'groq'
+        elif os.getenv('GEMINI_API_KEY'):
+            provider = 'gemini'
+        elif os.getenv('OPENAI_API_KEY'):
+            provider = 'openai'
+        else:
+            for rec in _generate_rule_based_recommendations(areas, total_visitors):
+                yield rec
+            return
+
+    context = {
+        "traffic_distribution": {
+            "high_density_percentage": areas.get('high', {}).get('percentage', 0),
+            "medium_density_percentage": areas.get('medium', {}).get('percentage', 0),
+            "low_density_percentage": areas.get('low', {}).get('percentage', 0),
+        },
+        "total_visitors": total_visitors,
+        "peak_periods": peak_hours,
+        "high_density_regions_count": len(areas.get('high', {}).get('regions', [])),
+        "low_density_regions_count": len(areas.get('low', {}).get('regions', []))
+    }
+    prompt = _build_prompt(context, total_visitors, peak_hours)
+
+    try:
+        if provider == 'groq':
+            yield from _call_groq_stream(prompt)
+        elif provider == 'gemini':
+            yield from _call_gemini_stream(prompt)
+        elif provider == 'openai':
+            yield from _call_openai_stream(prompt)
+        else:
+            for rec in _generate_rule_based_recommendations(areas, total_visitors):
+                yield rec
+    except Exception as e:
+        logger.error(f"AI provider '{provider}' streaming failed: {e}")
+        yield "Error generating AI recommendations."
+
+def _call_groq_stream(prompt: str):
+    """Call Groq API with streaming."""
+    try:
+        from groq import Groq
+        client = Groq(api_key=os.getenv('GROQ_API_KEY'))
+        model = os.getenv('GROQ_MODEL', 'llama-3.1-70b-versatile')
+        response_stream = client.chat.completions.create(
+            model=model,
+            messages=[
+                {"role": "system", "content": "You are a retail analytics expert. Always return valid JSON arrays."},
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.7,
+            max_tokens=200,
+            stream=True
+        )
+        yield from _parse_ai_stream(response_stream)
+    except ImportError:
+        raise RuntimeError("groq not installed")
+
+def _call_gemini_stream(prompt: str):
+    """Call Gemini API with streaming."""
+    try:
+        import google.generativeai as genai
+        genai.configure(api_key=os.getenv('GEMINI_API_KEY'))
+        model = genai.GenerativeModel(os.getenv('GEMINI_MODEL', 'gemini-pro-latest'))
+        response_stream = model.generate_content(prompt, stream=True)
+        yield from _parse_ai_stream(response_stream)
+    except ImportError:
+        raise RuntimeError("google-generativeai not installed")
+
+def _call_openai_stream(prompt: str):
+    """Call OpenAI API with streaming."""
+    try:
+        import openai
+        client = openai.OpenAI(api_key=os.getenv('OPENAI_API_KEY'))
+        model = os.getenv('OPENAI_MODEL', 'gpt-4o-mini')
+        response_stream = client.chat.completions.create(
+            model=model,
+            messages=[
+                {"role": "system", "content": "You are a retail analytics expert. Always return valid JSON arrays."},
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.7,
+            max_tokens=200,
+            stream=True
+        )
+        yield from _parse_ai_stream(response_stream)
+    except ImportError:
+        raise RuntimeError("openai not installed")
+
+def _parse_ai_stream(response_stream):
+    """Parse streaming JSON response from AI provider."""
+    buffer = ""
+    for chunk in response_stream:
+        # The actual way to get the content from the chunk depends on the provider
+        delta_content = None
+        if hasattr(chunk, 'choices') and chunk.choices:
+            delta = chunk.choices[0].delta
+            if delta:
+                delta_content = delta.content
+        elif hasattr(chunk, 'text'):
+            delta_content = chunk.text
+
+        if delta_content:
+            buffer += delta_content
+            
+            # Try to parse recommendations from buffer
+            # This is a simplified parser, assuming recommendations are separated by newlines
+            while '\n' in buffer:
+                line, buffer = buffer.split('\n', 1)
+                line = line.strip()
+                if line.startswith('"') and line.endswith('"'):
+                    yield line[1:-1]
+                elif line.startswith('- '):
+                    yield line[2:]
+                elif line:
+                    yield line
+

@@ -237,17 +237,8 @@ def detect_and_track(
             # Update progress based on total frames processed (not just detection frames)
             if progress_callback:
                 # Progress based on total frames read, not just processed
-                progress = frame_count / total_frames
-                
-                # Report progress more frequently at the beginning
-                should_report_progress = (
-                    frame_count <= 5 or  # First 5 frames
-                    frame_count % 10 == 0 or  # Every 10 frames
-                    frame_count == total_frames or  # Last frame
-                    should_process  # When we actually process a frame
-                )
-                
-                if should_report_progress:
+                if should_process:
+                    progress = frame_count / total_frames
                     progress_callback(progress)
                     # Minimal logging: suppress frequent progress logs
     finally:
