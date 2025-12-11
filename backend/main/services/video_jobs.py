@@ -264,29 +264,29 @@ def run_custom_heatmap_job(job_id: str, start_time: float, end_time: float, set_
 
     try:
         from ..core.storage import download_json_from_supabase
-        det_data = download_json_from_supabase(f"{job_id}/detections.json")
-        if det_data is None:
-            logger.error(f"Failed to download detections.json for job {job_id}")
-            set_progress(1.0)
-            return
-        detections = det_data.get("detections", [])
-        fps = det_data.get("fps")
+        from ..helpers.detections import load_detections
+        detections, fps = load_detections(job_id)
+
+        if not detections or not fps:
+            raise Exception(f"Could not load valid detections data for job {job_id}. The original job may have failed.")
+
         logger.info(f"Downloaded {len(detections)} total detections")
 
         filtered_detections = [
             det for det in detections
             if 'timestamp' in det and start_time <= det['timestamp'] <= end_time
         ]
-        logger.info(f"Filtered to {len(filtered_detections)} detections in range {start_time}-{end_time}")
-        
-        if not filtered_detections:
-            logger.warning(f"No detections found in time range {start_time}-{end_time}")
     except Exception as e:
         logger.error(f"Error processing detections: {e}")
         import traceback
         logger.error(f"Traceback: {traceback.format_exc()}")
         set_progress(1.0)
         return
+
+    logger.info(f"Filtered to {len(filtered_detections)} detections in range {start_time}-{end_time}")
+    if not filtered_detections:
+        logger.warning(f"No detections found in time range {start_time}-{end_time}. Cannot generate custom heatmap.")
+        # No need to return, the process will just create a blank heatmap which is acceptable.
 
     # Download floorplan from Supabase to local temp file
     from ..core.storage import download_image_from_supabase
