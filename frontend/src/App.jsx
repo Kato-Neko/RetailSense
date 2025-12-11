@@ -7,7 +7,6 @@ import LandingPage from "./pages/LandingPage"
 import Dashboard from "./pages/Dashboard"
 import CreateHeatmap from "./pages/CreateHeatmap"
 import ViewHeatmap from "./pages/ViewHeatmap"
-import LiveStreaming from "./pages/LiveStreaming"
 import UserManagement from "./modules/module4/UserManagement"
 import AboutPage from "./pages/AboutPage"
 import RRLPage from "./pages/RRLPage"
@@ -111,7 +110,6 @@ function App() {
                   <ViewHeatmap />
                 ) : <Navigate to="/" />}
               />
-              <Route path="/live-streaming" element={isAuthenticated ? <LiveStreaming /> : <Navigate to="/" />} />
               <Route path="/user-management" element={isAuthenticated ? <UserManagement /> : <Navigate to="/" />} />
             </Route>
           </Routes>
@@ -121,5 +119,4 @@ function App() {
     </ThemeProvider>
   )
 }
-
 export default App

@@ -68,17 +68,18 @@ def process_video_job(job_id: str):
 
         video_path = job['input_files']['video']
         floorplan_path = job['input_files']['floorplan']
-        points_path = job['input_files']['points']
-        with open(points_path, 'r') as f:
-            _ = json.load(f)
+        
+        # Validate video file and get its properties
         cap = validate_video_file(video_path)
         total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
         fps = int(cap.get(cv2.CAP_PROP_FPS))
         duration = total_frames / fps if fps > 0 else 0
+        video_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+        video_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
         cap.release()
 
-        # Check video duration and reject if too long
-        max_duration_minutes = 10  # 10 minutes max for Railway hobby plan
+        # Check video duration from environment variable, with a default
+        max_duration_minutes = int(os.getenv('MAX_VIDEO_DURATION_MINUTES', 10))
         if duration > max_duration_minutes * 60:
             raise Exception(f"Video too long ({duration/60:.1f} minutes). Maximum allowed: {max_duration_minutes} minutes.")
         
@@ -108,48 +109,16 @@ def process_video_job(job_id: str):
             return
 
         detections_data = {"fps": fps, "detections": detections}
-        logger.info(f"DEBUG: Job {job_id} has {len(detections)} detections")
-        logger.info(f"DEBUG: First few detections: {detections[:3] if detections else 'None'}")
-        
-        try:
-            upload_json_to_supabase(
-                detections_data,
-                f"{job_id}/detections.json"
-            )
-            logger.info(f"Successfully uploaded detections.json to Supabase for job {job_id}")
-        except Exception as e:
-            logger.error(f"Error uploading detections.json to Supabase for job {job_id}: {e}")
-            raise
+        upload_json_to_supabase(detections_data, f"{job_id}/detections.json")
 
         output_heatmap_image_path = job['output_files_expected']['image']
-        
-        # Log the expected output paths
-        logger.info(f"Job {job_id} output paths:")
-        logger.info(f"  - Expected heatmap path: {output_heatmap_image_path}")
-        logger.info(f"  - Expected video path: {output_video_path}")
         
         # Load user points for homography transformation
         points_path = job['input_files']['points']
         with open(points_path, 'r') as f:
             points_data = json.load(f)
         
-        # Convert points to the format expected by homography
-        # points_data should be normalized coordinates (0-1), convert to pixel coordinates
-        # Get video dimensions from the video file
-        cap = cv2.VideoCapture(video_path)
-        video_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-        video_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-        cap.release()
-        
-        # Convert normalized points to pixel coordinates
-        homography_points = []
-        for point in points_data:
-            x = float(point['x']) * video_width
-            y = float(point['y']) * video_height
-            homography_points.append([x, y])
-        
-        logger.info(f"DEBUG: About to call blend_heatmap with {len(detections)} detections and {len(homography_points)} homography points")
-        logger.info(f"DEBUG: Homography points: {homography_points}")
+        homography_points = [[p['x'], p['y']] for p in points_data]
         
         blended_img = blend_heatmap(
             detections,

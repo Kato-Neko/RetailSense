@@ -131,14 +131,14 @@ const SideMenu = ({ isAuthenticated, setIsAuthenticated }) => {
 
           {/* Heatmap Section */}
           <Collapsible
-            defaultOpen={isActiveGroup(["/view-heatmap", "/video-processing", "/live-streaming"])}
+            defaultOpen={isActiveGroup(["/view-heatmap", "/video-processing"])}
             className="group/collapsible"
           >
             <SidebarMenuItem>
               <CollapsibleTrigger asChild>
                 <SidebarMenuButton
                   className="px-3 py-3 text-base rounded-lg hover:bg-muted group transition-all duration-200"
-                  data-active={isActiveGroup(["/view-heatmap", "/video-processing", "/live-streaming"])}
+                  data-active={isActiveGroup(["/view-heatmap", "/video-processing"])}
                 >
                   <div className="rounded-lg bg-gradient-to-br from-cyan-400/20 to-emerald-400/20 w-9 h-9 flex items-center justify-center mr-3 group-hover:from-cyan-400/30 group-hover:to-emerald-400/30 transition-all duration-300 group-data-[active=true]:from-cyan-400/40 group-data-[active=true]:to-emerald-400/40">
                     <Map className="h-5 w-5 text-primary group-data-[active=true]:text-primary" />
@@ -165,15 +165,6 @@ const SideMenu = ({ isAuthenticated, setIsAuthenticated }) => {
                       className="py-2.5 text-sm rounded-md hover:bg-muted data-[active=true]:bg-gradient-to-r data-[active=true]:from-cyan-400/20 data-[active=true]:to-emerald-400/20 data-[active=true]:text-foreground transition-all duration-200"
                     >
                       <span>Create Heatmaps</span>
-                    </SidebarMenuSubButton>
-                  </SidebarMenuSubItem>
-                  <SidebarMenuSubItem>
-                    <SidebarMenuSubButton
-                      onClick={() => navigate("/live-streaming")}
-                      isActive={isActive("/live-streaming")}
-                      className="py-2.5 text-sm rounded-md hover:bg-muted data-[active=true]:bg-gradient-to-r data-[active=true]:from-cyan-400/20 data-[active=true]:to-emerald-400/20 data-[active=true]:text-foreground transition-all duration-200"
-                    >
-                      <span>Live Streaming</span>
                     </SidebarMenuSubButton>
                   </SidebarMenuSubItem>
                 </SidebarMenuSub>

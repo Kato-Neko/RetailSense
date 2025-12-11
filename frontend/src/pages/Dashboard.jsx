@@ -110,272 +110,166 @@ const Dashboard = () => {
     return { currentStart: now, currentEnd: now, comparisonStart: now, comparisonEnd: now }
   }
 
-  useEffect(() => {
-    const fetchDashboardData = async () => {
-      setIsLoading(true)
+  const processJobHistory = async (jobHistory, comparisonMode, getDateRanges) => {
+    const recent = jobHistory.slice(0, 3).map((job) => ({
+      id: job.job_id,
+      type: job.input_video_name ? "video" : "heatmap",
+      name: job.input_video_name || job.input_floorplan_name || "Job",
+      status: job.status,
+      time: new Date(job.created_at).toLocaleString(),
+      startDatetime: new Date(job.start_datetime),
+      endDatetime: new Date(job.end_datetime),
+    }));
+
+    let allCompletedJobs = jobHistory.filter((job) => job.status === "completed");
+    
+    let completedJobs = allCompletedJobs;
+    if (comparisonMode) {
+      const { currentStart, currentEnd } = getDateRanges();
+      completedJobs = allCompletedJobs.filter(job => {
+        const jobStartDateTime = job.start_datetime ? new Date(job.start_datetime) : new Date(job.created_at);
+        return jobStartDateTime >= currentStart && jobStartDateTime < currentEnd;
+      });
+    }
+    
+    const processedVideos = jobHistory.filter(
+      job => job.input_video_name && job.status === "completed"
+    ).length;
+    const heatmapCount = allCompletedJobs.length;
+
+    const initialStats = {
+      totalVisitors: 0,
+      peakHour: "14:00-15:00",
+      processedVideos: processedVideos,
+      generatedHeatmaps: heatmapCount,
+    };
+
+    let totalUniqueVisitors = new Set();
+    let hourlyUniqueVisitors = Array.from({ length: 24 }, () => new Set());
+    let weeklyUniqueVisitors = Array.from({ length: 7 }, () => new Set());
+    let monthlyUniqueVisitors = Array.from({ length: 12 }, () => new Set());
+
+    for (const job of completedJobs) {
       try {
-        // Fetch job history
-        const jobHistory = await heatmapService.getJobHistory()
+        const detectionsResponse = await heatmapService.getDetections(job.job_id);
+        if (detectionsResponse && detectionsResponse.detections && detectionsResponse.detections.length > 0) {
+          const detections = detectionsResponse.detections;
+          const fps = detectionsResponse.fps;
+          const startDate = job.start_datetime ? new Date(job.start_datetime) : null;
 
-        // Set recent jobs (most recent 3)
-        const recent = jobHistory.slice(0, 3).map((job) => ({
-          id: job.job_id,
-          type: job.input_video_name ? "video" : "heatmap",
-          name: job.input_video_name || job.input_floorplan_name || "Job",
-          status: job.status,
-          time: new Date(job.created_at).toLocaleString(),
-          startDatetime: new Date(job.start_datetime),
-          endDatetime: new Date(job.end_datetime),
-        }))
-        setRecentJobs(recent)
+          detections.forEach((det) => {
+            const trackId = det.track_id;
+            const timeInSeconds = det.timestamp || (det.frame / fps);
+            const detectionTime = startDate ? new Date(startDate.getTime() + timeInSeconds * 1000) : null;
+            const hour = detectionTime ? detectionTime.getHours() : null;
+            const day = detectionTime ? detectionTime.getDay() : null;
+            const month = detectionTime ? detectionTime.getMonth() : null;
 
-        // Calculate stats from job history
-        let allCompletedJobs = jobHistory.filter((job) => job.status === "completed")
-        
-        // Filter by date range when comparison mode is enabled
-        // Use start_datetime (when video was recorded) not created_at (when job was created)
-        let completedJobs = allCompletedJobs
-        if (comparisonMode) {
-          const { currentStart, currentEnd } = getDateRanges()
-          completedJobs = allCompletedJobs.filter(job => {
-            const jobStartDateTime = job.start_datetime ? new Date(job.start_datetime) : new Date(job.created_at)
-            return jobStartDateTime >= currentStart && jobStartDateTime < currentEnd
-          })
-        }
-        
-        // Only count completed video jobs for Processed Videos
-        const processedVideos = jobHistory.filter(
-          job => job.input_video_name && job.status === "completed"
-        ).length;
-        const heatmapCount = allCompletedJobs.length
-
-        // Set initial stats (will be updated after processing detections)
-        setStats({
-          totalVisitors: 0,
-          peakHour: "14:00-15:00",
-          processedVideos: processedVideos,
-          generatedHeatmaps: heatmapCount,
-        })
-
-        // Prepare traffic counts and unique visitor set
-        // IMPORTANT: Fetch detections ONCE per job and process for all views
-        const trafficCounts = {}
-        let totalUniqueVisitors = new Set()
-        let hourlyUniqueVisitors = Array.from({ length: 24 }, () => new Set())
-        let weeklyUniqueVisitors = Array.from({ length: 7 }, () => new Set())
-        let monthlyUniqueVisitors = Array.from({ length: 12 }, () => new Set())
-
-        for (const job of completedJobs) {
-          // Fetch detections from the new API endpoint - ONLY ONCE
-          try {
-            const detectionsResponse = await heatmapService.getDetections(job.job_id)
-            console.log("Detections Response:", detectionsResponse)
-
-            if (detectionsResponse && detectionsResponse.detections && detectionsResponse.detections.length > 0) {
-              const detections = detectionsResponse.detections
-              const fps = detectionsResponse.fps
-              const startDate = job.start_datetime ? new Date(job.start_datetime) : null
-
-              detections.forEach((det) => {
-                const trackId = det.track_id
-                const timeInSeconds = det.timestamp || (det.frame / fps)
-                const detectionTime = startDate ? new Date(startDate.getTime() + timeInSeconds * 1000) : null
-                const hour = detectionTime ? detectionTime.getHours() : null
-                const day = detectionTime ? detectionTime.getDay() : null
-                const month = detectionTime ? detectionTime.getMonth() : null
-
-                if (trackId && hour !== null) {
-                  totalUniqueVisitors.add(`${job.job_id}_${trackId}`) // Ensure uniqueness across jobs
-                  hourlyUniqueVisitors[hour].add(`${job.job_id}_${trackId}`)
-                }
-                if (trackId && day !== null) {
-                  weeklyUniqueVisitors[day].add(`${job.job_id}_${trackId}`)
-                }
-                if (trackId && month !== null) {
-                  monthlyUniqueVisitors[month].add(`${job.job_id}_${trackId}`)
-                }
-              })
-            } else {
-              // Silently skip jobs without detections - this is normal for older jobs or heatmap-only jobs
-              // Only log if there's an actual error response
-              if (detectionsResponse && detectionsResponse.error) {
-                console.warn(`No detections found for job ${job.job_id}: ${detectionsResponse.error}`)
-              }
+            if (trackId && hour !== null) {
+              totalUniqueVisitors.add(`${job.job_id}_${trackId}`);
+              hourlyUniqueVisitors[hour].add(`${job.job_id}_${trackId}`);
             }
-          } catch (error) {
-            // Only log actual errors, not 404s (which should now return empty arrays)
-            if (error.response && error.response.status !== 404) {
-              console.error(`Error fetching detections for job ${job.job_id}:`, error)
+            if (trackId && day !== null) {
+              weeklyUniqueVisitors[day].add(`${job.job_id}_${trackId}`);
             }
-            // Silently continue for missing detections
-          }
-        }
-
-        // Prepare data for the chart
-        const visitorCounts = hourlyUniqueVisitors.map(set => set.size)
-        const maxVisitors = Math.max(...visitorCounts)
-        const minVisitors = Math.min(...visitorCounts)
-
-        // Find peak hour
-        let peakHourIdx = 0
-        let peakHourValue = 0
-        hourlyUniqueVisitors.forEach((set, idx) => {
-          if (set.size > peakHourValue) {
-            peakHourValue = set.size
-            peakHourIdx = idx
-          }
-        })
-        const peakHourLabel = `${peakHourIdx.toString().padStart(2, "0")}:00-${(peakHourIdx + 1).toString().padStart(2, "0")}:00`
-
-        const trafficData = Array.from({ length: 24 }, (_, hour) => {
-          const value = hourlyUniqueVisitors[hour].size
-          // Normalize value to 0-1
-          const t = maxVisitors === minVisitors ? 0 : (value - minVisitors) / (maxVisitors - minVisitors)
-          // Map to turbo color index
-          let colorIdx = Math.round(t * (turboColors.length - 2)) // -2 so peak can be last color
-          // Peak hour gets the reddest color
-          if (hour === peakHourIdx && value > 0) colorIdx = turboColors.length - 1
-          return {
-            hour: hour.toString().padStart(2, "0") + ":00",
-            visitors: value,
-            fill: turboColors[colorIdx]
-          }
-        })
-
-        setTrafficData(trafficData)
-        setStats((prev) => ({
-          ...prev,
-          totalVisitors: totalUniqueVisitors.size,
-          peakHour: maxVisitors > 0 ? peakHourLabel : "N/A",
-        }))
-
-        // --- Weekly Data ---
-       
-        const weekDays = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
-        const weeklyDataArr = weekDays.map((day, idx) => ({
-          day,
-          visitors: weeklyUniqueVisitors[idx].size,
-        }))
-        setWeeklyData(weeklyDataArr)
-
-        // --- Monthly Data ---
-        // Use data already processed above (no need to fetch again!)
-        const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
-        const monthlyDataArr = monthNames.map((month, idx) => ({
-          month,
-          visitors: monthlyUniqueVisitors[idx].size,
-        }))
-        setMonthlyData(monthlyDataArr)
-
-        // Process comparison data if comparison mode is enabled
-        if (comparisonMode) {
-          const { comparisonStart, comparisonEnd } = getDateRanges()
-          
-          // Filter jobs for comparison period
-          // Use start_datetime (when video was recorded) not created_at (when job was created)
-          const comparisonJobs = allCompletedJobs.filter(job => {
-            const jobStartDateTime = job.start_datetime ? new Date(job.start_datetime) : new Date(job.created_at)
-            return jobStartDateTime >= comparisonStart && jobStartDateTime < comparisonEnd
-          })
-          
-          if (comparisonJobs.length > 0) {
-            // Process detections for comparison period
-            let compTotalUniqueVisitors = new Set()
-            let compHourlyVisitors = Array.from({ length: 24 }, () => new Set())
-            let compWeeklyVisitors = Array.from({ length: 7 }, () => new Set())
-            let compMonthlyVisitors = Array.from({ length: 12 }, () => new Set())
-
-            for (const job of comparisonJobs) {
-              try {
-                const detectionsResponse = await heatmapService.getDetections(job.job_id)
-                if (detectionsResponse && detectionsResponse.detections) {
-                  const detections = detectionsResponse.detections
-                  const fps = detectionsResponse.fps
-                  const startDate = job.start_datetime ? new Date(job.start_datetime) : null
-
-                  detections.forEach((det) => {
-                    const trackId = det.track_id
-                    const timeInSeconds = det.timestamp || (det.frame / fps)
-                    const detectionTime = startDate ? new Date(startDate.getTime() + timeInSeconds * 1000) : null
-                    const hour = detectionTime ? detectionTime.getHours() : null
-                    const day = detectionTime ? detectionTime.getDay() : null
-                    const month = detectionTime ? detectionTime.getMonth() : null
-
-                    if (trackId && hour !== null) {
-                      compTotalUniqueVisitors.add(`${job.job_id}_${trackId}`)
-                      compHourlyVisitors[hour].add(`${job.job_id}_${trackId}`)
-                    }
-                    if (trackId && day !== null) {
-                      compWeeklyVisitors[day].add(`${job.job_id}_${trackId}`)
-                    }
-                    if (trackId && month !== null) {
-                      compMonthlyVisitors[month].add(`${job.job_id}_${trackId}`)
-                    }
-                  })
-                }
-              } catch (error) {
-                console.error(`Error fetching comparison detections for job ${job.job_id}:`, error)
-              }
+            if (trackId && month !== null) {
+              monthlyUniqueVisitors[month].add(`${job.job_id}_${trackId}`);
             }
-
-            // Find peak hour for comparison
-            let compPeakHourIdx = 0
-            let compPeakHourValue = 0
-            compHourlyVisitors.forEach((set, idx) => {
-              if (set.size > compPeakHourValue) {
-                compPeakHourValue = set.size
-                compPeakHourIdx = idx
-              }
-            })
-            const compPeakHourLabel = compPeakHourValue > 0 ? 
-              `${compPeakHourIdx.toString().padStart(2, "0")}:00-${(compPeakHourIdx + 1).toString().padStart(2, "0")}:00` : 
-              "N/A"
-
-            // Format comparison data
-            const compDailyArr = Array.from({ length: 24 }, (_, hour) => ({
-              hour: hour.toString().padStart(2, "0") + ":00",
-              visitors: compHourlyVisitors[hour].size
-            }))
-            
-            const weekDays = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
-            const compWeeklyArr = weekDays.map((day, idx) => ({
-              day,
-              visitors: compWeeklyVisitors[idx].size
-            }))
-
-            const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
-            const compMonthlyArr = monthNames.map((month, idx) => ({
-              month,
-              visitors: compMonthlyVisitors[idx].size
-            }))
-
-            setComparisonData({
-              daily: compDailyArr,
-              weekly: compWeeklyArr,
-              monthly: compMonthlyArr
-            })
-
-            setComparisonStats({
-              totalVisitors: compTotalUniqueVisitors.size,
-              peakHour: compPeakHourLabel
-            })
-          } else {
-            // No comparison data available
-            setComparisonData({ daily: [], weekly: [], monthly: [] })
-            setComparisonStats({ totalVisitors: 0, peakHour: "N/A" })
-          }
+          });
         }
       } catch (error) {
-        console.error("Error fetching dashboard data:", error)
-        toast.error("Failed to load dashboard data")
-      } finally {
-        setIsLoading(false)
+        if (error.response && error.response.status !== 404) {
+          console.error(`Error fetching detections for job ${job.job_id}:`, error);
+        }
       }
     }
 
-    fetchDashboardData()
+    const visitorCounts = hourlyUniqueVisitors.map(set => set.size);
+    const maxVisitors = Math.max(...visitorCounts);
+    const minVisitors = Math.min(...visitorCounts);
 
-    // Listen for custom dashboard-refresh event to trigger refresh
+    let peakHourIdx = 0;
+    let peakHourValue = 0;
+    hourlyUniqueVisitors.forEach((set, idx) => {
+      if (set.size > peakHourValue) {
+        peakHourValue = set.size;
+        peakHourIdx = idx;
+      }
+    });
+    const peakHourLabel = `${peakHourIdx.toString().padStart(2, "0")}:00-${(peakHourIdx + 1).toString().padStart(2, "0")}:00`;
+
+    const trafficData = Array.from({ length: 24 }, (_, hour) => {
+      const value = hourlyUniqueVisitors[hour].size;
+      const t = maxVisitors === minVisitors ? 0 : (value - minVisitors) / (maxVisitors - minVisitors);
+      let colorIdx = Math.round(t * (turboColors.length - 2));
+      if (hour === peakHourIdx && value > 0) colorIdx = turboColors.length - 1;
+      return {
+        hour: hour.toString().padStart(2, "0") + ":00",
+        visitors: value,
+        fill: turboColors[colorIdx]
+      };
+    });
+
+    const finalStats = {
+      ...initialStats,
+      totalVisitors: totalUniqueVisitors.size,
+      peakHour: maxVisitors > 0 ? peakHourLabel : "N/A",
+    };
+
+    const weekDays = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+    const weeklyDataArr = weekDays.map((day, idx) => ({
+      day,
+      visitors: weeklyUniqueVisitors[idx].size,
+    }));
+
+    const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    const monthlyDataArr = monthNames.map((month, idx) => ({
+      month,
+      visitors: monthlyUniqueVisitors[idx].size,
+    }));
+
+    return { recent, stats: finalStats, trafficData, weeklyData: weeklyDataArr, monthlyData: monthlyDataArr };
+  };
+
+  useEffect(() => {
+    const fetchDashboardData = async () => {
+      setIsLoading(true);
+      try {
+        const jobHistory = await heatmapService.getJobHistory();
+        const { recent, stats, trafficData, weeklyData, monthlyData } = await processJobHistory(jobHistory, comparisonMode, getDateRanges);
+
+        setRecentJobs(recent);
+        setStats(stats);
+        setTrafficData(trafficData);
+        setWeeklyData(weeklyData);
+        setMonthlyData(monthlyData);
+
+        if (comparisonMode) {
+          const { comparisonStart, comparisonEnd } = getDateRanges();
+          const comparisonJobs = jobHistory.filter(job => {
+            const jobStartDateTime = job.start_datetime ? new Date(job.start_datetime) : new Date(job.created_at);
+            return jobStartDateTime >= comparisonStart && jobStartDateTime < comparisonEnd;
+          });
+
+          if (comparisonJobs.length > 0) {
+            const { stats: compStats, trafficData: compDaily, weeklyData: compWeekly, monthlyData: compMonthly } = await processJobHistory(comparisonJobs, false, getDateRanges);
+            setComparisonStats(compStats);
+            setComparisonData({ daily: compDaily, weekly: compWeekly, monthly: compMonthly });
+          } else {
+            setComparisonData({ daily: [], weekly: [], monthly: [] });
+            setComparisonStats({ totalVisitors: 0, peakHour: "N/A" });
+          }
+        }
+      } catch (error) {
+        console.error("Error fetching dashboard data:", error);
+        toast.error("Failed to load dashboard data");
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchDashboardData();
+
     const handleRefresh = () => {
       fetchDashboardData();
     };
@@ -383,7 +277,7 @@ const Dashboard = () => {
     return () => {
       window.removeEventListener('dashboard-refresh', handleRefresh);
     };
-  }, [comparisonMode, activeChart, location.pathname])
+  }, [comparisonMode, activeChart, location.pathname]);
 
   // Compute turbo color for each point in daily and weekly chart
   const getTurboColor = (value, min, max) => {
@@ -491,13 +385,14 @@ const Dashboard = () => {
 
   // Function to cancel a job and refresh dashboard
   const handleCancelJob = async (jobId) => {
+    const toastId = toast.loading('Cancelling job...');
     try {
       await heatmapService.cancelJob(jobId);
-      toast.success('Job cancelled!');
+      toast.success('Job cancelled!', { id: toastId });
       // Immediately refresh dashboard data
       fetchDashboardData();
     } catch (err) {
-      toast.error('Failed to cancel job.');
+      toast.error('Failed to cancel job.', { id: toastId });
     }
   };
 

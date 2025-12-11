@@ -88,6 +88,8 @@ def analyze_heatmap(heatmap, floorplan_shape, detections=None, fps=None):
     # Generate recommendations using AI if available and enabled, otherwise use rule-based
     use_ai = os.getenv('USE_AI_RECOMMENDATIONS', 'false').lower() == 'true'
     ai_provider = os.getenv('AI_PROVIDER', None)  # 'groq', 'gemini', 'openai', or None for auto-detect
+    recommendations = []
+    
     if AI_AVAILABLE and use_ai:
         try:
             recommendations, used_ai = generate_ai_recommendations(areas, total_visitors, peak_hours, provider=ai_provider)
@@ -105,7 +107,6 @@ def analyze_heatmap(heatmap, floorplan_shape, detections=None, fps=None):
             recommendations_provider = None
     else:
         # Fallback to rule-based recommendations
-        recommendations = [] if 'recommendations' not in locals() else recommendations
         if areas['high']['percentage'] > 30:
             recommendations.append("Consider redistributing traffic from high-density areas to improve customer flow")
         if areas['low']['percentage'] > 40:
