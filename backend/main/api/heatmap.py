@@ -780,21 +780,32 @@ def get_custom_heatmap_progress(job_id):
         "uuid": meta.get('uuid')
     }
 
-    # If we have metadata, try to generate a signed Supabase URL for direct image access
+    # If we have metadata, construct direct Supabase public URL for image
     try:
         if meta.get('timestamp') and meta.get('uuid'):
-            from ..core.storage import list_files_in_supabase, get_signed_url
+            from ..core.config_manager import get_config_manager
+            config = get_config_manager()
+            # Extract project ID from supabase URL (format: https://xxxxx.supabase.co)
+            supabase_url = config.supabase_url
+            project_id = supabase_url.split('https://')[-1].split('.supabase.co')[0]
+            
+            # Construct direct public URL to custom heatmap file
+            filename = f"custom_heatmap_{0:.1f}_{0:.1f}_{meta.get('timestamp')}_{meta.get('uuid')}.jpg".replace('0.0_0.0', '*')
+            # We need to find the actual time range, but for now construct from the file list
+            from ..core.storage import list_files_in_supabase
             files = list_files_in_supabase(f"{job_id}")
-            # Look for exact match containing timestamp and uuid
             match_token = f"_{meta.get('timestamp')}_{meta.get('uuid')}.jpg"
-            matched = [f for f in files if f.endswith(match_token) or match_token in f]
+            matched = [f for f in files if match_token in f]
             if matched:
-                supa_path = matched[-1]
-                signed = get_signed_url(supa_path)
-                if signed:
-                    resp['signed_url'] = signed
+                supa_path = matched[-1]  # e.g., 'job_id/custom_heatmap_0.0_1.0_1765478379_0cfa4529.jpg'
+                # Direct public URL format
+                public_url = f"https://{project_id}.supabase.co/storage/v1/object/public/projectresults/{supa_path}"
+                resp['image_url'] = public_url
+                logger.info(f"[CustomHeatmapProgress] Generated public URL for {supa_path}: {public_url[:80]}...")
     except Exception as e:
-        logger.warning(f"Failed to generate signed URL in progress endpoint: {e}")
+        logger.warning(f"[CustomHeatmapProgress] Failed to generate image URL: {e}")
+        import traceback
+        logger.warning(f"Traceback: {traceback.format_exc()}")
 
     return jsonify(resp)
 
