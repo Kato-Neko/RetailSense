@@ -395,12 +395,13 @@ def run_custom_heatmap_job(job_id: str, start_time: float, end_time: float, set_
         # Store the identifiers in the jobs state for frontend to retrieve
         from ..services.state import get_jobs_store
         jobs = get_jobs_store()
-        if job_id in jobs:
-            jobs[job_id]['custom_heatmap_meta'] = {
-                'timestamp': timestamp,
-                'uuid': unique_id
-            }
-            logger.info(f"Stored metadata: timestamp={timestamp}, uuid={unique_id}")
+        if job_id not in jobs:
+            jobs[job_id] = {}
+        jobs[job_id]['custom_heatmap_meta'] = {
+            'timestamp': timestamp,
+            'uuid': unique_id
+        }
+        logger.info(f"Stored metadata: timestamp={timestamp}, uuid={unique_id}")
     except Exception as e:
         logger.error(f"Error creating/uploading custom heatmap: {e}")
         import traceback
