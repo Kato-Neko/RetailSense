@@ -392,16 +392,26 @@ def run_custom_heatmap_job(job_id: str, start_time: float, end_time: float, set_
         upload_image_to_supabase(blended_img, filename)
         logger.info(f"Successfully uploaded custom heatmap to Supabase")
         
-        # Store the identifiers in the jobs state for frontend to retrieve
+        # Store the identifiers AND construct the image URL in metadata
         from ..services.state import get_jobs_store
+        from ..core.config_manager import get_config_manager
+        config = get_config_manager()
+        supabase_url = config.supabase_url
+        project_id = supabase_url.split('https://')[-1].split('.supabase.co')[0]
+        
+        # Direct public URL to the custom heatmap
+        image_url = f"https://{project_id}.supabase.co/storage/v1/object/public/projectresults/{filename}"
+        
         jobs = get_jobs_store()
         if job_id not in jobs:
             jobs[job_id] = {}
         jobs[job_id]['custom_heatmap_meta'] = {
             'timestamp': timestamp,
-            'uuid': unique_id
+            'uuid': unique_id,
+            'image_url': image_url,
+            'filename': filename
         }
-        logger.info(f"Stored metadata: timestamp={timestamp}, uuid={unique_id}")
+        logger.info(f"Stored metadata: timestamp={timestamp}, uuid={unique_id}, image_url={image_url}")
     except Exception as e:
         logger.error(f"Error creating/uploading custom heatmap: {e}")
         import traceback

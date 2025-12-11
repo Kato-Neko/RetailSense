@@ -770,44 +770,16 @@ def get_custom_heatmap_image(job_id):
 @heatmap_bp.route('/heatmap_jobs/<job_id>/custom_heatmap_progress')
 def get_custom_heatmap_progress(job_id):
     progress = get_custom_progress(job_id)
-    # Include the custom heatmap metadata if available
     from ..services.state import get_jobs_store
     jobs = get_jobs_store()
     meta = jobs.get(job_id, {}).get('custom_heatmap_meta', {})
-    resp = {
+    
+    return jsonify({
         "progress": progress,
         "timestamp": meta.get('timestamp'),
-        "uuid": meta.get('uuid')
-    }
-
-    # If we have metadata, construct direct Supabase public URL for image
-    try:
-        if meta.get('timestamp') and meta.get('uuid'):
-            from ..core.config_manager import get_config_manager
-            config = get_config_manager()
-            # Extract project ID from supabase URL (format: https://xxxxx.supabase.co)
-            supabase_url = config.supabase_url
-            project_id = supabase_url.split('https://')[-1].split('.supabase.co')[0]
-            
-            # Construct direct public URL to custom heatmap file
-            filename = f"custom_heatmap_{0:.1f}_{0:.1f}_{meta.get('timestamp')}_{meta.get('uuid')}.jpg".replace('0.0_0.0', '*')
-            # We need to find the actual time range, but for now construct from the file list
-            from ..core.storage import list_files_in_supabase
-            files = list_files_in_supabase(f"{job_id}")
-            match_token = f"_{meta.get('timestamp')}_{meta.get('uuid')}.jpg"
-            matched = [f for f in files if match_token in f]
-            if matched:
-                supa_path = matched[-1]  # e.g., 'job_id/custom_heatmap_0.0_1.0_1765478379_0cfa4529.jpg'
-                # Direct public URL format
-                public_url = f"https://{project_id}.supabase.co/storage/v1/object/public/projectresults/{supa_path}"
-                resp['image_url'] = public_url
-                logger.info(f"[CustomHeatmapProgress] Generated public URL for {supa_path}: {public_url[:80]}...")
-    except Exception as e:
-        logger.warning(f"[CustomHeatmapProgress] Failed to generate image URL: {e}")
-        import traceback
-        logger.warning(f"Traceback: {traceback.format_exc()}")
-
-    return jsonify(resp)
+        "uuid": meta.get('uuid'),
+        "image_url": meta.get('image_url')
+    })
 
 
 def get_heatmap_analysis_logic(job_id):
