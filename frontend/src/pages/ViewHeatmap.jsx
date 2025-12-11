@@ -218,6 +218,7 @@ export default function ViewHeatmap() {
       poll = setInterval(async () => {
         try {
           const data = await heatmapService.getCustomHeatmapProgress(selectedJob.job_id);
+          console.log('[CustomHeatmap] Progress response:', data);
           setCustomProgress(Math.round((data.progress || 0) * 100));
           if (data.progress >= 1) {
             clearInterval(poll);
@@ -228,6 +229,8 @@ export default function ViewHeatmap() {
               timestamp: data.timestamp, 
               uuid: data.uuid 
             } : null;
+            
+            console.log('[CustomHeatmap] Progress complete, metadata:', newHeatmapMeta);
             
             if (newHeatmapMeta) {
               setHeatmapMeta(newHeatmapMeta);
@@ -248,6 +251,7 @@ export default function ViewHeatmap() {
               newHeatmapMeta?.timestamp,
               newHeatmapMeta?.uuid
             );
+            console.log('[CustomHeatmap] Generated image URL:', customUrl);
             setCustomHeatmapUrl(customUrl);
             // Fetch custom analytics
             setAnalysisLoading(true);

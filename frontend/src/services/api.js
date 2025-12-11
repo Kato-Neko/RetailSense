@@ -327,7 +327,11 @@ export const heatmapService = {
   },
 
   getCustomHeatmapImageUrl: (jobId, start, end, timestamp, uuid) => {
-    return `${API_BASE_URL}/heatmap_jobs/${jobId}/custom_heatmap_image?start=${start}&end=${end}&timestamp=${timestamp}&uuid=${uuid}`;
+    let url = `${API_BASE_URL}/heatmap_jobs/${jobId}/custom_heatmap_image?start=${start}&end=${end}`;
+    if (timestamp && uuid) {
+      url += `&timestamp=${timestamp}&uuid=${uuid}`;
+    }
+    return url;
   },
   
   getDetections: async (jobId) => {
