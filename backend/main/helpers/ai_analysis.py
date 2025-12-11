@@ -259,13 +259,6 @@ def _generate_rule_based_recommendations(areas: Dict, total_visitors: int) -> Li
 
 # --- Streaming Functions ---
 
-_STREAM_PROVIDER_FUNCTIONS = {
-    'groq': _call_groq_stream,
-    'gemini': _call_gemini_stream,
-    'openai': _call_openai_stream,
-}
-
-
 def generate_ai_recommendations_stream(
     areas: Dict,
     total_visitors: int,
@@ -276,6 +269,13 @@ def generate_ai_recommendations_stream(
     Generate and stream AI-powered recommendations.
     Yields recommendations as they are generated.
     """
+    # This was moved here from above to be after the function definitions
+    _STREAM_PROVIDER_FUNCTIONS = {
+        'groq': _call_groq_stream,
+        'gemini': _call_gemini_stream,
+        'openai': _call_openai_stream,
+    }
+
     selected_provider = _get_ai_provider(provider)
     if not selected_provider:
         for rec in _generate_rule_based_recommendations(areas, total_visitors):
@@ -295,19 +295,18 @@ def generate_ai_recommendations_stream(
     }
     prompt = _build_prompt(context, total_visitors, peak_hours)
 
-    try:
-        if provider == 'groq':
-            yield from _call_groq_stream(prompt)
-        elif provider == 'gemini':
-            yield from _call_gemini_stream(prompt)
-        elif provider == 'openai':
-            yield from _call_openai_stream(prompt)
-        else:
+    stream_func = _STREAM_PROVIDER_FUNCTIONS.get(selected_provider)
+    if stream_func:
+        try:
+            yield from stream_func(prompt)
+        except Exception as e:
+            logger.error(f"AI provider '{selected_provider}' streaming failed: {e}")
+            yield "Error generating AI recommendations."
+    else:
+        # Fallback for safety, though _get_ai_provider should prevent this
+        for rec in _generate_rule_based_recommendations(areas, total_visitors):
             for rec in _generate_rule_based_recommendations(areas, total_visitors):
                 yield rec
-    except Exception as e:
-        logger.error(f"AI provider '{provider}' streaming failed: {e}")
-        yield "Error generating AI recommendations."
 
 def _call_groq_stream(prompt: str):
     """Call Groq API with streaming."""
