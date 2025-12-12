@@ -857,6 +857,9 @@ export default function ViewHeatmap() {
                     {settingsMode === "standard" && selectedJob && analysis && (
                       <div className="w-full max-w-xl mt-2 mb-2 flex flex-col items-center">
                         <AnalyticsSummaryBox
+                          key={`standard-${selectedJob.job_id}`}
+                          customDateRange={null}
+                          customTimeRange={null}
                           startDate={selectedJob.start_datetime ? new Date(selectedJob.start_datetime).toISOString().slice(0,10) : 'N/A'}
                           endDate={selectedJob.end_datetime ? new Date(selectedJob.end_datetime).toISOString().slice(0,10) : 'N/A'}
                           startTime={selectedJob.start_datetime ? new Date(selectedJob.start_datetime).toLocaleTimeString(undefined, { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' }) : 'N/A'}
@@ -901,6 +904,7 @@ export default function ViewHeatmap() {
                           {customStep === 2 && (
                             <>
                               <AnalyticsSummaryBox
+                                key={`custom-${selectedJob?.job_id}-${heatmapMeta?.timestamp || 'none'}`}
                                 customDateRange={customDateRange}
                                 customTimeRange={customTimeRange}
                                 analysis={analysis}
