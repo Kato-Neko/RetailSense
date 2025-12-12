@@ -102,6 +102,7 @@ export default function ViewHeatmap() {
   // Cache for analysis to prevent re-fetching
   const analysisCache = useRef({});
   const pendingRequests = useRef({}); // Track pending requests to prevent duplicates
+  const customImageFallbackUsed = useRef(false); // Prevent infinite onError loops for custom image
 
   // Fetch job history on mount
   useEffect(() => {
@@ -245,20 +246,17 @@ export default function ViewHeatmap() {
             const startTimeInSeconds = (startDate - videoStart) / 1000;
             const endTimeInSeconds = (endDate - videoStart) / 1000;
             // If backend provided a direct image URL, use it (most reliable)
-            if (data.image_url) {
-              console.log('[CustomHeatmap] Using image_url from progress endpoint:', data.image_url);
-              setCustomHeatmapUrl(data.image_url);
-            } else {
-              const customUrl = heatmapService.getCustomHeatmapImageUrl(
-                selectedJob.job_id,
-                startTimeInSeconds,
-                endTimeInSeconds,
-                newHeatmapMeta?.timestamp,
-                newHeatmapMeta?.uuid
-              );
-              console.log('[CustomHeatmap] Generated image URL:', customUrl);
-              setCustomHeatmapUrl(customUrl);
-            }
+            const directUrl = data.image_url ? `${data.image_url}?t=${Date.now()}` : null;
+            const fallbackUrl = heatmapService.getCustomHeatmapImageUrl(
+              selectedJob.job_id,
+              startTimeInSeconds,
+              endTimeInSeconds,
+              newHeatmapMeta?.timestamp,
+              newHeatmapMeta?.uuid
+            );
+            const resolvedUrl = directUrl || fallbackUrl;
+            console.log('[CustomHeatmap] Using image URL:', resolvedUrl);
+            setCustomHeatmapUrl(resolvedUrl);
             // Fetch custom analytics
             setAnalysisLoading(true);
             try {
@@ -290,6 +288,11 @@ export default function ViewHeatmap() {
       if (poll) clearInterval(poll);
     };
   }, [isCustomGenerating, selectedJob, customProgress, customDateRange, customTimeRange]);
+
+  // Reset fallback guard whenever URL changes
+  useEffect(() => {
+    customImageFallbackUsed.current = false;
+  }, [customHeatmapUrl]);
 
   // Handlers
   const handleSelectJob = (job) => {
@@ -645,6 +648,26 @@ export default function ViewHeatmap() {
                         onError={(e) => {
                           console.error('[CustomHeatmap] Image failed to load:', e);
                           console.error('[CustomHeatmap] Image src:', customHeatmapUrl || (isLiveMode && liveHeatmapUrl) || (selectedJob ? heatmapService.getHeatmapImageUrl(selectedJob.job_id) : null));
+                          // If custom URL failed, try regenerated API URL once
+                          if (customHeatmapUrl && !customImageFallbackUsed.current && selectedJob && customDateRange && customTimeRange) {
+                            customImageFallbackUsed.current = true;
+                            const videoStart = new Date(selectedJob.start_datetime);
+                            const startDate = new Date(customDateRange.start);
+                            startDate.setHours(...customTimeRange.start.split(":").map(Number));
+                            const endDate = new Date(customDateRange.end);
+                            endDate.setHours(...customTimeRange.end.split(":").map(Number));
+                            const startTimeInSeconds = (startDate - videoStart) / 1000;
+                            const endTimeInSeconds = (endDate - videoStart) / 1000;
+                            const fallbackUrl = heatmapService.getCustomHeatmapImageUrl(
+                              selectedJob.job_id,
+                              startTimeInSeconds,
+                              endTimeInSeconds,
+                              heatmapMeta?.timestamp,
+                              heatmapMeta?.uuid
+                            );
+                            console.warn('[CustomHeatmap] Falling back to generated URL:', fallbackUrl);
+                            setCustomHeatmapUrl(`${fallbackUrl}&t=${Date.now()}`);
+                          }
                           setIsLoading(false);
                         }}
                       />
