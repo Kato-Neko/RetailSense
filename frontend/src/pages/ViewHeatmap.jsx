@@ -104,6 +104,7 @@ export default function ViewHeatmap() {
   const pendingRequests = useRef({}); // Track pending requests to prevent duplicates
   const customImageFallbackUsed = useRef(false); // Prevent infinite onError loops for custom image
   const lastAttemptedImageUrl = useRef(null); // Track last attempted URL to prevent retry loops
+  const revokeUrlRef = useRef(null); // track blob URL to revoke
 
   // Fetch job history on mount
   useEffect(() => {
@@ -260,7 +261,26 @@ export default function ViewHeatmap() {
             // Reset tracking for new image URL
             lastAttemptedImageUrl.current = null;
             customImageFallbackUsed.current = false;
-            setCustomHeatmapUrl(resolvedUrl);
+
+            // Try to fetch as blob with auth (supports non-public buckets)
+            const toBlobUrl = async (url) => {
+              try {
+                const res = await apiClient.get(url, { responseType: 'blob', baseURL: '' });
+                const objectUrl = URL.createObjectURL(res.data);
+                // Revoke previous blob URL to avoid leaks
+                if (revokeUrlRef.current) {
+                  URL.revokeObjectURL(revokeUrlRef.current);
+                }
+                revokeUrlRef.current = objectUrl;
+                return objectUrl;
+              } catch (err) {
+                console.error('[CustomHeatmap] Blob fetch failed, falling back to direct URL', err);
+                return null;
+              }
+            };
+
+            const maybeBlobUrl = await toBlobUrl(resolvedUrl);
+            setCustomHeatmapUrl(maybeBlobUrl || resolvedUrl);
             // Fetch custom analytics
             setAnalysisLoading(true);
             try {
@@ -298,6 +318,10 @@ export default function ViewHeatmap() {
     if (isCustomGenerating && customProgress === 0) {
       customImageFallbackUsed.current = false;
       lastAttemptedImageUrl.current = null;
+      if (revokeUrlRef.current) {
+        URL.revokeObjectURL(revokeUrlRef.current);
+        revokeUrlRef.current = null;
+      }
     }
   }, [isCustomGenerating, customProgress]);
 
@@ -309,6 +333,10 @@ export default function ViewHeatmap() {
     // Reset image tracking for new job
     lastAttemptedImageUrl.current = null;
     customImageFallbackUsed.current = false;
+    if (revokeUrlRef.current) {
+      URL.revokeObjectURL(revokeUrlRef.current);
+      revokeUrlRef.current = null;
+    }
   }
   const handleDeleteJob = async (jobId) => {
     try {
@@ -671,7 +699,7 @@ export default function ViewHeatmap() {
                           
                           lastAttemptedImageUrl.current = currentSrc;
                           
-                          // If custom URL failed, try regenerated API URL once
+                          // If custom URL failed, try regenerated API URL once (as blob for auth)
                           if (customHeatmapUrl && !customImageFallbackUsed.current && selectedJob && customDateRange && customTimeRange) {
                             customImageFallbackUsed.current = true;
                             const videoStart = new Date(selectedJob.start_datetime);
@@ -690,8 +718,23 @@ export default function ViewHeatmap() {
                             );
                             console.warn('[CustomHeatmap] Falling back to generated URL:', fallbackUrl);
                             const fallbackUrlWithCache = `${fallbackUrl}&t=${Date.now()}`;
-                            lastAttemptedImageUrl.current = fallbackUrlWithCache;
-                            setCustomHeatmapUrl(fallbackUrlWithCache);
+                            // fetch as blob with auth and set object URL
+                            (async () => {
+                              try {
+                                const res = await apiClient.get(fallbackUrlWithCache, { responseType: 'blob', baseURL: '' });
+                                const objectUrl = URL.createObjectURL(res.data);
+                                if (revokeUrlRef.current) {
+                                  URL.revokeObjectURL(revokeUrlRef.current);
+                                }
+                                revokeUrlRef.current = objectUrl;
+                                lastAttemptedImageUrl.current = objectUrl;
+                                setCustomHeatmapUrl(objectUrl);
+                              } catch (err) {
+                                console.error('[CustomHeatmap] Fallback blob fetch failed:', err);
+                                lastAttemptedImageUrl.current = fallbackUrlWithCache;
+                                setCustomHeatmapUrl(fallbackUrlWithCache);
+                              }
+                            })();
                           }
                           setIsLoading(false);
                         }}
