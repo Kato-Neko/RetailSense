@@ -82,14 +82,22 @@ const Dashboard = () => {
     const now = new Date()
     
     if (activeChart === "daily") {
-      // Today vs yesterday (same hours of day)
+      // Today vs yesterday (full day comparison)
       const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
       const currentStart = today
       const currentEnd = now
+      // Yesterday: full day (00:00:00 to 23:59:59)
       const yesterday = new Date(today.getTime() - 24 * 60 * 60 * 1000)
-      const yesterdayEnd = new Date(yesterday.getTime() + (now.getTime() - today.getTime()))
+      const yesterdayEnd = new Date(yesterday.getTime() + 24 * 60 * 60 * 1000 - 1) // End of yesterday
       const comparisonStart = yesterday
       const comparisonEnd = yesterdayEnd
+      console.log("[Daily Comparison] Date ranges:", {
+        currentStart: currentStart.toISOString(),
+        currentEnd: currentEnd.toISOString(),
+        comparisonStart: comparisonStart.toISOString(),
+        comparisonEnd: comparisonEnd.toISOString(),
+        activeChart
+      });
       return { currentStart, currentEnd, comparisonStart, comparisonEnd }
     } else if (activeChart === "weekly") {
       // Last 7 days vs previous 7 days
@@ -248,22 +256,44 @@ const Dashboard = () => {
         if (comparisonMode) {
           try {
             const { comparisonStart, comparisonEnd } = getDateRanges();
+            console.log(`[Comparison Mode] Processing comparison data for ${activeChart} chart`);
+            console.log(`[Comparison Mode] Comparison date range: ${comparisonStart.toISOString()} to ${comparisonEnd.toISOString()}`);
+            
             const comparisonJobs = jobHistory.filter(job => {
               const jobStartDateTime = job.start_datetime ? new Date(job.start_datetime) : new Date(job.created_at);
-              return jobStartDateTime >= comparisonStart && jobStartDateTime < comparisonEnd;
+              const isInRange = jobStartDateTime >= comparisonStart && jobStartDateTime < comparisonEnd;
+              if (isInRange) {
+                console.log(`[Comparison Mode] Found comparison job: ${job.job_id}, date: ${jobStartDateTime.toISOString()}`);
+              }
+              return isInRange;
             });
+
+            console.log(`[Comparison Mode] Found ${comparisonJobs.length} comparison jobs for ${activeChart} chart`);
 
             if (comparisonJobs.length > 0) {
               const { stats: compStats, trafficData: compDaily, weeklyData: compWeekly, monthlyData: compMonthly } = await processJobHistory(comparisonJobs, false, getDateRanges);
+              
+              console.log(`[Comparison Mode] Processed comparison data:`, {
+                dailyLength: compDaily?.length || 0,
+                weeklyLength: compWeekly?.length || 0,
+                monthlyLength: compMonthly?.length || 0,
+                stats: compStats
+              });
+              
               // Ensure all comparison data arrays are valid and have correct structure
               // processJobHistory always returns 24 hours for daily, but ensure structure matches exactly
-              const safeCompDaily = Array.isArray(compDaily) && compDaily.length === 24 
-                ? compDaily.map((item, idx) => ({
-                    hour: item.hour || idx.toString().padStart(2, "0") + ":00",
-                    visitors: item.visitors || 0,
-                    fill: item.fill || turboColors[0]
-                  }))
-                : Array.from({ length: 24 }, (_, hour) => ({ hour: hour.toString().padStart(2, "0") + ":00", visitors: 0, fill: turboColors[0] }));
+              let safeCompDaily = [];
+              if (Array.isArray(compDaily) && compDaily.length === 24) {
+                safeCompDaily = compDaily.map((item, idx) => ({
+                  hour: item.hour || idx.toString().padStart(2, "0") + ":00",
+                  visitors: typeof item.visitors === 'number' ? item.visitors : 0,
+                  fill: item.fill || turboColors[0]
+                }));
+                console.log(`[Comparison Mode] Daily comparison data structured: ${safeCompDaily.length} hours`);
+              } else {
+                safeCompDaily = Array.from({ length: 24 }, (_, hour) => ({ hour: hour.toString().padStart(2, "0") + ":00", visitors: 0, fill: turboColors[0] }));
+                console.log(`[Comparison Mode] Daily comparison data was empty/invalid, created empty structure`);
+              }
               
               const safeCompWeekly = Array.isArray(compWeekly) && compWeekly.length === 7 
                 ? compWeekly 
@@ -277,10 +307,17 @@ const Dashboard = () => {
                   ? compMonthly 
                   : ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"].map(month => ({ month, visitors: 0 })));
               
+              console.log(`[Comparison Mode] Setting comparison data:`, {
+                daily: safeCompDaily.length,
+                weekly: safeCompWeekly.length,
+                monthly: safeCompMonthly.length
+              });
+              
               setComparisonStats(compStats);
               setComparisonData({ daily: safeCompDaily, weekly: safeCompWeekly, monthly: safeCompMonthly });
             } else {
               // Even with no jobs, create empty structure with correct length for all chart types for proper merging
+              console.log(`[Comparison Mode] No comparison jobs found for ${activeChart} chart, creating empty structure`);
               const weekDays = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
               const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
               setComparisonData({ 
@@ -379,8 +416,11 @@ const Dashboard = () => {
     const currentData = activeChart === "daily" ? dailyLineData : activeChart === "weekly" ? weeklyLineData : monthlyLineData
     let compData = activeChart === "daily" ? comparisonData.daily : activeChart === "weekly" ? comparisonData.weekly : comparisonData.monthly
     
+    console.log(`[MergedData] ${activeChart} chart - comparisonMode: ${comparisonMode}, currentData length: ${currentData.length}, compData length: ${compData?.length || 0}`);
+    
     // Ensure compData is an array with correct length
     if (!Array.isArray(compData) || compData.length === 0) {
+      console.log(`[MergedData] compData is empty or invalid, creating empty structure for ${activeChart}`);
       // Create empty comparison data with correct structure
       if (activeChart === "daily") {
         compData = Array.from({ length: 24 }, (_, hour) => ({
@@ -429,16 +469,24 @@ const Dashboard = () => {
         // Try to find matching hour if index doesn't match
         if (comparison.hour !== item.hour) {
           const matching = compData.find(c => c.hour === item.hour);
-          if (matching) comparison = matching;
+          if (matching) {
+            comparison = matching;
+            console.log(`[MergedData] Matched hour ${item.hour} for comparison data`);
+          }
         }
       }
       
+      const comparisonValue = comparison && typeof comparison.visitors === 'number' ? comparison.visitors : 0;
+      const currentValue = item.visitors || 0;
+      
       return {
         ...item,
-        comparison: comparison && typeof comparison.visitors === 'number' ? comparison.visitors : 0,
-        current: item.visitors || 0
+        comparison: comparisonValue,
+        current: currentValue
       }
     })
+    
+    console.log(`[MergedData] Merged ${merged.length} items for ${activeChart} chart, sample:`, merged.slice(0, 3));
     
     return merged
   }, [comparisonMode, activeChart, dailyLineData, weeklyLineData, monthlyLineData, comparisonData, turboColors])
