@@ -326,6 +326,29 @@ export default function ViewHeatmap() {
     }
   }, [isCustomGenerating, customProgress]);
 
+  // When switching back to Standard, restore original analysis and standard image
+  useEffect(() => {
+    if (settingsMode === 'standard' && selectedJob && !isLiveMode) {
+      setCustomHeatmapUrl(null);
+      // Restore cached standard analysis if available, otherwise refetch
+      const jobId = selectedJob.job_id;
+      const cached = analysisCache.current[jobId];
+      if (cached) {
+        setAnalysis(cached);
+        setAnalysisLoading(false);
+      } else {
+        setAnalysisLoading(true);
+        heatmapService.getHeatmapAnalysis(jobId)
+          .then(data => {
+            analysisCache.current[jobId] = data;
+            setAnalysis(data);
+          })
+          .catch(() => {})
+          .finally(() => setAnalysisLoading(false));
+      }
+    }
+  }, [settingsMode, selectedJob?.job_id, isLiveMode]);
+
   // Handlers
   const handleSelectJob = (job) => {
     setSelectedJob(job)
@@ -673,7 +696,7 @@ export default function ViewHeatmap() {
                     ) : (
                       <img
                         src={
-                          customHeatmapUrl
+                          (settingsMode === 'custom' && customHeatmapUrl)
                             || (isLiveMode && liveHeatmapUrl)
                             || (selectedJob ? heatmapService.getHeatmapImageUrl(selectedJob.job_id) : null)
                             || "/placeholder.svg"
