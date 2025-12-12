@@ -371,6 +371,25 @@ export default function ViewHeatmap() {
       revokeUrlRef.current = null;
     }
   }
+
+  // Reset custom workflow when switching jobs
+  useEffect(() => {
+    if (!selectedJob) return;
+    // Reset steps and progress for new job
+    setCustomStep(0);
+    setCustomGenerationComplete(false);
+    setCustomProgress(0);
+    setCustomHeatmapUrl(null);
+    setHeatmapMeta(null);
+    setCustomDateRange(null);
+    setCustomTimeRange(null);
+    customImageFallbackUsed.current = false;
+    lastAttemptedImageUrl.current = null;
+    if (revokeUrlRef.current) {
+      URL.revokeObjectURL(revokeUrlRef.current);
+      revokeUrlRef.current = null;
+    }
+  }, [selectedJob?.job_id]);
   const handleDeleteJob = async (jobId) => {
     try {
       await heatmapService.deleteJob(jobId)
