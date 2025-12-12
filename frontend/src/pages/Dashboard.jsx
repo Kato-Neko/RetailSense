@@ -3,7 +3,7 @@
 import { useState, useEffect, useMemo, Fragment } from "react"
 import { Link, useLocation } from "react-router-dom"
 import { BarChart as ReBarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, ReferenceArea } from "recharts"
-import { Video, Map, Users, Clock, Download, Check } from "lucide-react"
+import { Video, Map, Users, Clock, Download, Check, Info } from "lucide-react"
 import { heatmapService } from "../services/api"
 import toast from "react-hot-toast"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -874,25 +874,42 @@ const Dashboard = () => {
     const chartHeight = height - chartPadding - 25 - (titleLines.length - 1) * 12; // Adjust for title
     
     // Calculate max value for scaling - ensure it's at least 1 to avoid division by zero
-    const values = data.map(d => d[yKey] || 0);
+    const values = data.map(d => {
+      const val = d[yKey];
+      return typeof val === 'number' ? val : (parseFloat(val) || 0);
+    });
     const maxValue = Math.max(...values, 1);
     const minValue = Math.min(...values, 0);
     const valueRange = maxValue - minValue || 1; // Avoid division by zero
     
+    // If all values are the same (including 0), add a small range to make the line visible
+    const adjustedRange = valueRange === 0 ? 1 : valueRange;
+    const adjustedMax = maxValue === minValue ? maxValue + 1 : maxValue;
+    
     const pointSpacing = data.length > 1 ? chartWidth / (data.length - 1) : 0;
     
-    // Draw line
-    pdf.setDrawColor(25, 118, 210);
-    pdf.setLineWidth(2);
+    // Calculate points
     const points = data.map((item, idx) => {
       const pointX = chartX + (idx * pointSpacing);
+      const itemValue = typeof item[yKey] === 'number' ? item[yKey] : (parseFloat(item[yKey]) || 0);
       // Normalize value to chart height, accounting for min value
-      const normalizedValue = valueRange > 0 ? ((item[yKey] || 0) - minValue) / valueRange : 0;
-      const pointY = chartY + chartHeight - (normalizedValue * chartHeight);
-      return { x: pointX, y: pointY };
+      const normalizedValue = adjustedRange > 0 ? ((itemValue - minValue) / adjustedRange) : 0;
+      // Ensure pointY is within chart bounds
+      const pointY = Math.max(chartY, Math.min(chartY + chartHeight, chartY + chartHeight - (normalizedValue * chartHeight)));
+      return { x: pointX, y: pointY, value: itemValue };
     });
     
+    // Draw axes first (so line appears on top)
+    pdf.setDrawColor(100, 100, 100);
+    pdf.setLineWidth(0.5);
+    // X-axis
+    pdf.line(chartX, chartY + chartHeight, chartX + chartWidth, chartY + chartHeight);
+    // Y-axis
+    pdf.line(chartX, chartY, chartX, chartY + chartHeight);
+    
     // Draw the line connecting all points
+    pdf.setDrawColor(25, 118, 210);
+    pdf.setLineWidth(2);
     for (let i = 0; i < points.length - 1; i++) {
       pdf.line(points[i].x, points[i].y, points[i + 1].x, points[i + 1].y);
     }
@@ -902,14 +919,6 @@ const Dashboard = () => {
     points.forEach((point) => {
       pdf.circle(point.x, point.y, 2, 'F');
     });
-    
-    // Draw axes
-    pdf.setDrawColor(100, 100, 100);
-    pdf.setLineWidth(0.5);
-    // X-axis
-    pdf.line(chartX, chartY + chartHeight, chartX + chartWidth, chartY + chartHeight);
-    // Y-axis
-    pdf.line(chartX, chartY, chartX, chartY + chartHeight);
     
     // Draw labels
     pdf.setFontSize(7);
@@ -928,7 +937,7 @@ const Dashboard = () => {
     // Y-axis labels
     const numTicks = 5;
     for (let i = 0; i <= numTicks; i++) {
-      const tickValue = (maxValue / numTicks) * i;
+      const tickValue = (adjustedMax / numTicks) * i;
       const tickY = chartY + chartHeight - ((i / numTicks) * chartHeight);
       pdf.text(Math.round(tickValue).toString(), chartX - 5, tickY, { align: 'right' });
       pdf.line(chartX - 3, tickY, chartX, tickY);
@@ -1181,13 +1190,22 @@ const Dashboard = () => {
       // Chart 2: Traffic by Time Period (Line Chart)
       drawCard(pdf, margin + chartWidth + cardSpacing, y, chartWidth, chartHeight, [255, 255, 255], [210, 213, 220]);
       // Use trafficData for hourly line chart (sample every 2 hours to reduce clutter, but ensure at least 2 points)
-      let hourlyDataSample = trafficData.filter((_, idx) => idx % 2 === 0 || idx === trafficData.length - 1);
-      // Ensure we have at least 2 data points for the line chart
-      if (hourlyDataSample.length < 2 && trafficData.length > 0) {
-        // If filtering resulted in less than 2 points, take first and last
-        hourlyDataSample = [trafficData[0], trafficData[trafficData.length - 1]];
+      let hourlyDataSample = [];
+      if (trafficData && trafficData.length > 0) {
+        // Filter to sample every 2 hours, but always include first and last
+        hourlyDataSample = trafficData.filter((_, idx) => idx % 2 === 0 || idx === trafficData.length - 1);
+        // Ensure we have at least 2 data points for the line chart
+        if (hourlyDataSample.length < 2) {
+          // If filtering resulted in less than 2 points, take first and last
+          hourlyDataSample = [trafficData[0], trafficData[trafficData.length - 1]];
+        }
+        // Ensure data structure is correct
+        hourlyDataSample = hourlyDataSample.map(item => ({
+          hour: item.hour || "00:00",
+          visitors: typeof item.visitors === 'number' ? item.visitors : (parseFloat(item.visitors) || 0)
+        }));
       }
-      // If still less than 2 points, create a minimal dataset
+      // If still less than 2 points or no data, create a minimal dataset
       if (hourlyDataSample.length < 2) {
         hourlyDataSample = [
           { hour: "00:00", visitors: 0 },
@@ -1612,7 +1630,45 @@ const Dashboard = () => {
         {/* Actions & Recent Activity Card */}
           <Card className="bg-gradient-to-br from-background/80 to-muted/90 dark:from-slate-900/80 dark:to-slate-950/90 border border-border shadow-xl shadow-primary/10 backdrop-blur-xl rounded-xl flex flex-col">
         <CardHeader>
-              <CardTitle className="text-base font-bold text-foreground tracking-tight drop-shadow mb-2">Quick Actions</CardTitle>
+              <div className="flex items-center justify-between mb-2">
+                <CardTitle className="text-base font-bold text-foreground tracking-tight drop-shadow">Quick Actions</CardTitle>
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-6 w-6 text-muted-foreground hover:text-foreground"
+                    >
+                      <Info className="h-4 w-4" />
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-80 p-4" align="end">
+                    <div className="space-y-3">
+                      <h4 className="font-semibold text-sm text-foreground mb-2">Chart Information</h4>
+                      <div className="space-y-2 text-xs text-muted-foreground">
+                        <div>
+                          <p className="font-medium text-foreground mb-1">Foot Traffic Analytics</p>
+                          <p>The chart displays visitor traffic patterns across different time periods. You can view data by Daily, Weekly, or Monthly intervals.</p>
+                        </div>
+                        <div className="pt-2 border-t border-border">
+                          <p className="font-medium text-foreground mb-1">Standard Mode</p>
+                          <p>Shows aggregated data from all completed jobs within the selected time period (Daily/Weekly/Monthly).</p>
+                        </div>
+                        <div className="pt-2 border-t border-border">
+                          <p className="font-medium text-foreground mb-1">Compare Mode</p>
+                          <p>Compares data from two different time periods:</p>
+                          <ul className="list-disc list-inside mt-1 space-y-0.5 ml-2">
+                            <li><strong>Daily:</strong> Today vs Yesterday</li>
+                            <li><strong>Weekly:</strong> Last 7 days vs Previous 7 days</li>
+                            <li><strong>Monthly:</strong> This month vs Last month</li>
+                          </ul>
+                          <p className="mt-1">The yellow line shows current period data, while the gray line shows the comparison period.</p>
+                        </div>
+                      </div>
+                    </div>
+                  </PopoverContent>
+                </Popover>
+              </div>
         </CardHeader>
         <CardContent>
               <div className="flex flex-col gap-3 mb-6">
