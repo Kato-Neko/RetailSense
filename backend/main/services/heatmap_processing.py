@@ -91,6 +91,8 @@ def create_custom_heatmap(detections, floorplan_path, dimensions=(1920, 1080), p
     heatmap_norm = cv2.normalize(heatmap, None, 0, 1, cv2.NORM_MINMAX)
     heatmap_img = cv2.normalize(heatmap, None, 0, 255, cv2.NORM_MINMAX)
     heatmap_img = gaussian_filter(heatmap_img, sigma=heatmap_params['sigma'])
+    # Clamp values after Gaussian blur to avoid overflow/underflow before color mapping
+    heatmap_img = np.clip(heatmap_img, 0, 255)
     heatmap_colored = cv2.applyColorMap(heatmap_img.astype(np.uint8), cv2.COLORMAP_TURBO)
 
     alpha_mask = heatmap_norm[..., None] * heatmap_params['alpha']
