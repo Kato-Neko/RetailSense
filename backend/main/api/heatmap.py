@@ -695,18 +695,10 @@ def export_heatmap_jpg(job_id):
         logger.error(f"Error in export_heatmap_jpg: {e}")
         return jsonify({"error": str(e)}), 500
 
-@heatmap_bp.route('/heatmap_jobs/<job_id>/custom_heatmap_image', methods=['GET', 'OPTIONS'])
+@heatmap_bp.route('/heatmap_jobs/<job_id>/custom_heatmap_image', methods=['GET'])
 @cross_origin()
 def get_custom_heatmap_image(job_id):
-    if request.method == 'OPTIONS':
-        response = Response(status=200)
-        response.headers.update({
-            'Access-Control-Allow-Origin': '*',
-            'Access-Control-Allow-Methods': 'GET, OPTIONS',
-            'Access-Control-Allow-Headers': 'Content-Type, Authorization'
-        })
-        return response
-        
+    # Flask-CORS handles OPTIONS automatically via @cross_origin() decorator
     start = request.args.get('start')
     end = request.args.get('end')
     timestamp = request.args.get('timestamp')
@@ -752,14 +744,14 @@ def get_custom_heatmap_image(job_id):
     logger.info(f"[CustomHeatmapImage] Successfully downloaded image, size: {len(img_bytes)} bytes")
     
     # Return image bytes directly without saving to disk
+    # Flask-CORS automatically adds CORS headers via @cross_origin() decorator
     response = Response(
         img_bytes,
         mimetype="image/jpeg",
         headers={
             'Content-Disposition': 'inline; filename="heatmap.jpg"',
             'Cache-Control': 'public, max-age=3600',
-            'Content-Length': str(len(img_bytes)),
-            'Access-Control-Allow-Origin': '*'
+            'Content-Length': str(len(img_bytes))
         }
     )
     
