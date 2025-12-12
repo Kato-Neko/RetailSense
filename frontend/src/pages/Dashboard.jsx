@@ -244,11 +244,8 @@ const Dashboard = () => {
         setWeeklyData(weeklyData);
         setMonthlyData(monthlyData);
 
-        // Clear comparison data if comparison mode is off
-        if (!comparisonMode) {
-          setComparisonData({ daily: [], weekly: [], monthly: [] });
-          setComparisonStats({ totalVisitors: 0, peakHour: "N/A" });
-        } else {
+        // Process comparison data if comparison mode is on
+        if (comparisonMode) {
           try {
             const { comparisonStart, comparisonEnd } = getDateRanges();
             const comparisonJobs = jobHistory.filter(job => {
@@ -258,14 +255,21 @@ const Dashboard = () => {
 
             if (comparisonJobs.length > 0) {
               const { stats: compStats, trafficData: compDaily, weeklyData: compWeekly, monthlyData: compMonthly } = await processJobHistory(comparisonJobs, false, getDateRanges);
-              // Ensure all comparison data arrays are valid
-              const safeCompDaily = Array.isArray(compDaily) && compDaily.length > 0 ? compDaily : [];
-              const safeCompWeekly = Array.isArray(compWeekly) && compWeekly.length > 0 ? compWeekly : [];
-              const safeCompMonthly = Array.isArray(compMonthly) && compMonthly.length > 0 ? compMonthly : [];
+              // Ensure all comparison data arrays are valid and have correct structure
+              const safeCompDaily = Array.isArray(compDaily) && compDaily.length === 24 ? compDaily : (Array.isArray(compDaily) && compDaily.length > 0 ? compDaily : []);
+              const safeCompWeekly = Array.isArray(compWeekly) && compWeekly.length === 7 ? compWeekly : (Array.isArray(compWeekly) && compWeekly.length > 0 ? compWeekly : []);
+              const safeCompMonthly = Array.isArray(compMonthly) && compMonthly.length === 12 ? compMonthly : (Array.isArray(compMonthly) && compMonthly.length > 0 ? compMonthly : []);
               setComparisonStats(compStats);
               setComparisonData({ daily: safeCompDaily, weekly: safeCompWeekly, monthly: safeCompMonthly });
             } else {
-              setComparisonData({ daily: [], weekly: [], monthly: [] });
+              // Even with no jobs, create empty structure with correct length for all chart types for proper merging
+              const weekDays = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+              const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+              setComparisonData({ 
+                daily: Array.from({ length: 24 }, (_, hour) => ({ hour: hour.toString().padStart(2, "0") + ":00", visitors: 0, fill: turboColors[0] })),
+                weekly: weekDays.map(day => ({ day, visitors: 0 })),
+                monthly: monthNames.map(month => ({ month, visitors: 0 }))
+              });
               setComparisonStats({ totalVisitors: 0, peakHour: "N/A" });
             }
           } catch (compError) {
@@ -274,6 +278,10 @@ const Dashboard = () => {
             setComparisonData({ daily: [], weekly: [], monthly: [] });
             setComparisonStats({ totalVisitors: 0, peakHour: "N/A" });
           }
+        } else {
+          // Clear comparison data if comparison mode is off
+          setComparisonData({ daily: [], weekly: [], monthly: [] });
+          setComparisonStats({ totalVisitors: 0, peakHour: "N/A" });
         }
       } catch (error) {
         console.error("Error fetching dashboard data:", error);
@@ -751,7 +759,21 @@ const Dashboard = () => {
 
   // Helper function to draw a simple line chart in PDF
   const drawLineChart = (pdf, x, y, width, height, data, xKey, yKey, title) => {
-    if (!data || data.length < 2) return;
+    if (!data || data.length < 2) {
+      // Draw title even if no data
+      pdf.setFontSize(10);
+      pdf.setFont('helvetica', 'bold');
+      const maxTitleWidth = width - 20;
+      const titleLines = pdf.splitTextToSize(title, maxTitleWidth);
+      let titleY = y + 12;
+      titleLines.forEach((line, idx) => {
+        pdf.text(line, x + 10, titleY + (idx * 12));
+      });
+      pdf.setFont('helvetica', 'normal');
+      pdf.setFontSize(9);
+      pdf.text("No data available", x + 10, y + 40);
+      return;
+    }
     
     // Draw title with wrapping to prevent overflow
     pdf.setFontSize(10);
@@ -769,19 +791,26 @@ const Dashboard = () => {
     const chartWidth = width - (chartPadding * 2);
     const chartHeight = height - chartPadding - 25 - (titleLines.length - 1) * 12; // Adjust for title
     
-    // Calculate max value for scaling
-    const maxValue = Math.max(...data.map(d => d[yKey] || 0), 1);
-    const pointSpacing = chartWidth / (data.length - 1);
+    // Calculate max value for scaling - ensure it's at least 1 to avoid division by zero
+    const values = data.map(d => d[yKey] || 0);
+    const maxValue = Math.max(...values, 1);
+    const minValue = Math.min(...values, 0);
+    const valueRange = maxValue - minValue || 1; // Avoid division by zero
+    
+    const pointSpacing = data.length > 1 ? chartWidth / (data.length - 1) : 0;
     
     // Draw line
     pdf.setDrawColor(25, 118, 210);
     pdf.setLineWidth(2);
     const points = data.map((item, idx) => {
       const pointX = chartX + (idx * pointSpacing);
-      const pointY = chartY + chartHeight - ((item[yKey] || 0) / maxValue) * chartHeight;
+      // Normalize value to chart height, accounting for min value
+      const normalizedValue = valueRange > 0 ? ((item[yKey] || 0) - minValue) / valueRange : 0;
+      const pointY = chartY + chartHeight - (normalizedValue * chartHeight);
       return { x: pointX, y: pointY };
     });
     
+    // Draw the line connecting all points
     for (let i = 0; i < points.length - 1; i++) {
       pdf.line(points[i].x, points[i].y, points[i + 1].x, points[i + 1].y);
     }
@@ -1069,8 +1098,20 @@ const Dashboard = () => {
       
       // Chart 2: Traffic by Time Period (Line Chart)
       drawCard(pdf, margin + chartWidth + cardSpacing, y, chartWidth, chartHeight, [255, 255, 255], [210, 213, 220]);
-      // Use trafficData for hourly line chart (sample every 4 hours to reduce clutter)
-      const hourlyDataSample = trafficData.filter((_, idx) => idx % 2 === 0 || idx === trafficData.length - 1);
+      // Use trafficData for hourly line chart (sample every 2 hours to reduce clutter, but ensure at least 2 points)
+      let hourlyDataSample = trafficData.filter((_, idx) => idx % 2 === 0 || idx === trafficData.length - 1);
+      // Ensure we have at least 2 data points for the line chart
+      if (hourlyDataSample.length < 2 && trafficData.length > 0) {
+        // If filtering resulted in less than 2 points, take first and last
+        hourlyDataSample = [trafficData[0], trafficData[trafficData.length - 1]];
+      }
+      // If still less than 2 points, create a minimal dataset
+      if (hourlyDataSample.length < 2) {
+        hourlyDataSample = [
+          { hour: "00:00", visitors: 0 },
+          { hour: "23:00", visitors: 0 }
+        ];
+      }
       const timeTitle = `Current Traffic by Time Period (Visitor count across different hours): ${peakHourWindow}`;
       drawLineChart(pdf, margin + chartWidth + cardSpacing, y, chartWidth, chartHeight, hourlyDataSample, 'hour', 'visitors', timeTitle);
       
