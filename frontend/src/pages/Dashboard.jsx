@@ -244,18 +244,33 @@ const Dashboard = () => {
         setWeeklyData(weeklyData);
         setMonthlyData(monthlyData);
 
-        if (comparisonMode) {
-          const { comparisonStart, comparisonEnd } = getDateRanges();
-          const comparisonJobs = jobHistory.filter(job => {
-            const jobStartDateTime = job.start_datetime ? new Date(job.start_datetime) : new Date(job.created_at);
-            return jobStartDateTime >= comparisonStart && jobStartDateTime < comparisonEnd;
-          });
+        // Clear comparison data if comparison mode is off
+        if (!comparisonMode) {
+          setComparisonData({ daily: [], weekly: [], monthly: [] });
+          setComparisonStats({ totalVisitors: 0, peakHour: "N/A" });
+        } else {
+          try {
+            const { comparisonStart, comparisonEnd } = getDateRanges();
+            const comparisonJobs = jobHistory.filter(job => {
+              const jobStartDateTime = job.start_datetime ? new Date(job.start_datetime) : new Date(job.created_at);
+              return jobStartDateTime >= comparisonStart && jobStartDateTime < comparisonEnd;
+            });
 
-          if (comparisonJobs.length > 0) {
-            const { stats: compStats, trafficData: compDaily, weeklyData: compWeekly, monthlyData: compMonthly } = await processJobHistory(comparisonJobs, false, getDateRanges);
-            setComparisonStats(compStats);
-            setComparisonData({ daily: compDaily, weekly: compWeekly, monthly: compMonthly });
-          } else {
+            if (comparisonJobs.length > 0) {
+              const { stats: compStats, trafficData: compDaily, weeklyData: compWeekly, monthlyData: compMonthly } = await processJobHistory(comparisonJobs, false, getDateRanges);
+              // Ensure all comparison data arrays are valid
+              const safeCompDaily = Array.isArray(compDaily) && compDaily.length > 0 ? compDaily : [];
+              const safeCompWeekly = Array.isArray(compWeekly) && compWeekly.length > 0 ? compWeekly : [];
+              const safeCompMonthly = Array.isArray(compMonthly) && compMonthly.length > 0 ? compMonthly : [];
+              setComparisonStats(compStats);
+              setComparisonData({ daily: safeCompDaily, weekly: safeCompWeekly, monthly: safeCompMonthly });
+            } else {
+              setComparisonData({ daily: [], weekly: [], monthly: [] });
+              setComparisonStats({ totalVisitors: 0, peakHour: "N/A" });
+            }
+          } catch (compError) {
+            console.error("Error processing comparison data:", compError);
+            // Set empty comparison data on error to prevent UI issues
             setComparisonData({ daily: [], weekly: [], monthly: [] });
             setComparisonStats({ totalVisitors: 0, peakHour: "N/A" });
           }
@@ -330,20 +345,61 @@ const Dashboard = () => {
 
     // Merge data for comparison mode
     const currentData = activeChart === "daily" ? dailyLineData : activeChart === "weekly" ? weeklyLineData : monthlyLineData
-    const compData = activeChart === "daily" ? comparisonData.daily : activeChart === "weekly" ? comparisonData.weekly : comparisonData.monthly
+    let compData = activeChart === "daily" ? comparisonData.daily : activeChart === "weekly" ? comparisonData.weekly : comparisonData.monthly
+    
+    // Ensure compData is an array with correct length
+    if (!Array.isArray(compData) || compData.length === 0) {
+      // Create empty comparison data with correct structure
+      if (activeChart === "daily") {
+        compData = Array.from({ length: 24 }, (_, hour) => ({
+          hour: hour.toString().padStart(2, "0") + ":00",
+          visitors: 0,
+          fill: turboColors[0]
+        }))
+      } else if (activeChart === "weekly") {
+        const weekDays = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
+        compData = weekDays.map(day => ({ day, visitors: 0 }))
+      } else {
+        const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+        compData = monthNames.map(month => ({ month, visitors: 0 }))
+      }
+    }
+    
+    // Ensure compData length matches currentData length
+    const expectedLength = currentData.length
+    if (compData.length !== expectedLength) {
+      // Pad or trim compData to match currentData length
+      if (compData.length < expectedLength) {
+        const padding = Array.from({ length: expectedLength - compData.length }, (_, i) => {
+          const idx = compData.length + i
+          if (activeChart === "daily") {
+            return { hour: idx.toString().padStart(2, "0") + ":00", visitors: 0, fill: turboColors[0] }
+          } else if (activeChart === "weekly") {
+            const weekDays = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
+            return { day: weekDays[idx % 7], visitors: 0 }
+          } else {
+            const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+            return { month: monthNames[idx % 12], visitors: 0 }
+          }
+        })
+        compData = [...compData, ...padding]
+      } else {
+        compData = compData.slice(0, expectedLength)
+      }
+    }
     
     // Merge by index
     const merged = currentData.map((item, idx) => {
       const comparison = compData[idx]
       return {
         ...item,
-        comparison: comparison ? comparison.visitors : 0,
+        comparison: comparison && typeof comparison.visitors === 'number' ? comparison.visitors : 0,
         current: item.visitors || 0
       }
     })
     
     return merged
-  }, [comparisonMode, activeChart, dailyLineData, weeklyLineData, monthlyLineData, comparisonData])
+  }, [comparisonMode, activeChart, dailyLineData, weeklyLineData, monthlyLineData, comparisonData, turboColors])
 
   // Helper to create a turbo-gradient SVG path for the line chart
   function TurboLinePath({ data, xAccessor, yAccessor, colorAccessor }) {
