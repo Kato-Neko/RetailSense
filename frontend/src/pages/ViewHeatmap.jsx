@@ -247,40 +247,41 @@ export default function ViewHeatmap() {
             endDate.setHours(...customTimeRange.end.split(":").map(Number));
             const startTimeInSeconds = (startDate - videoStart) / 1000;
             const endTimeInSeconds = (endDate - videoStart) / 1000;
-            // If backend provided a direct image URL, use it (most reliable)
-            const directUrl = data.image_url ? `${data.image_url}?t=${Date.now()}` : null;
-            const fallbackUrl = heatmapService.getCustomHeatmapImageUrl(
-              selectedJob.job_id,
-              startTimeInSeconds,
-              endTimeInSeconds,
-              newHeatmapMeta?.timestamp,
-              newHeatmapMeta?.uuid
-            );
-            const resolvedUrl = directUrl || fallbackUrl;
-            console.log('[CustomHeatmap] Using image URL:', resolvedUrl);
+            // Always fetch from backend API endpoint with authentication
+            // This ensures the image loads even if Supabase bucket is not public
+            const apiEndpoint = `/api/heatmap_jobs/${selectedJob.job_id}/custom_heatmap_image?start=${startTimeInSeconds}&end=${endTimeInSeconds}`;
+            const apiUrlWithParams = newHeatmapMeta?.timestamp && newHeatmapMeta?.uuid
+              ? `${apiEndpoint}&timestamp=${newHeatmapMeta.timestamp}&uuid=${newHeatmapMeta.uuid}`
+              : apiEndpoint;
+            
+            console.log('[CustomHeatmap] Fetching image from backend API:', apiUrlWithParams);
             // Reset tracking for new image URL
             lastAttemptedImageUrl.current = null;
             customImageFallbackUsed.current = false;
 
-            // Try to fetch as blob with auth (supports non-public buckets)
-            const toBlobUrl = async (url) => {
-              try {
-                const res = await apiClient.get(url, { responseType: 'blob', baseURL: '' });
-                const objectUrl = URL.createObjectURL(res.data);
-                // Revoke previous blob URL to avoid leaks
-                if (revokeUrlRef.current) {
-                  URL.revokeObjectURL(revokeUrlRef.current);
-                }
-                revokeUrlRef.current = objectUrl;
-                return objectUrl;
-              } catch (err) {
-                console.error('[CustomHeatmap] Blob fetch failed, falling back to direct URL', err);
-                return null;
+            // Fetch as blob with auth headers
+            try {
+              const res = await apiClient.get(apiUrlWithParams, { responseType: 'blob' });
+              const blobUrl = URL.createObjectURL(res.data);
+              // Revoke previous blob URL to avoid leaks
+              if (revokeUrlRef.current) {
+                URL.revokeObjectURL(revokeUrlRef.current);
               }
-            };
-
-            const maybeBlobUrl = await toBlobUrl(resolvedUrl);
-            setCustomHeatmapUrl(maybeBlobUrl || resolvedUrl);
+              revokeUrlRef.current = blobUrl;
+              console.log('[CustomHeatmap] Successfully created blob URL from backend');
+              setCustomHeatmapUrl(blobUrl);
+            } catch (err) {
+              console.error('[CustomHeatmap] Failed to fetch image from backend:', err);
+              // Fallback to direct URL (may not work if bucket is not public)
+              const fallbackUrl = heatmapService.getCustomHeatmapImageUrl(
+                selectedJob.job_id,
+                startTimeInSeconds,
+                endTimeInSeconds,
+                newHeatmapMeta?.timestamp,
+                newHeatmapMeta?.uuid
+              );
+              setCustomHeatmapUrl(`${fallbackUrl}&t=${Date.now()}`);
+            }
             // Fetch custom analytics
             setAnalysisLoading(true);
             try {
@@ -699,7 +700,7 @@ export default function ViewHeatmap() {
                           
                           lastAttemptedImageUrl.current = currentSrc;
                           
-                          // If custom URL failed, try regenerated API URL once (as blob for auth)
+                          // If custom URL failed, try fetching from backend API endpoint as blob
                           if (customHeatmapUrl && !customImageFallbackUsed.current && selectedJob && customDateRange && customTimeRange) {
                             customImageFallbackUsed.current = true;
                             const videoStart = new Date(selectedJob.start_datetime);
@@ -709,30 +710,30 @@ export default function ViewHeatmap() {
                             endDate.setHours(...customTimeRange.end.split(":").map(Number));
                             const startTimeInSeconds = (startDate - videoStart) / 1000;
                             const endTimeInSeconds = (endDate - videoStart) / 1000;
-                            const fallbackUrl = heatmapService.getCustomHeatmapImageUrl(
-                              selectedJob.job_id,
-                              startTimeInSeconds,
-                              endTimeInSeconds,
-                              heatmapMeta?.timestamp,
-                              heatmapMeta?.uuid
-                            );
-                            console.warn('[CustomHeatmap] Falling back to generated URL:', fallbackUrl);
-                            const fallbackUrlWithCache = `${fallbackUrl}&t=${Date.now()}`;
+                            
+                            // Use backend API endpoint with relative path
+                            const apiEndpoint = `/api/heatmap_jobs/${selectedJob.job_id}/custom_heatmap_image?start=${startTimeInSeconds}&end=${endTimeInSeconds}`;
+                            const apiUrlWithParams = heatmapMeta?.timestamp && heatmapMeta?.uuid
+                              ? `${apiEndpoint}&timestamp=${heatmapMeta.timestamp}&uuid=${heatmapMeta.uuid}`
+                              : apiEndpoint;
+                            
+                            console.warn('[CustomHeatmap] Retrying with backend API endpoint:', apiUrlWithParams);
                             // fetch as blob with auth and set object URL
                             (async () => {
                               try {
-                                const res = await apiClient.get(fallbackUrlWithCache, { responseType: 'blob', baseURL: '' });
+                                const res = await apiClient.get(apiUrlWithParams, { responseType: 'blob' });
                                 const objectUrl = URL.createObjectURL(res.data);
                                 if (revokeUrlRef.current) {
                                   URL.revokeObjectURL(revokeUrlRef.current);
                                 }
                                 revokeUrlRef.current = objectUrl;
                                 lastAttemptedImageUrl.current = objectUrl;
+                                console.log('[CustomHeatmap] Successfully created blob URL from retry');
                                 setCustomHeatmapUrl(objectUrl);
                               } catch (err) {
                                 console.error('[CustomHeatmap] Fallback blob fetch failed:', err);
-                                lastAttemptedImageUrl.current = fallbackUrlWithCache;
-                                setCustomHeatmapUrl(fallbackUrlWithCache);
+                                // Mark as attempted to prevent infinite loop
+                                lastAttemptedImageUrl.current = currentSrc;
                               }
                             })();
                           }
