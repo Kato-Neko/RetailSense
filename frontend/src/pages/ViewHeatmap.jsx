@@ -101,6 +101,7 @@ export default function ViewHeatmap() {
   
   // Cache for analysis to prevent re-fetching
   const analysisCache = useRef({});
+  const customAnalysisCache = useRef({});
   const pendingRequests = useRef({}); // Track pending requests to prevent duplicates
   const customImageFallbackUsed = useRef(false); // Prevent infinite onError loops for custom image
   const lastAttemptedImageUrl = useRef(null); // Track last attempted URL to prevent retry loops
@@ -293,6 +294,7 @@ export default function ViewHeatmap() {
                 uuid: newHeatmapMeta?.uuid
               });
               setAnalysis(customAnalysis);
+              customAnalysisCache.current[selectedJob.job_id] = customAnalysis;
               toast.success('Custom heatmap generated successfully!');
             } catch (err) {
               toast.error('Failed to fetch custom analytics.');
@@ -328,10 +330,10 @@ export default function ViewHeatmap() {
 
   // When switching back to Standard, restore original analysis and standard image
   useEffect(() => {
-    if (settingsMode === 'standard' && selectedJob && !isLiveMode) {
-      setCustomHeatmapUrl(null);
+    if (!selectedJob || isLiveMode) return;
+    const jobId = selectedJob.job_id;
+    if (settingsMode === 'standard') {
       // Restore cached standard analysis if available, otherwise refetch
-      const jobId = selectedJob.job_id;
       const cached = analysisCache.current[jobId];
       if (cached) {
         setAnalysis(cached);
@@ -345,6 +347,13 @@ export default function ViewHeatmap() {
           })
           .catch(() => {})
           .finally(() => setAnalysisLoading(false));
+      }
+    } else if (settingsMode === 'custom') {
+      // Restore last custom analysis if we have it
+      const cachedCustom = customAnalysisCache.current[jobId];
+      if (cachedCustom) {
+        setAnalysis(cachedCustom);
+        setAnalysisLoading(false);
       }
     }
   }, [settingsMode, selectedJob?.job_id, isLiveMode]);
