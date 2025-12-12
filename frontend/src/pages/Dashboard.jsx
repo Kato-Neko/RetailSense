@@ -256,9 +256,27 @@ const Dashboard = () => {
             if (comparisonJobs.length > 0) {
               const { stats: compStats, trafficData: compDaily, weeklyData: compWeekly, monthlyData: compMonthly } = await processJobHistory(comparisonJobs, false, getDateRanges);
               // Ensure all comparison data arrays are valid and have correct structure
-              const safeCompDaily = Array.isArray(compDaily) && compDaily.length === 24 ? compDaily : (Array.isArray(compDaily) && compDaily.length > 0 ? compDaily : []);
-              const safeCompWeekly = Array.isArray(compWeekly) && compWeekly.length === 7 ? compWeekly : (Array.isArray(compWeekly) && compWeekly.length > 0 ? compWeekly : []);
-              const safeCompMonthly = Array.isArray(compMonthly) && compMonthly.length === 12 ? compMonthly : (Array.isArray(compMonthly) && compMonthly.length > 0 ? compMonthly : []);
+              // processJobHistory always returns 24 hours for daily, but ensure structure matches exactly
+              const safeCompDaily = Array.isArray(compDaily) && compDaily.length === 24 
+                ? compDaily.map((item, idx) => ({
+                    hour: item.hour || idx.toString().padStart(2, "0") + ":00",
+                    visitors: item.visitors || 0,
+                    fill: item.fill || turboColors[0]
+                  }))
+                : Array.from({ length: 24 }, (_, hour) => ({ hour: hour.toString().padStart(2, "0") + ":00", visitors: 0, fill: turboColors[0] }));
+              
+              const safeCompWeekly = Array.isArray(compWeekly) && compWeekly.length === 7 
+                ? compWeekly 
+                : (Array.isArray(compWeekly) && compWeekly.length > 0 
+                  ? compWeekly 
+                  : ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map(day => ({ day, visitors: 0 })));
+              
+              const safeCompMonthly = Array.isArray(compMonthly) && compMonthly.length === 12 
+                ? compMonthly 
+                : (Array.isArray(compMonthly) && compMonthly.length > 0 
+                  ? compMonthly 
+                  : ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"].map(month => ({ month, visitors: 0 })));
+              
               setComparisonStats(compStats);
               setComparisonData({ daily: safeCompDaily, weekly: safeCompWeekly, monthly: safeCompMonthly });
             } else {
@@ -274,8 +292,14 @@ const Dashboard = () => {
             }
           } catch (compError) {
             console.error("Error processing comparison data:", compError);
-            // Set empty comparison data on error to prevent UI issues
-            setComparisonData({ daily: [], weekly: [], monthly: [] });
+            // Set empty comparison data on error with proper structure
+            const weekDays = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+            const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+            setComparisonData({ 
+              daily: Array.from({ length: 24 }, (_, hour) => ({ hour: hour.toString().padStart(2, "0") + ":00", visitors: 0, fill: turboColors[0] })),
+              weekly: weekDays.map(day => ({ day, visitors: 0 })),
+              monthly: monthNames.map(month => ({ month, visitors: 0 }))
+            });
             setComparisonStats({ totalVisitors: 0, peakHour: "N/A" });
           }
         } else {
@@ -396,9 +420,19 @@ const Dashboard = () => {
       }
     }
     
-    // Merge by index
+    // Merge by index, ensuring proper alignment for daily view
     const merged = currentData.map((item, idx) => {
-      const comparison = compData[idx]
+      let comparison = compData[idx];
+      
+      // For daily view, ensure we match by hour if available
+      if (activeChart === "daily" && item.hour && comparison) {
+        // Try to find matching hour if index doesn't match
+        if (comparison.hour !== item.hour) {
+          const matching = compData.find(c => c.hour === item.hour);
+          if (matching) comparison = matching;
+        }
+      }
+      
       return {
         ...item,
         comparison: comparison && typeof comparison.visitors === 'number' ? comparison.visitors : 0,
