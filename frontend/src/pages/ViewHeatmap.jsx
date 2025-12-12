@@ -103,6 +103,7 @@ export default function ViewHeatmap() {
   const analysisCache = useRef({});
   const pendingRequests = useRef({}); // Track pending requests to prevent duplicates
   const customImageFallbackUsed = useRef(false); // Prevent infinite onError loops for custom image
+  const lastAttemptedImageUrl = useRef(null); // Track last attempted URL to prevent retry loops
 
   // Fetch job history on mount
   useEffect(() => {
@@ -256,6 +257,9 @@ export default function ViewHeatmap() {
             );
             const resolvedUrl = directUrl || fallbackUrl;
             console.log('[CustomHeatmap] Using image URL:', resolvedUrl);
+            // Reset tracking for new image URL
+            lastAttemptedImageUrl.current = null;
+            customImageFallbackUsed.current = false;
             setCustomHeatmapUrl(resolvedUrl);
             // Fetch custom analytics
             setAnalysisLoading(true);
@@ -289,16 +293,22 @@ export default function ViewHeatmap() {
     };
   }, [isCustomGenerating, selectedJob, customProgress, customDateRange, customTimeRange]);
 
-  // Reset fallback guard whenever URL changes
+  // Reset fallback guard when starting a new custom generation
   useEffect(() => {
-    customImageFallbackUsed.current = false;
-  }, [customHeatmapUrl]);
+    if (isCustomGenerating && customProgress === 0) {
+      customImageFallbackUsed.current = false;
+      lastAttemptedImageUrl.current = null;
+    }
+  }, [isCustomGenerating, customProgress]);
 
   // Handlers
   const handleSelectJob = (job) => {
     setSelectedJob(job)
     setHeatmapGenerated(true)
     setCustomHeatmapUrl(null)
+    // Reset image tracking for new job
+    lastAttemptedImageUrl.current = null;
+    customImageFallbackUsed.current = false;
   }
   const handleDeleteJob = async (jobId) => {
     try {
@@ -644,10 +654,23 @@ export default function ViewHeatmap() {
                         onLoad={() => {
                           console.log('[CustomHeatmap] Image loaded successfully');
                           setIsLoading(false);
+                          // Reset tracking on successful load so we can retry if URL changes
+                          lastAttemptedImageUrl.current = null;
                         }}
                         onError={(e) => {
+                          const currentSrc = customHeatmapUrl || (isLiveMode && liveHeatmapUrl) || (selectedJob ? heatmapService.getHeatmapImageUrl(selectedJob.job_id) : null);
                           console.error('[CustomHeatmap] Image failed to load:', e);
-                          console.error('[CustomHeatmap] Image src:', customHeatmapUrl || (isLiveMode && liveHeatmapUrl) || (selectedJob ? heatmapService.getHeatmapImageUrl(selectedJob.job_id) : null));
+                          console.error('[CustomHeatmap] Image src:', currentSrc);
+                          
+                          // Prevent infinite loops: only retry if we haven't tried this URL yet
+                          if (currentSrc === lastAttemptedImageUrl.current) {
+                            console.warn('[CustomHeatmap] Already attempted this URL, stopping retry loop');
+                            setIsLoading(false);
+                            return;
+                          }
+                          
+                          lastAttemptedImageUrl.current = currentSrc;
+                          
                           // If custom URL failed, try regenerated API URL once
                           if (customHeatmapUrl && !customImageFallbackUsed.current && selectedJob && customDateRange && customTimeRange) {
                             customImageFallbackUsed.current = true;
@@ -666,7 +689,9 @@ export default function ViewHeatmap() {
                               heatmapMeta?.uuid
                             );
                             console.warn('[CustomHeatmap] Falling back to generated URL:', fallbackUrl);
-                            setCustomHeatmapUrl(`${fallbackUrl}&t=${Date.now()}`);
+                            const fallbackUrlWithCache = `${fallbackUrl}&t=${Date.now()}`;
+                            lastAttemptedImageUrl.current = fallbackUrlWithCache;
+                            setCustomHeatmapUrl(fallbackUrlWithCache);
                           }
                           setIsLoading(false);
                         }}
