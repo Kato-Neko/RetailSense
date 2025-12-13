@@ -1,6 +1,6 @@
 from flask import Blueprint, request, jsonify, send_file, Response, send_from_directory
 from flask_cors import cross_origin
-from flask_jwt_extended import jwt_required
+from flask_jwt_extended import jwt_required, get_jwt_identity
 import os
 import io
 import csv
@@ -49,46 +49,211 @@ def get_heatmap_preview(job_id):
     return send_from_directory(job_folder, 'preview_heatmap.jpg')
 
 
-@heatmap_bp.route('/heatmap_jobs/<job_id>/detections', methods=['POST'])
-def receive_live_detections(job_id):
-    from services import get_jobs_store
-    jobs = get_jobs_store()
-    if job_id not in jobs:
-        return jsonify({'error': 'Job not found'}), 404
-    try:
-        data = request.get_json()
-        detections = data.get('detections', [])
-        if 'live_detections' not in jobs[job_id]:
-            jobs[job_id]['live_detections'] = []
-        jobs[job_id]['live_detections'].extend(detections)
-        return jsonify({'success': True, 'count': len(detections)})
-    except Exception as e:
-        return jsonify({'error': str(e)}), 400
 
 
-def get_detections_logic(job_id):
+
+def get_detections_logic(job_id, current_user=None):
     """Shared logic for getting detections"""
+    logger.info(f"DEBUG: get_detections_logic called with job_id='{job_id}', current_user={current_user}")
+    # Validate user ownership if user is provided
+    if current_user is not None:
+        logger.info(f"DEBUG: Validating user ownership for job_id='{job_id}', user='{current_user}'")
+        from ..core.db import get_db_connection_context
+        with get_db_connection_context() as conn:
+            cur = conn.cursor()
+            try:
+                cur.execute('SELECT "user" FROM jobs WHERE job_id = %s', (job_id,))
+                job_row = cur.fetchone()
+                logger.info(f"DEBUG: Database query result: {job_row}")
+                if not job_row:
+                    logger.error(f"DEBUG: Job {job_id} not found in database")
+                    return jsonify({"error": "Job not found"}), 404
+                # Extract user from row (handles both tuple and dict-like results)
+                job_user = job_row['user'] if isinstance(job_row, dict) else job_row[0]
+                logger.info(f"DEBUG: Job owner: '{job_user}', requesting user: '{current_user}'")
+                if job_user != current_user:
+                    logger.error(f"DEBUG: User {current_user} attempted to access job {job_id} owned by {job_user}")
+                    return jsonify({"error": "Unauthorized: Job not found or not authorized"}), 403
+                logger.info(f"DEBUG: User ownership validated successfully")
+            except Exception as e:
+                logger.error(f"DEBUG: Error validating job ownership: {type(e).__name__}: {e}")
+                import traceback
+                logger.error(f"DEBUG: Traceback:\n{traceback.format_exc()}")
+                return jsonify({"error": "Error validating job ownership"}), 500
+    else:
+        logger.info(f"DEBUG: No user validation required (current_user is None)")
+    
+    # Load detections from Supabase
+    logger.info(f"DEBUG: Loading detections for job_id='{job_id}'")
     detections, fps = load_detections(job_id)
+    logger.info(f"DEBUG: load_detections returned - detections: {type(detections).__name__} (None={detections is None}), fps: {fps}")
+    
+    # Return empty detections array instead of 404 for missing files
+    # This allows the dashboard to gracefully handle jobs without detections
     if detections is None:
-        return jsonify({"error": "Detections file not found"}), 404
-    return jsonify({"detections": detections, "fps": fps}), 200
+        logger.warning(f"DEBUG: Detections file not found for job {job_id}, returning empty detections array")
+        response_data = {"detections": [], "fps": fps or 30}  # Default fps to 30 if not found
+        logger.info(f"DEBUG: Returning empty detections for job {job_id}")
+        return jsonify(response_data), 200
+    
+    logger.info(f"DEBUG: Preparing response with {len(detections)} detections, fps={fps}")
+    response_data = {"detections": detections, "fps": fps}
+    logger.info(f"DEBUG: Response data keys: {list(response_data.keys())}, detections count: {len(detections)}, fps type: {type(fps).__name__}")
+    return jsonify(response_data), 200
 
 @heatmap_bp.route('/heatmap_jobs/<job_id>/detections', methods=['GET', 'OPTIONS'])
 @cross_origin()
 @jwt_required()
 def get_detections_from_json(job_id):
-    return get_detections_logic(job_id)
+    current_user = get_jwt_identity()
+    return get_detections_logic(job_id, current_user)
+
+
+@heatmap_bp.route('/heatmap_jobs/<job_id>/regenerate_detections', methods=['POST', 'OPTIONS'])
+@cross_origin()
+@jwt_required()
+def regenerate_detections(job_id):
+    """Regenerate and upload detections.json for a completed job if missing."""
+    current_user = get_jwt_identity()
+    logger.info(f"DEBUG: regenerate_detections called for job_id='{job_id}', user='{current_user}'")
+    
+    # Validate user ownership
+    from ..core.db import get_db_connection_context
+    with get_db_connection_context() as conn:
+        cur = conn.cursor()
+        try:
+            cur.execute('SELECT "user", input_video_name, status FROM jobs WHERE job_id = %s', (job_id,))
+            job_row = cur.fetchone()
+            if not job_row:
+                logger.error(f"DEBUG: Job {job_id} not found in database")
+                return jsonify({"error": "Job not found"}), 404
+            
+            job_user = job_row[0] if isinstance(job_row, tuple) else job_row['user']
+            input_video_name = job_row[1] if isinstance(job_row, tuple) else job_row.get('input_video_name')
+            job_status = job_row[2] if isinstance(job_row, tuple) else job_row.get('status')
+            
+            if job_user != current_user:
+                logger.error(f"DEBUG: User {current_user} attempted to regenerate detections for job {job_id} owned by {job_user}")
+                return jsonify({"error": "Unauthorized"}), 403
+            
+            if job_status != 'completed':
+                logger.error(f"DEBUG: Job {job_id} is not completed (status: {job_status})")
+                return jsonify({"error": "Job must be completed to regenerate detections"}), 400
+        except Exception as e:
+            logger.error(f"DEBUG: Error validating job: {type(e).__name__}: {e}")
+            import traceback
+            logger.error(f"DEBUG: Traceback:\n{traceback.format_exc()}")
+            return jsonify({"error": "Error validating job"}), 500
+    
+    # Check if detections already exist
+    detections, fps = load_detections(job_id)
+    if detections is not None and len(detections) > 0:
+        logger.info(f"DEBUG: Detections already exist for job {job_id} ({len(detections)} detections)")
+        return jsonify({
+            "message": "Detections already exist",
+            "detections_count": len(detections),
+            "fps": fps
+        }), 200
+    
+    # Check if original video file exists (local first, then Supabase)
+    from ..core.config import UPLOAD_FOLDER
+    if not input_video_name:
+        logger.error(f"DEBUG: No input video name for job {job_id}")
+        return jsonify({"error": "No input video found for this job"}), 404
+    
+    video_path = os.path.join(UPLOAD_FOLDER, job_id, input_video_name)
+    logger.info(f"DEBUG: Checking for video at: {video_path}")
+    
+    # If video doesn't exist locally, try to download from Supabase
+    if not os.path.exists(video_path):
+        logger.info(f"DEBUG: Video not found locally, checking Supabase for {job_id}/{input_video_name}")
+        from ..core.storage_manager import get_storage_manager
+        try:
+            # Try to download video from Supabase
+            storage_manager = get_storage_manager()
+            video_supabase_path = f"{job_id}/{input_video_name}"
+            logger.info(f"DEBUG: Attempting to download video from Supabase: {video_supabase_path}")
+            
+            # Try to download as bytes (videos are binary like images)
+            video_bytes = storage_manager.download_image_bytes(video_supabase_path)
+            if video_bytes:
+                # Save to local path
+                os.makedirs(os.path.dirname(video_path), exist_ok=True)
+                with open(video_path, 'wb') as f:
+                    f.write(video_bytes)
+                logger.info(f"DEBUG: Downloaded video from Supabase to {video_path} ({len(video_bytes)} bytes)")
+            else:
+                logger.error(f"DEBUG: Video file not found in Supabase at {video_supabase_path}")
+                return jsonify({
+                    "error": "Original video file not found locally or in Supabase. Cannot regenerate detections without the original video.",
+                    "video_path": video_path,
+                    "supabase_path": video_supabase_path
+                }), 404
+        except Exception as e:
+            logger.error(f"DEBUG: Error downloading video from Supabase: {type(e).__name__}: {e}")
+            import traceback
+            logger.error(f"DEBUG: Traceback:\n{traceback.format_exc()}")
+            return jsonify({
+                "error": f"Video file not found and failed to download from Supabase: {str(e)}",
+                "video_path": video_path
+            }), 404
+    
+    # Regenerate detections
+    try:
+        logger.info(f"DEBUG: Starting detection regeneration for job {job_id}")
+        from ..services.tracking import detect_and_track
+        
+        # Create a temporary output path (we don't need the video, just detections)
+        import tempfile
+        temp_output = os.path.join(tempfile.gettempdir(), f"temp_detections_{job_id}.mp4")
+        
+        # Run detection
+        output_video_path, detections, fps = detect_and_track(
+            video_path,
+            temp_output,
+            progress_callback=None,
+            preview_folder=None,
+            cancelled_flag=lambda: False
+        )
+        
+        # Clean up temp video file
+        try:
+            if os.path.exists(temp_output):
+                os.remove(temp_output)
+        except Exception as e:
+            logger.warning(f"DEBUG: Failed to clean up temp file {temp_output}: {e}")
+        
+        if not detections or len(detections) == 0:
+            logger.warning(f"DEBUG: No detections generated for job {job_id}")
+            return jsonify({"error": "No detections generated from video"}), 400
+        
+        # Upload detections to Supabase
+        from ..core.storage import upload_json_to_supabase
+        detections_data = {"fps": fps, "detections": detections}
+        upload_json_to_supabase(detections_data, f"{job_id}/detections.json")
+        
+        logger.info(f"DEBUG: Successfully regenerated and uploaded {len(detections)} detections for job {job_id}")
+        return jsonify({
+            "message": "Detections regenerated successfully",
+            "detections_count": len(detections),
+            "fps": fps
+        }), 200
+        
+    except Exception as e:
+        logger.error(f"DEBUG: Error regenerating detections for job {job_id}: {type(e).__name__}: {e}")
+        import traceback
+        logger.error(f"DEBUG: Traceback:\n{traceback.format_exc()}")
+        return jsonify({"error": f"Failed to regenerate detections: {str(e)}"}), 500
 
 
 def get_heatmap_image_logic(job_id):
     """Shared logic for getting heatmap image"""
     # First check if job is completed
-    conn = get_db_connection()
-    cur = conn.cursor()
-    cur.execute("SELECT status FROM jobs WHERE job_id = %s", (job_id,))
-    job_status = cur.fetchone()
-    cur.close()
-    conn.close()
+    from ..core.db import get_db_connection_context
+    with get_db_connection_context() as conn:
+        cur = conn.cursor()
+        cur.execute("SELECT status FROM jobs WHERE job_id = %s", (job_id,))
+        job_status = cur.fetchone()
     
     if not job_status:
         return jsonify({"error": "Job not found"}), 404
@@ -120,21 +285,16 @@ def export_heatmap_csv(job_id):
         return '', 204
         
     try:
-        conn = None
-        try:
-            conn = get_db_connection()
+        from ..core.db import get_db_connection_context
+        with get_db_connection_context() as conn:
             cur = conn.cursor()
             cur.execute("SELECT * FROM jobs WHERE job_id = %s", (job_id,))
             job_row = cur.fetchone()
-            cur.close()
             
             if not job_row:
                 return jsonify({"error": "Job not found"}), 404
             if job_row[6] != 'completed':
                 return jsonify({"error": "Job not completed"}), 404
-        finally:
-            if conn:
-                conn.close()
 
         start_datetime = request.args.get('start_datetime', '')
         end_datetime = request.args.get('end_datetime', '')
@@ -279,12 +439,11 @@ def export_heatmap_pdf(job_id):
         start_time = request.args.get('start_time', type=float)
         end_time = request.args.get('end_time', type=float)
 
-        conn = get_db_connection()
-        cur = conn.cursor()
-        cur.execute("SELECT * FROM jobs WHERE job_id = %s", (job_id,))
-        job_row = cur.fetchone()
-        cur.close()
-        conn.close()
+        from ..core.db import get_db_connection_context
+        with get_db_connection_context() as conn:
+            cur = conn.cursor()
+            cur.execute("SELECT * FROM jobs WHERE job_id = %s", (job_id,))
+            job_row = cur.fetchone()
         if not job_row:
             return jsonify({'error': 'Job not found'}), 404
         if job_row[6] != 'completed':
@@ -536,86 +695,92 @@ def export_heatmap_jpg(job_id):
         logger.error(f"Error in export_heatmap_jpg: {e}")
         return jsonify({"error": str(e)}), 500
 
-@heatmap_bp.route('/heatmap_jobs/<job_id>/custom_heatmap_image', methods=['GET', 'OPTIONS'])
+@heatmap_bp.route('/heatmap_jobs/<job_id>/custom_heatmap_image', methods=['GET'])
 @cross_origin()
 def get_custom_heatmap_image(job_id):
-    if request.method == 'OPTIONS':
-        response = Response(status=200)
-        response.headers.update({
-            'Access-Control-Allow-Origin': '*',
-            'Access-Control-Allow-Methods': 'GET, OPTIONS',
-            'Access-Control-Allow-Headers': 'Content-Type, Authorization'
-        })
-        return response
-        
+    # Flask-CORS handles OPTIONS automatically via @cross_origin() decorator
     start = request.args.get('start')
     end = request.args.get('end')
     timestamp = request.args.get('timestamp')
     unique_id = request.args.get('uuid')
     
+    logger.info(f"[CustomHeatmapImage] Request for job_id={job_id}, start={start}, end={end}, timestamp={timestamp}, uuid={unique_id}")
+    
     if not all([start, end]):
+        logger.error(f"[CustomHeatmapImage] Missing parameters: start={start}, end={end}")
         return jsonify({"error": "Missing start or end parameters"}), 400
         
     # List all files in the job's folder to find the right one
     from ..core.storage import list_files_in_supabase
     files = list_files_in_supabase(f"{job_id}")
+    logger.info(f"[CustomHeatmapImage] Found {len(files)} files in job folder: {[f for f in files if 'custom_heatmap' in f]}")
     
     if timestamp and unique_id:
         # Try exact match first
         supabase_path = f"{job_id}/custom_heatmap_{float(start):.1f}_{float(end):.1f}_{timestamp}_{unique_id}.jpg"
+        logger.info(f"[CustomHeatmapImage] Trying exact match: {supabase_path}")
     else:
         # Try to find most recent matching file
         matching_files = [f for f in files if f.startswith(f"{job_id}/custom_heatmap_{float(start):.1f}_{float(end):.1f}_")]
+        logger.info(f"[CustomHeatmapImage] Searching for files matching pattern: {job_id}/custom_heatmap_{float(start):.1f}_{float(end):.1f}_*, found {len(matching_files)}")
         if matching_files:
             supabase_path = sorted(matching_files)[-1]  # Get most recent
+            logger.info(f"[CustomHeatmapImage] Using most recent: {supabase_path}")
         else:
             supabase_path = f"{job_id}/custom_heatmap_{float(start):.1f}_{float(end):.1f}.jpg"
+            logger.warning(f"[CustomHeatmapImage] No matching files found, trying default path: {supabase_path}")
     
-    logger.info(f"Attempting to download: {supabase_path}")
+    logger.info(f"[CustomHeatmapImage] Attempting to download: {supabase_path}")
     img_bytes = download_image_bytes_from_supabase(supabase_path)
     
     if img_bytes is None:
+        logger.error(f"[CustomHeatmapImage] Failed to download image from {supabase_path}")
         return jsonify({
             "error": "Custom heatmap not found in Supabase",
             "path": supabase_path,
-            "available_files": files
+            "available_files": [f for f in files if 'custom_heatmap' in f]
         }), 404
     
+    logger.info(f"[CustomHeatmapImage] Successfully downloaded image, size: {len(img_bytes)} bytes")
+    
     # Return image bytes directly without saving to disk
+    # Flask-CORS automatically adds CORS headers via @cross_origin() decorator
     response = Response(
         img_bytes,
         mimetype="image/jpeg",
         headers={
-            'Content-Disposition': f'inline; filename=heatmap_{job_id}.jpg',
-            'Cache-Control': 'no-cache'
+            'Content-Disposition': 'inline; filename="heatmap.jpg"',
+            'Cache-Control': 'public, max-age=3600',
+            'Content-Length': str(len(img_bytes))
         }
     )
     
+    logger.info(f"[CustomHeatmapImage] Returning image response with status 200")
     return response
 
 
 @heatmap_bp.route('/heatmap_jobs/<job_id>/custom_heatmap_progress')
 def get_custom_heatmap_progress(job_id):
     progress = get_custom_progress(job_id)
-    # Include the custom heatmap metadata if available
     from ..services.state import get_jobs_store
     jobs = get_jobs_store()
     meta = jobs.get(job_id, {}).get('custom_heatmap_meta', {})
+    
     return jsonify({
         "progress": progress,
         "timestamp": meta.get('timestamp'),
-        "uuid": meta.get('uuid')
+        "uuid": meta.get('uuid'),
+        "image_url": meta.get('image_url')
     })
 
 
 def get_heatmap_analysis_logic(job_id):
     """Shared logic for getting heatmap analysis"""
-    conn = get_db_connection()
-    cur = conn.cursor()
-    cur.execute("SELECT * FROM jobs WHERE job_id = %s", (job_id,))
-    job_row = cur.fetchone()
-    cur.close()
-    conn.close()
+    from ..core.db import get_db_connection_context
+    with get_db_connection_context() as conn:
+        cur = conn.cursor()
+        cur.execute("SELECT * FROM jobs WHERE job_id = %s", (job_id,))
+        job_row = cur.fetchone()
     if not job_row:
         return jsonify({"error": "Job not found"}), 404
     if job_row[6] != 'completed':
@@ -663,8 +828,68 @@ def get_heatmap_analysis_logic(job_id):
     else:
         floorplan_height, floorplan_width = floorplan.shape[:2]
     
+    # Check for cached analysis first
+    from ..core.storage_manager import download_json_from_supabase, upload_json_to_supabase
+    cache_path = f"{job_id}/analysis_cache.json"
+    
+    use_ai = os.getenv('USE_AI_RECOMMENDATIONS', 'false').lower() == 'true'
+    force_refresh = request.args.get('refresh', 'false').lower() == 'true'
+    
+    # STEP 1: Check for cached AI analysis
+    # Always use cached AI analysis if available (only bypass for rule-based cache or manual refresh)
+    if not force_refresh:
+        try:
+            cached_analysis = download_json_from_supabase(cache_path)
+            if cached_analysis:
+                cache_source = cached_analysis.get('recommendations_source')
+                
+                # If cache has AI-generated recommendations → always use it
+                if cache_source == 'ai' and cached_analysis.get('recommendations_provider'):
+                    logger.info(f"Using cached AI analysis for job {job_id} (source: {cached_analysis.get('recommendations_provider')})")
+                    return jsonify(cached_analysis)
+                
+                # If cache has rule-based recommendations and AI is enabled → skip cache to retry AI
+                # This allows retrying AI when quota resets, rather than using stale rule-based cache
+                if use_ai and cache_source == 'rule':
+                    logger.info(f"Cache contains rule-based recommendations for job {job_id}, skipping cache to retry AI")
+                # If AI is disabled, rule-based cache is fine to use
+                elif not use_ai:
+                    logger.info(f"Using cached analysis for job {job_id} (AI disabled)")
+                    return jsonify(cached_analysis)
+        except Exception as e:
+            logger.warning(f"Could not load cached analysis for job {job_id}: {e}")
+    
+    # STEP 2: No valid cache found, run fresh analysis
+    logger.info(f"Running fresh analysis for job {job_id}")
     detections, fps = load_detections(job_id)
     analysis = analyze_heatmap(img_gray, (floorplan_height, floorplan_width), detections=detections, fps=fps)
+    
+    # STEP 3: Cache result only if AI recommendations were successfully generated
+    # This ensures:
+    # - AI analysis is cached and reused for future requests
+    # - Rule-based fallback is NOT cached, allowing AI to retry on next request
+    should_cache = False
+    if use_ai:
+        # Only cache if AI successfully generated recommendations
+        if analysis.get('recommendations_source') == 'ai' and analysis.get('recommendations_provider'):
+            should_cache = True
+            logger.info(f"AI recommendations generated for job {job_id}, caching for future use")
+        else:
+            should_cache = False
+            logger.info(f"AI failed or quota exceeded for job {job_id}, using rule-based fallback (not caching to allow retry)")
+    else:
+        # If AI is disabled, always cache (rule-based is the expected result)
+        should_cache = True
+        logger.info(f"AI disabled for job {job_id}, caching rule-based recommendations")
+    
+    if should_cache:
+        try:
+            upload_json_to_supabase(analysis, cache_path)
+            logger.info(f"Successfully cached analysis for job {job_id}")
+        except Exception as e:
+            logger.warning(f"Could not cache analysis for job {job_id}: {e}")
+            # Continue anyway - caching is optional
+    
     return jsonify(analysis)
 
 @heatmap_bp.route('/heatmap_jobs/<job_id>/analysis', methods=['GET', 'OPTIONS'])
@@ -672,3 +897,15 @@ def get_heatmap_analysis_logic(job_id):
 @jwt_required()
 def get_heatmap_analysis(job_id):
     return get_heatmap_analysis_logic(job_id)
+
+
+
+
+
+
+
+
+
+
+
+

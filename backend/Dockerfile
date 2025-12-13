@@ -46,4 +46,6 @@ COPY *.py ./
 ENV PYTHONPATH=/app
 
 EXPOSE $PORT
-CMD ["gunicorn", "--bind", "0.0.0.0:8080", "--workers", "1", "--timeout", "120", "main.app:app"]
+# Use 1 worker for CPU-bound workload, but add threads for I/O operations
+# Increased timeout to handle longer video processing (up to 10 minutes)
+CMD ["gunicorn", "--bind", "0.0.0.0:8080", "--workers", "1", "--threads", "2", "--timeout", "600", "--keep-alive", "5", "main.app:app"]

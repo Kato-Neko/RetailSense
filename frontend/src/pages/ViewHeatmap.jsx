@@ -1,15 +1,18 @@
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Users, BarChart2, Lightbulb, Timer, Map, FileVideo, Calendar, Clock, Target, CheckCircle, Download } from "lucide-react"
+import { Users, BarChart2, Lightbulb, Timer, Map, FileVideo, Calendar, Clock, Target, CheckCircle, Download, Settings } from "lucide-react"
 import { ChartContainer } from "@/components/ui/chart"
 import { BarChart, CartesianGrid, XAxis, YAxis, Tooltip, Bar } from "recharts"
 import { heatmapService } from "../services/api"
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
 import { Button } from "@/components/ui/button"
+import { AnimatePresence, motion } from "framer-motion"
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { Pagination, PaginationContent, PaginationItem, PaginationLink, PaginationNext, PaginationPrevious } from "@/components/ui/pagination"
 import CustomDateTimeStep from "@/modules/module2/CustomDateTimeStep"
 import CustomConfirmationStep from "@/modules/module2/CustomConfirmationStep"
 
+import { Input } from "@/components/ui/input"
 import { toast } from "sonner"
 import AnalyticsSummaryBox from "@/modules/module2/CustomExportStep"
 import apiClient from "../services/api"
@@ -67,10 +70,13 @@ export default function ViewHeatmap() {
   // --- State ---
   const [jobHistory, setJobHistory] = useState([])
   const [selectedJob, setSelectedJob] = useState(null)
+  const [searchQuery, setSearchQuery] = useState("")
   const [heatmapGenerated, setHeatmapGenerated] = useState(false)
   const [analysis, setAnalysis] = useState(null)
   const [analysisLoading, setAnalysisLoading] = useState(false)
   const [customHeatmapUrl, setCustomHeatmapUrl] = useState(null)
+  const [liveHeatmapUrl, setLiveHeatmapUrl] = useState(null)
+  const [isLiveMode, setIsLiveMode] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
   const [settingsMode, setSettingsMode] = useState('standard')
   const [customStep, setCustomStep] = useState(0)
@@ -91,6 +97,15 @@ export default function ViewHeatmap() {
   const navigate = useNavigate();
 
   const [showSettings, setShowSettings] = useState(false);
+  const [isSpinning, setIsSpinning] = useState(false);
+  
+  // Cache for analysis to prevent re-fetching
+  const analysisCache = useRef({});
+  const customAnalysisCache = useRef({});
+  const pendingRequests = useRef({}); // Track pending requests to prevent duplicates
+  const customImageFallbackUsed = useRef(false); // Prevent infinite onError loops for custom image
+  const lastAttemptedImageUrl = useRef(null); // Track last attempted URL to prevent retry loops
+  const revokeUrlRef = useRef(null); // track blob URL to revoke
 
   // Fetch job history on mount
   useEffect(() => {
@@ -110,28 +125,79 @@ export default function ViewHeatmap() {
     if (jobHistory.length === 0) return;
     const params = new URLSearchParams(location.search);
     const jobId = params.get("jobId");
+    const liveFlag = params.get("live") === '1';
+    if (liveFlag) setIsLiveMode(true);
     if (jobId && !selectedJob) {
       const found = jobHistory.find(j => j.job_id === jobId);
       if (found) {
         setSelectedJob(found);
         setHeatmapGenerated(true);
         setCustomHeatmapUrl(null);
+      } else if (liveFlag) {
+        // Live mode: synthesize a minimal job so the UI renders consistently
+        const synthetic = { job_id: jobId, start_datetime: new Date().toISOString(), end_datetime: new Date().toISOString() };
+        setSelectedJob(synthetic);
+        setHeatmapGenerated(true);
+        setCustomHeatmapUrl(null);
+        // Initialize live heatmap image and start 30s refresh
+        const url = heatmapService.getLiveHeatmapImageUrl(jobId);
+        setLiveHeatmapUrl(`${url}?t=${Date.now()}`);
       }
     }
   }, [jobHistory, location.search, selectedJob]);
 
-  // Fetch analysis when selectedJob changes
+  // Refresh live heatmap every 5s when in live mode
   useEffect(() => {
-    if (!selectedJob) {
+    if (!isLiveMode) return;
+    const params = new URLSearchParams(location.search);
+    const jobId = params.get("jobId");
+    if (!jobId) return;
+    const tick = () => setLiveHeatmapUrl(`${heatmapService.getLiveHeatmapImageUrl(jobId)}?t=${Date.now()}`);
+    tick();
+    const interval = setInterval(tick, 5000);
+    return () => clearInterval(interval);
+  }, [isLiveMode, location.search]);
+
+  // Fetch analysis when selectedJob changes (with caching)
+  useEffect(() => {
+    if (!selectedJob || isLiveMode) {
       setAnalysis(null)
       return
     }
+    
+    const jobId = selectedJob.job_id;
+    if (!jobId) return;
+    
+    // Check cache first
+    const cached = analysisCache.current[jobId];
+    if (cached) {
+      setAnalysis(cached);
+      setAnalysisLoading(false);
+      return;
+    }
+    
+    // Prevent duplicate requests - check if already loading this job
+    if (pendingRequests.current[jobId]) {
+      return; // Already loading, wait
+    }
+    
+    // Mark as pending and fetch
+    pendingRequests.current[jobId] = true;
     setAnalysisLoading(true)
-    heatmapService.getHeatmapAnalysis(selectedJob.job_id)
-      .then(data => setAnalysis(data))
-      .catch(() => setAnalysis(null))
-      .finally(() => setAnalysisLoading(false))
-  }, [selectedJob])
+    heatmapService.getHeatmapAnalysis(jobId)
+      .then(data => {
+        // Cache the result
+        analysisCache.current[jobId] = data;
+        setAnalysis(data)
+      })
+      .catch(() => {
+        setAnalysis(null)
+      })
+      .finally(() => {
+        delete pendingRequests.current[jobId];
+        setAnalysisLoading(false);
+      })
+  }, [selectedJob?.job_id, isLiveMode])
 
   // Fetch detections if needed (single bin)
   useEffect(() => {
@@ -156,6 +222,7 @@ export default function ViewHeatmap() {
       poll = setInterval(async () => {
         try {
           const data = await heatmapService.getCustomHeatmapProgress(selectedJob.job_id);
+          console.log('[CustomHeatmap] Progress response:', data);
           setCustomProgress(Math.round((data.progress || 0) * 100));
           if (data.progress >= 1) {
             clearInterval(poll);
@@ -166,6 +233,8 @@ export default function ViewHeatmap() {
               timestamp: data.timestamp, 
               uuid: data.uuid 
             } : null;
+            
+            console.log('[CustomHeatmap] Progress complete, metadata:', newHeatmapMeta);
             
             if (newHeatmapMeta) {
               setHeatmapMeta(newHeatmapMeta);
@@ -179,14 +248,41 @@ export default function ViewHeatmap() {
             endDate.setHours(...customTimeRange.end.split(":").map(Number));
             const startTimeInSeconds = (startDate - videoStart) / 1000;
             const endTimeInSeconds = (endDate - videoStart) / 1000;
-            const customUrl = heatmapService.getCustomHeatmapImageUrl(
-              selectedJob.job_id,
-              startTimeInSeconds,
-              endTimeInSeconds,
-              newHeatmapMeta?.timestamp,
-              newHeatmapMeta?.uuid
-            );
-            setCustomHeatmapUrl(customUrl);
+            // Always fetch from backend API endpoint with authentication
+            // This ensures the image loads even if Supabase bucket is not public
+            const apiEndpoint = `/api/heatmap_jobs/${selectedJob.job_id}/custom_heatmap_image?start=${startTimeInSeconds}&end=${endTimeInSeconds}`;
+            const apiUrlWithParams = newHeatmapMeta?.timestamp && newHeatmapMeta?.uuid
+              ? `${apiEndpoint}&timestamp=${newHeatmapMeta.timestamp}&uuid=${newHeatmapMeta.uuid}`
+              : apiEndpoint;
+            
+            console.log('[CustomHeatmap] Fetching image from backend API:', apiUrlWithParams);
+            // Reset tracking for new image URL
+            lastAttemptedImageUrl.current = null;
+            customImageFallbackUsed.current = false;
+
+            // Fetch as blob with auth headers
+            try {
+              const res = await apiClient.get(apiUrlWithParams, { responseType: 'blob' });
+              const blobUrl = URL.createObjectURL(res.data);
+              // Revoke previous blob URL to avoid leaks
+              if (revokeUrlRef.current) {
+                URL.revokeObjectURL(revokeUrlRef.current);
+              }
+              revokeUrlRef.current = blobUrl;
+              console.log('[CustomHeatmap] Successfully created blob URL from backend');
+              setCustomHeatmapUrl(blobUrl);
+            } catch (err) {
+              console.error('[CustomHeatmap] Failed to fetch image from backend:', err);
+              // Fallback to direct URL (may not work if bucket is not public)
+              const fallbackUrl = heatmapService.getCustomHeatmapImageUrl(
+                selectedJob.job_id,
+                startTimeInSeconds,
+                endTimeInSeconds,
+                newHeatmapMeta?.timestamp,
+                newHeatmapMeta?.uuid
+              );
+              setCustomHeatmapUrl(`${fallbackUrl}&t=${Date.now()}`);
+            }
             // Fetch custom analytics
             setAnalysisLoading(true);
             try {
@@ -198,6 +294,7 @@ export default function ViewHeatmap() {
                 uuid: newHeatmapMeta?.uuid
               });
               setAnalysis(customAnalysis);
+              customAnalysisCache.current[selectedJob.job_id] = customAnalysis;
               toast.success('Custom heatmap generated successfully!');
             } catch (err) {
               toast.error('Failed to fetch custom analytics.');
@@ -219,12 +316,80 @@ export default function ViewHeatmap() {
     };
   }, [isCustomGenerating, selectedJob, customProgress, customDateRange, customTimeRange]);
 
+  // Reset fallback guard when starting a new custom generation
+  useEffect(() => {
+    if (isCustomGenerating && customProgress === 0) {
+      customImageFallbackUsed.current = false;
+      lastAttemptedImageUrl.current = null;
+      if (revokeUrlRef.current) {
+        URL.revokeObjectURL(revokeUrlRef.current);
+        revokeUrlRef.current = null;
+      }
+    }
+  }, [isCustomGenerating, customProgress]);
+
+  // When switching back to Standard, restore original analysis and standard image
+  useEffect(() => {
+    if (!selectedJob || isLiveMode) return;
+    const jobId = selectedJob.job_id;
+    if (settingsMode === 'standard') {
+      // Restore cached standard analysis if available, otherwise refetch
+      const cached = analysisCache.current[jobId];
+      if (cached) {
+        setAnalysis(cached);
+        setAnalysisLoading(false);
+      } else {
+        setAnalysisLoading(true);
+        heatmapService.getHeatmapAnalysis(jobId)
+          .then(data => {
+            analysisCache.current[jobId] = data;
+            setAnalysis(data);
+          })
+          .catch(() => {})
+          .finally(() => setAnalysisLoading(false));
+      }
+    } else if (settingsMode === 'custom') {
+      // Restore last custom analysis if we have it
+      const cachedCustom = customAnalysisCache.current[jobId];
+      if (cachedCustom) {
+        setAnalysis(cachedCustom);
+        setAnalysisLoading(false);
+      }
+    }
+  }, [settingsMode, selectedJob?.job_id, isLiveMode]);
+
   // Handlers
   const handleSelectJob = (job) => {
     setSelectedJob(job)
     setHeatmapGenerated(true)
     setCustomHeatmapUrl(null)
+    // Reset image tracking for new job
+    lastAttemptedImageUrl.current = null;
+    customImageFallbackUsed.current = false;
+    if (revokeUrlRef.current) {
+      URL.revokeObjectURL(revokeUrlRef.current);
+      revokeUrlRef.current = null;
+    }
   }
+
+  // Reset custom workflow when switching jobs
+  useEffect(() => {
+    if (!selectedJob) return;
+    // Reset steps and progress for new job
+    setCustomStep(0);
+    setCustomGenerationComplete(false);
+    setCustomProgress(0);
+    setCustomHeatmapUrl(null);
+    setHeatmapMeta(null);
+    setCustomDateRange(null);
+    setCustomTimeRange(null);
+    customImageFallbackUsed.current = false;
+    lastAttemptedImageUrl.current = null;
+    if (revokeUrlRef.current) {
+      URL.revokeObjectURL(revokeUrlRef.current);
+      revokeUrlRef.current = null;
+    }
+  }, [selectedJob?.job_id]);
   const handleDeleteJob = async (jobId) => {
     try {
       await heatmapService.deleteJob(jobId)
@@ -384,35 +549,144 @@ export default function ViewHeatmap() {
     }
   };
 
+  // Refactored export handler for custom heatmaps
+  const handleCustomExport = async (type) => {
+    if (!selectedJob || !customDateRange || !customTimeRange) {
+      toast.error("Cannot export: Missing job or custom time range information.");
+      return;
+    }
+    if (!heatmapMeta?.timestamp || !heatmapMeta?.uuid) {
+      toast.error('Custom heatmap metadata not found. Please generate the custom heatmap first.');
+      return;
+    }
+
+    let url, filename;
+    const videoStart = new Date(selectedJob.start_datetime);
+    const startDate = new Date(customDateRange.start);
+    startDate.setHours(...customTimeRange.start.split(":").map(Number));
+    const endDate = new Date(customDateRange.end);
+    endDate.setHours(...customTimeRange.end.split(":").map(Number));
+    const startTimeInSeconds = (startDate - videoStart) / 1000;
+    const endTimeInSeconds = (endDate - videoStart) / 1000;
+
+    const params = {
+      start_time: startTimeInSeconds,
+      end_time: endTimeInSeconds,
+      start_datetime: `${startDate.toLocaleDateString()} ${startDate.toLocaleTimeString()}`,
+      end_datetime: `${endDate.toLocaleDateString()} ${endDate.toLocaleTimeString()}`,
+      timestamp: heatmapMeta.timestamp,
+      uuid: heatmapMeta.uuid
+    };
+
+    if (type === 'image') {
+      url = `/heatmap_jobs/${selectedJob.job_id}/custom_heatmap_image`;
+      filename = `custom_heatmap_${selectedJob.job_id}.jpg`;
+      // Image export has slightly different param names
+      params.start = params.start_time;
+      params.end = params.end_time;
+    } else {
+      url = `/heatmap_jobs/${selectedJob.job_id}/export/${type}`;
+      filename = `custom_heatmap_${selectedJob.job_id}.${type}`;
+    }
+
+    try {
+      const res = await apiClient.get(url, { params, responseType: 'blob' });
+      const downloadUrl = window.URL.createObjectURL(res.data);
+      const a = document.createElement('a');
+      a.href = downloadUrl;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(downloadUrl);
+    } catch (err) {
+      toast.error(`Failed to export ${type.toUpperCase()}`);
+    }
+  };
+
   return (
-    <div className="relative min-h-screen w-full bg-gradient-to-b from-background via-muted to-background dark:from-slate-950 dark:via-slate-900 dark:to-slate-950 py-8 px-1 md:px-0 overflow-x-hidden">
+    <div className="relative h-[800px] w-full bg-gradient-to-b from-background via-muted to-background dark:from-slate-950 dark:via-slate-900 dark:to-slate-950 py-6 px-1 md:px-0 overflow-hidden">
       {/* Soft background blur and gradient effects */}
       <div className="pointer-events-none fixed inset-0 z-0">
         <div className="absolute -top-32 -left-32 w-80 h-80 bg-blue-400/20 dark:bg-blue-700/20 rounded-full blur-3xl"></div>
         <div className="absolute top-1/2 right-0 w-64 h-64 bg-cyan-300/20 dark:bg-cyan-500/20 rounded-full blur-3xl"></div>
         <div className="absolute bottom-0 left-1/2 w-80 h-80 bg-fuchsia-300/10 dark:bg-fuchsia-700/10 rounded-full blur-3xl"></div>
       </div>
-      <div className="container relative z-10 mx-auto max-w-7xl px-4 py-4">
-        <div className="grid grid-rows-2 gap-2 w-full" style={{ minHeight: 'calc(100vh - 120px)' }}>
-          {/* Row 1: Visualization & Settings */}
-          <div className="grid grid-cols-4 gap-6 items-start">
+      <div className="container relative z-10 mx-auto max-w-7xl px-2 h-full">
+        <div className="grid w-full h-full">
+          {/* Row 1: History (fixed), Visualization (flex), Settings (optional fixed) */}
+          <div className="flex gap-4 items-start w-full">
+            {/* History container */}
+            <Card className="w-56 shrink-0 h-[calc(100vh-220px)] box-border flex flex-col shadow-xl rounded-xl bg-gradient-to-br from-background/80 to-muted/90">
+              <CardHeader className="pb-2 pt-4 px-3">
+                <Input
+                  type="search"
+                  placeholder="Search history..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="h-8 text-xs"
+                />
+              </CardHeader>
+              <CardContent className="h-full flex-1 overflow-y-auto pt-0">
+                {jobHistory.length === 0 ? (
+                  <div className="text-muted-foreground text-center mt-8">No heatmaps found.</div>
+                ) : (
+                  <div className="space-y-2">
+                    {jobHistory
+                      .filter(job => (job.input_video_name || job.input_floorplan_name || '').toLowerCase().includes(searchQuery.toLowerCase()))
+                      .map((job) => (
+                      <div
+                        key={job.job_id}
+                        className={`flex items-center justify-between px-2 py-2 rounded-md cursor-pointer transition-colors ${selectedJob && selectedJob.job_id === job.job_id ? "bg-primary/20 dark:bg-blue-900/40" : "hover:bg-muted/60 dark:hover:bg-slate-800/60"}`}
+                        onClick={() => handleSelectJob(job)}
+                      >
+                        <div className="min-w-0 flex-1 pr-2">
+                          <div className="truncate font-semibold text-foreground text-xs">
+                            {job.input_video_name || job.input_floorplan_name || job.job_id.slice(0, 8) + "..."}
+                          </div>
+                          <div className="text-[11px] text-muted-foreground">
+                            {new Date(job.start_datetime).toLocaleString()} - {new Date(job.end_datetime).toLocaleString()}
+                          </div>
+                        </div>
+                        <button
+                          className="p-1 rounded hover:bg-red-100 dark:hover:bg-red-900"
+                          onClick={(e) => { e.stopPropagation(); handleDeleteJob(job.job_id); }}
+                          title="Delete heatmap"
+                        >
+                          <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3m5 0H6" /></svg>
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
             {/* Visualization */}
-            <div className={`flex items-start justify-center relative ${showSettings ? 'col-span-2' : 'col-span-4'} w-full h-full`}>
-              <Card className={`h-[750px] box-border flex flex-col shadow-xl rounded-xl bg-gradient-to-br from-background/80 to-muted/90 relative ${showSettings ? 'w-full max-w-2xl' : 'w-full'}`}>
-                {/* Download Icon Button */}
+            <div className="flex-1 flex items-start justify-center relative w-full h-full">
+              <Card className={`h-[calc(100vh-220px)] box-border flex flex-col shadow-xl rounded-xl bg-gradient-to-br from-background/80 to-muted/90 relative w-full`}>
+                {/* Settings toggle (gear) */}
                 <button
-                  className={`absolute top-4 right-4 z-20 transition-colors ${(!heatmapGenerated || !selectedJob) ? 'opacity-50 cursor-not-allowed' : 'hover:bg-cyan-100 dark:hover:bg-cyan-800'}`}
-                  onClick={() => { if (heatmapGenerated && selectedJob) setShowSettings(v => !v); }}
+                  className={`absolute top-7 right-4 z-20 transition-colors ${(!heatmapGenerated || !selectedJob) ? 'opacity-50 cursor-not-allowed' : 'hover:bg-cyan-100 dark:hover:bg-cyan-800'}`}
+                  onClick={() => {
+                    if (!heatmapGenerated || !selectedJob) return;
+                    setShowSettings(v => !v);
+                    // spin the gear briefly on toggle
+                    try { setIsSpinning(true); } catch {}
+                    setTimeout(() => { try { setIsSpinning(false); } catch {} }, 500);
+                  }}
                   title="Show Heatmap Settings"
                   disabled={!heatmapGenerated || !selectedJob}
                   style={{ background: 'none', padding: 0, border: 'none' }}
                 >
-                  <DownloadTurboIcon />
+                  <Settings className={`h-6 w-6 ${typeof isSpinning !== 'undefined' && isSpinning ? 'animate-spin' : ''}`} style={{ animationDuration: '500ms' }} />
+                  
                 </button>
                 <CardHeader className="pb-2">
                   <CardTitle className="text-lg font-bold text-foreground tracking-tight drop-shadow mb-2 whitespace-nowrap text-center">Heatmap Visualization</CardTitle>
                 </CardHeader>
-                <CardContent className="flex-1 flex flex-col justify-between items-center h-full w-full box-border">
+                <CardContent className="flex-1 flex flex-col h-full w-full box-border">
+                  {/* Image area */}
                   <div className="flex-1 flex items-center justify-center w-full">
                     {(!heatmapGenerated || !selectedJob) ? (
                       <div className="flex flex-col items-center justify-center w-full h-full">
@@ -449,15 +723,77 @@ export default function ViewHeatmap() {
                       </div>
                     ) : (
                       <img
-                        src={customHeatmapUrl || (selectedJob ? heatmapService.getHeatmapImageUrl(selectedJob.job_id) : null) || "/placeholder.svg"}
+                        src={
+                          (settingsMode === 'custom' && customHeatmapUrl)
+                            || (isLiveMode && liveHeatmapUrl)
+                            || (selectedJob ? heatmapService.getHeatmapImageUrl(selectedJob.job_id) : null)
+                            || "/placeholder.svg"
+                        }
                         alt="Foot traffic heatmap"
                         className={`rounded-lg ${showSettings ? 'w-full h-full object-contain' : 'w-full h-[500px] object-contain'}`}
-                        onLoad={() => setIsLoading(false)}
-                        onError={() => setIsLoading(false)}
+                        onLoad={() => {
+                          console.log('[CustomHeatmap] Image loaded successfully');
+                          setIsLoading(false);
+                          // Reset tracking on successful load so we can retry if URL changes
+                          lastAttemptedImageUrl.current = null;
+                        }}
+                        onError={(e) => {
+                          const currentSrc = customHeatmapUrl || (isLiveMode && liveHeatmapUrl) || (selectedJob ? heatmapService.getHeatmapImageUrl(selectedJob.job_id) : null);
+                          console.error('[CustomHeatmap] Image failed to load:', e);
+                          console.error('[CustomHeatmap] Image src:', currentSrc);
+                          
+                          // Prevent infinite loops: only retry if we haven't tried this URL yet
+                          if (currentSrc === lastAttemptedImageUrl.current) {
+                            console.warn('[CustomHeatmap] Already attempted this URL, stopping retry loop');
+                            setIsLoading(false);
+                            return;
+                          }
+                          
+                          lastAttemptedImageUrl.current = currentSrc;
+                          
+                          // If custom URL failed, try fetching from backend API endpoint as blob
+                          if (customHeatmapUrl && !customImageFallbackUsed.current && selectedJob && customDateRange && customTimeRange) {
+                            customImageFallbackUsed.current = true;
+                            const videoStart = new Date(selectedJob.start_datetime);
+                            const startDate = new Date(customDateRange.start);
+                            startDate.setHours(...customTimeRange.start.split(":").map(Number));
+                            const endDate = new Date(customDateRange.end);
+                            endDate.setHours(...customTimeRange.end.split(":").map(Number));
+                            const startTimeInSeconds = (startDate - videoStart) / 1000;
+                            const endTimeInSeconds = (endDate - videoStart) / 1000;
+                            
+                            // Use backend API endpoint with relative path
+                            const apiEndpoint = `/api/heatmap_jobs/${selectedJob.job_id}/custom_heatmap_image?start=${startTimeInSeconds}&end=${endTimeInSeconds}`;
+                            const apiUrlWithParams = heatmapMeta?.timestamp && heatmapMeta?.uuid
+                              ? `${apiEndpoint}&timestamp=${heatmapMeta.timestamp}&uuid=${heatmapMeta.uuid}`
+                              : apiEndpoint;
+                            
+                            console.warn('[CustomHeatmap] Retrying with backend API endpoint:', apiUrlWithParams);
+                            // fetch as blob with auth and set object URL
+                            (async () => {
+                              try {
+                                const res = await apiClient.get(apiUrlWithParams, { responseType: 'blob' });
+                                const objectUrl = URL.createObjectURL(res.data);
+                                if (revokeUrlRef.current) {
+                                  URL.revokeObjectURL(revokeUrlRef.current);
+                                }
+                                revokeUrlRef.current = objectUrl;
+                                lastAttemptedImageUrl.current = objectUrl;
+                                console.log('[CustomHeatmap] Successfully created blob URL from retry');
+                                setCustomHeatmapUrl(objectUrl);
+                              } catch (err) {
+                                console.error('[CustomHeatmap] Fallback blob fetch failed:', err);
+                                // Mark as attempted to prevent infinite loop
+                                lastAttemptedImageUrl.current = currentSrc;
+                              }
+                            })();
+                          }
+                          setIsLoading(false);
+                        }}
                       />
                     )}
                   </div>
-                  <div className="w-full flex flex-col items-center mt-2 mb-4">
+                  <div className="hidden md:flex w-full flex-col items-center mt-2 mb-4">
                     <span className="text-muted-foreground font-medium mb-1">Traffic Density:</span>
                     <div className="w-64 h-4 rounded bg-gradient-to-r from-blue-600 via-yellow-300 to-red-600 mb-1" />
                     <div className="flex justify-between w-64 text-xs text-muted-foreground">
@@ -470,11 +806,34 @@ export default function ViewHeatmap() {
               </Card>
             </div>
             {/* Settings (conditionally rendered) */}
+            <AnimatePresence>
             {showSettings && (
-              <div className="col-span-2 flex items-start">
-                <Card className="w-full h-[750px] box-border flex flex-col shadow-xl rounded-xl bg-gradient-to-br from-blue-400/30 to-background/80">
-                  <CardHeader className="pb-2 items-center">
-                    <CardTitle className="text-lg font-bold text-foreground tracking-tight drop-shadow mb-2 whitespace-nowrap text-center">Heatmap Settings</CardTitle>
+              <motion.div
+                key="settings-panel"
+                initial={{ x: 56 }}
+                animate={{ x: 0 }}
+                exit={{ x: 56 }}
+                transition={{ type: 'spring', stiffness: 280, damping: 24 }}
+                className="w-[520px] shrink-0 flex items-start"
+              >
+                <Card className="w-full h-[calc(100vh-220px)] box-border flex flex-col shadow-xl rounded-xl bg-gradient-to-br from-blue-400/30 to-background/80">
+                  <CardHeader className="pb-2 items-center relative w-full">
+                    <CardTitle className="text-lg font-bold text-foreground tracking-tight drop-shadow mb-2 whitespace-nowrap text-center w-full">Heatmap Settings</CardTitle>
+                    {/* Export dropdown (top-right) - icon only */}
+                    <div className="absolute right-4 top-2">
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button variant="ghost" size="icon" className="h-8 w-8">
+                            <Download className="h-4 w-4" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end" className="w-40">
+                          <DropdownMenuItem onClick={handleExportCSV}>Export CSV</DropdownMenuItem>
+                          <DropdownMenuItem onClick={handleExportPDF}>Export PDF</DropdownMenuItem>
+                          <DropdownMenuItem onClick={handleExportImage}>Export JPG</DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </div>
                     {/* Toggle Group */}
                     <div className="flex justify-center w-full mt-4">
                       <ToggleGroup
@@ -498,34 +857,20 @@ export default function ViewHeatmap() {
                     {settingsMode === "standard" && selectedJob && analysis && (
                       <div className="w-full max-w-xl mt-2 mb-2 flex flex-col items-center">
                         <AnalyticsSummaryBox
-                          startDate={selectedJob.start_datetime ? new Date(selectedJob.start_datetime).toLocaleDateString(undefined, { month: 'numeric', day: 'numeric', year: 'numeric' }) : 'N/A'}
-                          endDate={selectedJob.end_datetime ? new Date(selectedJob.end_datetime).toLocaleDateString(undefined, { month: 'numeric', day: 'numeric', year: 'numeric' }) : 'N/A'}
-                          startTime={selectedJob.start_datetime ? new Date(selectedJob.start_datetime).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit', second: '2-digit', hour12: true }) : 'N/A'}
-                          endTime={selectedJob.end_datetime ? new Date(selectedJob.end_datetime).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit', second: '2-digit', hour12: true }) : 'N/A'}
+                          key={`standard-${selectedJob.job_id}`}
+                          customDateRange={null}
+                          customTimeRange={null}
+                          startDate={selectedJob.start_datetime ? new Date(selectedJob.start_datetime).toISOString().slice(0,10) : 'N/A'}
+                          endDate={selectedJob.end_datetime ? new Date(selectedJob.end_datetime).toISOString().slice(0,10) : 'N/A'}
+                          startTime={selectedJob.start_datetime ? new Date(selectedJob.start_datetime).toLocaleTimeString(undefined, { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' }) : 'N/A'}
+                          endTime={selectedJob.end_datetime ? new Date(selectedJob.end_datetime).toLocaleTimeString(undefined, { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' }) : 'N/A'}
                           analysis={analysis}
                           detections={detections}
+                          onExportCSV={handleExportCSV}
+                          onExportPDF={handleExportPDF}
+                          onExportImage={handleExportImage}
                         />
-                        {/* Export Buttons */}
-                        <div className="flex gap-4 mt-2">
-                          <Button
-                            className="bg-gradient-to-r from-white to-cyan-200 text-black font-semibold shadow-md border border-border py-2 text-sm hover:opacity-90 dark:from-blue-900 dark:to-cyan-800 dark:text-white flex-1"
-                            onClick={handleExportCSV}
-                          >
-                            Export CSV
-                          </Button>
-                          <Button
-                            className="bg-gradient-to-r from-white to-cyan-200 text-black font-semibold shadow-md border border-border py-2 text-sm hover:opacity-90 dark:from-blue-900 dark:to-cyan-800 dark:text-white flex-1"
-                            onClick={handleExportPDF}
-                          >
-                            Export PDF
-                          </Button>
-                          <Button
-                            className="bg-gradient-to-r from-white to-cyan-200 text-black font-semibold shadow-md border border-border py-2 text-sm hover:opacity-90 dark:from-blue-900 dark:to-cyan-800 dark:text-white flex-1"
-                            onClick={handleExportImage}
-                          >
-                            Export JPG
-                          </Button>
-                        </div>
+                        
                       </div>
                     )}
                     {settingsMode === "custom" && (
@@ -559,6 +904,7 @@ export default function ViewHeatmap() {
                           {customStep === 2 && (
                             <>
                               <AnalyticsSummaryBox
+                                key={`custom-${selectedJob?.job_id}-${heatmapMeta?.timestamp || 'none'}`}
                                 customDateRange={customDateRange}
                                 customTimeRange={customTimeRange}
                                 analysis={analysis}
@@ -567,136 +913,17 @@ export default function ViewHeatmap() {
                               <div className="flex gap-2 mt-2">
                                 <Button
                                   className="bg-gradient-to-r from-white to-cyan-200 text-black font-semibold shadow-md border border-border py-2 text-sm hover:opacity-90 dark:from-blue-900 dark:to-cyan-800 dark:text-white flex-1"
-                                  onClick={async () => {
-                                    if (!selectedJob || !customDateRange || !customTimeRange) return;
-                                    
-                                    if (!heatmapMeta?.timestamp || !heatmapMeta?.uuid) {
-                                      toast.error('Custom heatmap metadata not found. Please generate the custom heatmap first.');
-                                      return;
-                                    }
-                                    
-                                    try {
-                                      const videoStart = new Date(selectedJob.start_datetime);
-                                      const startDate = new Date(customDateRange.start);
-                                      startDate.setHours(...customTimeRange.start.split(":").map(Number));
-                                      const endDate = new Date(customDateRange.end);
-                                      endDate.setHours(...customTimeRange.end.split(":").map(Number));
-                                      const startTimeInSeconds = (startDate - videoStart) / 1000;
-                                      const endTimeInSeconds = (endDate - videoStart) / 1000;
-                                      const startDatetimeStr = `${startDate.toLocaleDateString()} ${startDate.toLocaleTimeString()}`;
-                                      const endDatetimeStr = `${endDate.toLocaleDateString()} ${endDate.toLocaleTimeString()}`;
-                                      const res = await apiClient.get(
-                                        `/heatmap_jobs/${selectedJob.job_id}/export/csv`,
-                                        {
-                                          params: {
-                                            start_time: startTimeInSeconds,
-                                            end_time: endTimeInSeconds,
-                                            start_datetime: startDatetimeStr,
-                                            end_datetime: endDatetimeStr,
-                                            timestamp: heatmapMeta.timestamp,
-                                            uuid: heatmapMeta.uuid
-                                          },
-                                          responseType: 'blob'
-                                        }
-                                      );
-                                      const url = window.URL.createObjectURL(res.data);
-                                      const a = document.createElement('a');
-                                      a.href = url;
-                                      a.download = `custom_heatmap_${selectedJob.job_id}.csv`;
-                                      document.body.appendChild(a);
-                                      a.click();
-                                      a.remove();
-                                      window.URL.revokeObjectURL(url);
-                                    } catch (err) {
-                                      toast.error('Failed to export CSV');
-                                    }
-                                  }}>
+                                  onClick={() => handleCustomExport('csv')}>
                                     Export CSV
                                   </Button>
                                 <Button
                                   className="bg-gradient-to-r from-white to-cyan-200 text-black font-semibold shadow-md border border-border py-2 text-sm hover:opacity-90 dark:from-blue-900 dark:to-cyan-800 dark:text-white flex-1"
-                                  onClick={async () => {
-                                    if (!selectedJob || !customDateRange || !customTimeRange) return;
-                                    
-                                    if (!heatmapMeta?.timestamp || !heatmapMeta?.uuid) {
-                                      toast.error('Custom heatmap metadata not found. Please generate the custom heatmap first.');
-                                      return;
-                                    }
-                                    
-                                    try {
-                                      const videoStart = new Date(selectedJob.start_datetime);
-                                      const startDate = new Date(customDateRange.start);
-                                      startDate.setHours(...customTimeRange.start.split(":").map(Number));
-                                      const endDate = new Date(customDateRange.end);
-                                      endDate.setHours(...customTimeRange.end.split(":").map(Number));
-                                      const startTimeInSeconds = (startDate - videoStart) / 1000;
-                                      const endTimeInSeconds = (endDate - videoStart) / 1000;
-                                      const startDatetimeStr = `${startDate.toLocaleDateString()} ${startDate.toLocaleTimeString()}`;
-                                      const endDatetimeStr = `${endDate.toLocaleDateString()} ${endDate.toLocaleTimeString()}`;
-                                      const res = await apiClient.get(
-                                        `/heatmap_jobs/${selectedJob.job_id}/export/pdf`,
-                                        {
-                                          params: {
-                                            start_time: startTimeInSeconds,
-                                            end_time: endTimeInSeconds,
-                                            start_datetime: startDatetimeStr,
-                                            end_datetime: endDatetimeStr,
-                                            timestamp: heatmapMeta.timestamp,
-                                            uuid: heatmapMeta.uuid
-                                          },
-                                          responseType: 'blob'
-                                        }
-                                      );
-                                      const url = window.URL.createObjectURL(res.data);
-                                      const a = document.createElement('a');
-                                      a.href = url;
-                                      a.download = `custom_heatmap_${selectedJob.job_id}.pdf`;
-                                      document.body.appendChild(a);
-                                      a.click();
-                                      a.remove();
-                                      window.URL.revokeObjectURL(url);
-                                    } catch (err) {
-                                      toast.error('Failed to export PDF');
-                                    }
-                                  }}>
+                                  onClick={() => handleCustomExport('pdf')}>
                                     Export PDF
                                   </Button>
                                 <Button
                                   className="bg-gradient-to-r from-white to-cyan-200 text-black font-semibold shadow-md border border-border py-2 text-sm hover:opacity-90 dark:from-blue-900 dark:to-cyan-800 dark:text-white flex-1"
-                                  onClick={async () => {
-                                    if (!selectedJob || !customDateRange || !customTimeRange) return;
-                                    try {
-                                      const videoStart = new Date(selectedJob.start_datetime);
-                                      const startDate = new Date(customDateRange.start);
-                                      startDate.setHours(...customTimeRange.start.split(":").map(Number));
-                                      const endDate = new Date(customDateRange.end);
-                                      endDate.setHours(...customTimeRange.end.split(":").map(Number));
-                                      const startTimeInSeconds = (startDate - videoStart) / 1000;
-                                      const endTimeInSeconds = (endDate - videoStart) / 1000;
-                                      const res = await apiClient.get(
-                                        `/heatmap_jobs/${selectedJob.job_id}/custom_heatmap_image`,
-                                        {
-                                          params: { 
-                                            start: startTimeInSeconds, 
-                                            end: endTimeInSeconds,
-                                            timestamp: heatmapMeta?.timestamp,
-                                            uuid: heatmapMeta?.uuid
-                                          },
-                                          responseType: 'blob'
-                                        }
-                                      );
-                                      const url = window.URL.createObjectURL(res.data);
-                                      const a = document.createElement('a');
-                                      a.href = url;
-                                      a.download = `custom_heatmap_${selectedJob.job_id}.jpg`;
-                                      document.body.appendChild(a);
-                                      a.click();
-                                      a.remove();
-                                      window.URL.revokeObjectURL(url);
-                                    } catch (err) {
-                                      toast.error('Failed to export image');
-                                    }
-                                  }}>
+                                  onClick={() => handleCustomExport('image')}>
                                     Export JPG
                                   </Button>
                               </div>
@@ -751,137 +978,11 @@ export default function ViewHeatmap() {
                     )}
                   </CardContent>
                 </Card>
-              </div>
+              </motion.div>
             )}
+            </AnimatePresence>
           </div>
-          {/* Row 2: Analytics Section */}
-          <Card id="analytics-section" className="w-full h-full bg-gradient-to-br from-background/80 to-muted/90 dark:from-slate-900/80 dark:to-slate-950/90 border border-border shadow-2xl shadow-primary/10 backdrop-blur-xl rounded-xl p-8 flex flex-col">
-            <div className="grid grid-cols-4 grid-rows-2 gap-3 h-full">
-              {/* Heatmap History: col 1, row-span-2 */}
-              <div className="col-span-1 row-span-2 h-full flex flex-col">
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-lg font-bold text-foreground tracking-tight drop-shadow mb-2">Heatmap History</CardTitle>
-                </CardHeader>
-                <CardContent className="h-full flex-1 overflow-y-auto">
-                  {jobHistory.length === 0 ? (
-                    <div className="text-muted-foreground text-center mt-8">No heatmaps found.</div>
-                  ) : (
-                    <div className="space-y-2">
-                      {jobHistory.map((job) => (
-                        <div
-                          key={job.job_id}
-                          className={`flex items-center justify-between px-2 py-2 rounded-md cursor-pointer transition-colors ${selectedJob && selectedJob.job_id === job.job_id ? "bg-primary/20 dark:bg-blue-900/40" : "hover:bg-muted/60 dark:hover:bg-slate-800/60"}`}
-                          onClick={() => handleSelectJob(job)}
-                        >
-                          <div className="min-w-0 flex-1">
-                            <div className="truncate font-semibold text-foreground text-sm">
-                              {job.input_video_name || job.input_floorplan_name || job.job_id.slice(0, 8) + "..."}
-                            </div>
-                            <div className="text-xs text-muted-foreground">
-                              {new Date(job.start_datetime).toLocaleString()} - {new Date(job.end_datetime).toLocaleString()}
-                            </div>
-                          </div>
-                          <button
-                            className="ml-2 p-1 rounded hover:bg-red-100 dark:hover:bg-red-900"
-                            onClick={e => {
-                              e.stopPropagation();
-                              handleDeleteJob(job.job_id);
-                            }}
-                            title="Delete heatmap"
-                          >
-                            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3m5 0H6" /></svg>
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </CardContent>
-              </div>
-              {/* Total Visitors: col 2, row 1 */}
-              <Card className="bg-gradient-to-br from-yellow-400/40 to-background/80 border-none shadow-xl shadow-blue-400/20 backdrop-blur-md py-4 rounded-xl transition-transform hover:scale-[1.02] hover:shadow-blue-400/30 flex flex-col items-center">
-                <CardHeader className="flex flex-row items-center gap-2 justify-center w-full">
-                  <Users className="text-yellow-400 h-7 w-7 mb-2 drop-shadow" />
-                  <CardTitle className="text-base font-semibold text-foreground whitespace-nowrap text-center">Total Visitors</CardTitle>
-                </CardHeader>
-                <CardContent className="flex flex-col items-center justify-center flex-1">
-                  {analysisLoading ? (
-                    <p className="text-yellow-400">Loading...</p>
-                  ) : (
-                    <p className="text-3xl font-bold text-yellow-400">{analysis?.total_visitors ?? 0}</p>
-                  )}
-                </CardContent>
-              </Card>
-              {/* Traffic Distribution: col 3-4, row 1 */}
-              <Card className="bg-gradient-to-br from-cyan-400/40 to-background/80 border-none shadow-xl shadow-cyan-400/20 backdrop-blur-md py-4 rounded-xl transition-transform hover:scale-[1.02] hover:shadow-cyan-400/30 flex flex-col items-center col-span-2 row-span-1">
-                <CardHeader className="flex flex-row items-center gap-2 justify-center w-full">
-                  <BarChart2 className="text-cyan-400 h-7 w-7 mb-2 drop-shadow" />
-                  <CardTitle className="text-base font-semibold text-foreground whitespace-nowrap text-center">Traffic Distribution</CardTitle>
-                </CardHeader>
-                <CardContent className="flex-1 flex items-center w-full">
-                  <ChartContainer config={{ value: { color: '#1976d2', label: 'Visitors' } }} className="w-full h-full">
-                    <BarChart data={[
-                      { name: 'High', value: analysis?.areas?.high?.percentage ?? 0 },
-                      { name: 'Medium', value: analysis?.areas?.medium?.percentage ?? 0 },
-                      { name: 'Low', value: analysis?.areas?.low?.percentage ?? 0 }
-                    ]} margin={{ top: 20, right: 30, left: 0, bottom: 5 }}>
-                      <CartesianGrid strokeDasharray="3 3" />
-                      <XAxis dataKey="name" />
-                      <YAxis unit="%" />
-                      <Tooltip />
-                      <Bar dataKey="value" fill="#1976d2" />
-                    </BarChart>
-                  </ChartContainer>
-                </CardContent>
-              </Card>
-              {/* Recommendations: col 2-3, row 2 */}
-              <div className="col-span-2 row-span-1 h-full flex flex-col bg-gradient-to-br from-green-400/30 to-background/80 border-none shadow-xl shadow-green-400/20 backdrop-blur-md py-4 rounded-xl transition-transform hover:scale-[1.02] hover:shadow-green-400/30">
-                <CardHeader className="flex flex-row items-center gap-2">
-                  <Lightbulb className="text-green-400 h-7 w-7 mb-2 drop-shadow" />
-                  <CardTitle className="text-base font-semibold text-foreground whitespace-nowrap text-center">Recommendations</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <ul className="list-disc pl-5 text-muted-foreground">
-                    {analysis?.recommendations?.length > 0 ? (
-                      analysis.recommendations.map((rec, idx) => (
-                        <li key={`rec-list-${idx}`}>{rec}</li>
-                      ))
-                    ) : (
-                      <li className="text-muted-foreground">No recommendations available.</li>
-                    )}
-                  </ul>
-                </CardContent>
-              </div>
-              {/* Peak Hour/Minute: col 4, row 2 */}
-              <div className="col-span-1 row-span-1 h-full flex flex-col bg-gradient-to-br from-purple-400/30 to-background/80 border-none shadow-xl shadow-purple-400/20 backdrop-blur-md py-4 rounded-xl transition-transform hover:scale-[1.02] hover:shadow-purple-400/30 items-center justify-center">
-                <CardHeader className="flex flex-row items-center gap-2 justify-center">
-                  <Timer className="text-purple-400 h-7 w-7 mb-2 drop-shadow" />
-                  <CardTitle className="text-base font-semibold text-foreground whitespace-nowrap text-center">Peak Hour/Minute</CardTitle>
-                </CardHeader>
-                <CardContent className="flex flex-col items-center justify-center w-full">
-                  {analysisLoading || detectionsLoading ? (
-                    <p className="text-purple-400">Loading...</p>
-                  ) : (peakHoursData && peakHoursData.length > 0) ? (
-                    <>
-                      <ChartContainer className="w-full h-40" config={{ value: { color: '#a78bfa', label: 'Visitors' } }}>
-                        <BarChart data={peakHoursData} margin={{ top: 10, right: 10, left: 0, bottom: 10 }}>
-                          <CartesianGrid strokeDasharray="3 3" />
-                          <XAxis dataKey="x" />
-                          <YAxis allowDecimals={false} />
-                          <Tooltip />
-                          <Bar dataKey="y" fill="#a78bfa" />
-                        </BarChart>
-                      </ChartContainer>
-                      <span className="text-xs text-muted-foreground mt-2">
-                        Peak: {peakHoursData[0].x} min ({peakHoursData[0].y} visitors)
-                      </span>
-                    </>
-                  ) : (
-                    <span className="text-3xl font-bold text-purple-400 mb-1">N/A</span>
-                  )}
-                </CardContent>
-              </div>
-            </div>
-          </Card>
+          {/* Row 2 removed (redundant analytics) */}
         </div>
       </div>
     </div>

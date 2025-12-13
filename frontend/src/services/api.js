@@ -327,12 +327,25 @@ export const heatmapService = {
   },
 
   getCustomHeatmapImageUrl: (jobId, start, end, timestamp, uuid) => {
-    return `${API_BASE_URL}/heatmap_jobs/${jobId}/custom_heatmap_image?start=${start}&end=${end}&timestamp=${timestamp}&uuid=${uuid}`;
+    let url = `${API_BASE_URL}/heatmap_jobs/${jobId}/custom_heatmap_image?start=${start}&end=${end}`;
+    if (timestamp && uuid) {
+      url += `&timestamp=${timestamp}&uuid=${uuid}`;
+    }
+    return url;
   },
   
   getDetections: async (jobId) => {
     try {
       const response = await apiClient.get(`/api/heatmap_jobs/${jobId}/detections`);
+      return response.data;
+    } catch (error) {
+      throw error.response ? error.response.data : error;
+    }
+  },
+
+  regenerateDetections: async (jobId) => {
+    try {
+      const response = await apiClient.post(`/api/heatmap_jobs/${jobId}/regenerate_detections`);
       return response.data;
     } catch (error) {
       throw error.response ? error.response.data : error;
@@ -366,6 +379,68 @@ export const heatmapService = {
     } catch (error) {
       throw error.response ? error.response.data : error;
     }
+  },
+
+  // Live streaming functions
+  createLiveJob: async (config) => {
+    try {
+      const response = await apiClient.post('/api/heatmap_jobs/live', {
+        rtsp_url: config.rtsp_url,
+        camera_name: config.camera_name,
+        points_data: config.points_data || []
+      });
+      return response.data;
+    } catch (error) {
+      throw error.response ? error.response.data : error;
+    }
+  },
+
+  stopLiveJob: async (jobId) => {
+    try {
+      const response = await apiClient.post(`/api/heatmap_jobs/${jobId}/live/stop`);
+      return response.data;
+    } catch (error) {
+      throw error.response ? error.response.data : error;
+    }
+  },
+
+  getLiveJobStatus: async (jobId) => {
+    try {
+      // Robust polling: 10s timeout with up to 3 attempts, exponential backoff (0ms, 500ms, 1000ms)
+      const attempt = async (i) => {
+        try {
+          const response = await apiClient.get(`/api/heatmap_jobs/${jobId}/live/status`, { timeout: 10000 });
+          return response.data;
+        } catch (e) {
+          const isTimeoutOrNetwork = e?.error?.toString?.().includes('timeout') || e?.error === 'Network error';
+          if (isTimeoutOrNetwork && i < 2) {
+            await new Promise(res => setTimeout(res, i === 0 ? 500 : 1000));
+            return attempt(i + 1);
+          }
+          throw e;
+        }
+      };
+      return await attempt(0);
+    } catch (error) {
+      throw error.response ? error.response.data : error;
+    }
+  },
+
+  getLiveHeatmapImageUrl: (jobId) => {
+    return `${API_BASE_URL}/api/heatmap_jobs/${jobId}/live/heatmap`;
+  },
+
+  getLiveFloorplanImageUrl: (jobId) => {
+    return `${API_BASE_URL}/api/heatmap_jobs/${jobId}/live/floorplan`;
+  },
+
+  getLiveCameraFeedUrl: (jobId) => {
+    return `${API_BASE_URL}/api/heatmap_jobs/${jobId}/live/feed`;
+  },
+
+  getLiveCameraStreamUrl: (jobId) => {
+    const token = localStorage.getItem('access_token');
+    return `${API_BASE_URL}/api/heatmap_jobs/${jobId}/live/stream${token ? `?token=${token}` : ''}`;
   },
 };
 

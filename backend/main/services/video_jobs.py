@@ -14,17 +14,30 @@ from .heatmap_processing import blend_heatmap
 from .state import get_jobs_store
 
 
+
+# --- Time-based throttling for database updates ---
+# Dictionary to store the last update timestamp for each job
+_last_db_update_time: Dict[str, float] = {}
+DB_UPDATE_INTERVAL = 5  # seconds
+
+
 def update_job_status_in_db(job_id: str, job: Dict[str, Any]):
-    conn = get_db_connection()
-    cur = conn.cursor()
-    cur.execute('''
-        UPDATE jobs 
-        SET status = %s, message = %s, updated_at = CURRENT_TIMESTAMP
-        WHERE job_id = %s
-    ''', (job['status'], job['message'], job_id))
-    cur.close()
-    conn.commit()
-    conn.close()
+    from ..core.db import get_db_connection_context
+    with get_db_connection_context() as conn:
+        cur = conn.cursor()
+        try:
+            cur.execute('''
+                UPDATE jobs 
+                SET status = %s, message = %s, updated_at = CURRENT_TIMESTAMP
+                WHERE job_id = %s
+            ''', (job['status'], job['message'], job_id))
+            conn.commit()  # Commit INSIDE the with block
+        except Exception as e:
+            logger.error(f"Error updating job {job_id} status: {e}")
+            conn.rollback()
+        finally:
+            cur.close()
+            # Connection is automatically returned to pool by context manager
 
 
 def update_job_progress(job_id: str, stage: str, progress: float):
@@ -32,24 +45,30 @@ def update_job_progress(job_id: str, stage: str, progress: float):
     job = jobs[job_id]
     job['message'] = f'{stage} ({int(progress * 100)}%)'
     
-    # Minimal logging: progress updates are silent to avoid log flooding
+    # Time-based throttling to prevent database spam
+    now = time.time()
+    last_update = _last_db_update_time.get(job_id, 0)
     
-    conn = get_db_connection()
-    cur = conn.cursor()
-    try:
-        cur.execute('''
-            UPDATE jobs 
-            SET message = %s, updated_at = CURRENT_TIMESTAMP
-            WHERE job_id = %s
-        ''', (job['message'], job_id))
-        conn.commit()
-        # Minimal logging: suppress success spam for progress updates
-    except Exception as e:
-        logger.error(f"Error updating job {job_id} progress in database: {e}")
-        conn.rollback()
-    finally:
-        cur.close()
-        conn.close()
+    # Do not update if the interval has not passed
+    if now - last_update < DB_UPDATE_INTERVAL:
+        return
+
+    from ..core.db import get_db_connection_context
+    with get_db_connection_context() as conn:
+        cur = conn.cursor()
+        try:
+            cur.execute('''
+                UPDATE jobs 
+                SET message = %s, updated_at = CURRENT_TIMESTAMP
+                WHERE job_id = %s
+            ''', (job['message'], job_id))
+            conn.commit()
+            _last_db_update_time[job_id] = now
+        except Exception as e:
+            logger.error(f"Error updating job {job_id} progress in database: {e}")
+            conn.rollback()
+        finally:
+            cur.close()
 
 
 def process_video_job(job_id: str):
@@ -62,17 +81,18 @@ def process_video_job(job_id: str):
 
         video_path = job['input_files']['video']
         floorplan_path = job['input_files']['floorplan']
-        points_path = job['input_files']['points']
-        with open(points_path, 'r') as f:
-            _ = json.load(f)
+        
+        # Validate video file and get its properties
         cap = validate_video_file(video_path)
         total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
         fps = int(cap.get(cv2.CAP_PROP_FPS))
         duration = total_frames / fps if fps > 0 else 0
+        video_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+        video_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
         cap.release()
 
-        # Check video duration and reject if too long
-        max_duration_minutes = 10  # 10 minutes max for Railway hobby plan
+        # Check video duration from environment variable, with a default
+        max_duration_minutes = int(os.getenv('MAX_VIDEO_DURATION_MINUTES', 10))
         if duration > max_duration_minutes * 60:
             raise Exception(f"Video too long ({duration/60:.1f} minutes). Maximum allowed: {max_duration_minutes} minutes.")
         
@@ -84,8 +104,6 @@ def process_video_job(job_id: str):
             update_job_status_in_db(job_id, job)
             return
 
-        job['message'] = 'Running YOLO detection (0%)'
-        update_job_status_in_db(job_id, job)  # Update database with initial progress
         
         output_video_path, detections, fps = detect_and_track(
             video_path,
@@ -102,48 +120,16 @@ def process_video_job(job_id: str):
             return
 
         detections_data = {"fps": fps, "detections": detections}
-        logger.info(f"DEBUG: Job {job_id} has {len(detections)} detections")
-        logger.info(f"DEBUG: First few detections: {detections[:3] if detections else 'None'}")
-        
-        try:
-            upload_json_to_supabase(
-                detections_data,
-                f"{job_id}/detections.json"
-            )
-            logger.info(f"Successfully uploaded detections.json to Supabase for job {job_id}")
-        except Exception as e:
-            logger.error(f"Error uploading detections.json to Supabase for job {job_id}: {e}")
-            raise
+        upload_json_to_supabase(detections_data, f"{job_id}/detections.json")
 
         output_heatmap_image_path = job['output_files_expected']['image']
-        
-        # Log the expected output paths
-        logger.info(f"Job {job_id} output paths:")
-        logger.info(f"  - Expected heatmap path: {output_heatmap_image_path}")
-        logger.info(f"  - Expected video path: {output_video_path}")
         
         # Load user points for homography transformation
         points_path = job['input_files']['points']
         with open(points_path, 'r') as f:
             points_data = json.load(f)
         
-        # Convert points to the format expected by homography
-        # points_data should be normalized coordinates (0-1), convert to pixel coordinates
-        # Get video dimensions from the video file
-        cap = cv2.VideoCapture(video_path)
-        video_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-        video_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-        cap.release()
-        
-        # Convert normalized points to pixel coordinates
-        homography_points = []
-        for point in points_data:
-            x = float(point['x']) * video_width
-            y = float(point['y']) * video_height
-            homography_points.append([x, y])
-        
-        logger.info(f"DEBUG: About to call blend_heatmap with {len(detections)} detections and {len(homography_points)} homography points")
-        logger.info(f"DEBUG: Homography points: {homography_points}")
+        homography_points = [[p['x'], p['y']] for p in points_data]
         
         blended_img = blend_heatmap(
             detections,
@@ -200,40 +186,40 @@ def process_video_job(job_id: str):
         logger.info(f"  - output_heatmap_path: {output_heatmap_image_path}")
         logger.info(f"  - output_video_path: {output_video_path}")
 
-        conn = get_db_connection()
-        cur = conn.cursor()
-        try:
-            # First, let's check if the job exists in the database
-            cur.execute("SELECT job_id, status FROM jobs WHERE job_id = %s", (job_id,))
-            existing_job = cur.fetchone()
-            if existing_job:
-                logger.info(f"Found existing job {job_id} with status: {existing_job[1]}")
-            else:
-                logger.error(f"Job {job_id} not found in database!")
-                return
-            
-            cur.execute('''
-                UPDATE jobs 
-                SET status = %s, message = %s, updated_at = CURRENT_TIMESTAMP, output_heatmap_path = %s, output_video_path = %s
-                WHERE job_id = %s
-            ''', (job['status'], job['message'], output_heatmap_image_path, output_video_path, job_id))
-            conn.commit()
-            logger.info(f"Successfully updated job {job_id} in database with output paths")
-            
-            # Verify the update worked
-            cur.execute("SELECT output_heatmap_path, output_video_path FROM jobs WHERE job_id = %s", (job_id,))
-            updated_job = cur.fetchone()
-            if updated_job:
-                logger.info(f"Verified database update - heatmap_path: {updated_job[0]}, video_path: {updated_job[1]}")
-            else:
-                logger.error(f"Failed to verify database update for job {job_id}")
+        from ..core.db import get_db_connection_context
+        with get_db_connection_context() as conn:
+            cur = conn.cursor()
+            try:
+                # First, let's check if the job exists in the database
+                cur.execute("SELECT job_id, status FROM jobs WHERE job_id = %s", (job_id,))
+                existing_job = cur.fetchone()
+                if existing_job:
+                    logger.info(f"Found existing job {job_id} with status: {existing_job[1]}")
+                else:
+                    logger.error(f"Job {job_id} not found in database!")
+                    return
                 
-        except Exception as e:
-            logger.error(f"Error updating job {job_id} in database: {e}")
-            conn.rollback()
-        finally:
-            cur.close()
-            conn.close()
+                cur.execute('''
+                    UPDATE jobs 
+                    SET status = %s, message = %s, updated_at = CURRENT_TIMESTAMP, output_heatmap_path = %s, output_video_path = %s
+                    WHERE job_id = %s
+                ''', (job['status'], job['message'], output_heatmap_image_path, output_video_path, job_id))
+                conn.commit()
+                logger.info(f"Successfully updated job {job_id} in database with output paths")
+                
+                # Verify the update worked
+                cur.execute("SELECT output_heatmap_path, output_video_path FROM jobs WHERE job_id = %s", (job_id,))
+                updated_job = cur.fetchone()
+                if updated_job:
+                    logger.info(f"Verified database update - heatmap_path: {updated_job[0]}, video_path: {updated_job[1]}")
+                else:
+                    logger.error(f"Failed to verify database update for job {job_id}")
+                    
+            except Exception as e:
+                logger.error(f"Error updating job {job_id} in database: {e}")
+                conn.rollback()
+            finally:
+                cur.close()
 
     except Exception as e:
         job = jobs.get(job_id, {})
@@ -244,27 +230,27 @@ def process_video_job(job_id: str):
 
 
 def _update_db_error(job_id: str, job: Dict[str, Any]):
-    conn = get_db_connection()
-    cur = conn.cursor()
-    cur.execute('''
-        UPDATE jobs 
-        SET status = %s, message = %s, updated_at = CURRENT_TIMESTAMP
-        WHERE job_id = %s
-    ''', (job['status'], job['message'], job_id))
-    cur.close()
-    conn.commit()
-    conn.close()
+    from ..core.db import get_db_connection_context
+    with get_db_connection_context() as conn:
+        cur = conn.cursor()
+        cur.execute('''
+            UPDATE jobs 
+            SET status = %s, message = %s, updated_at = CURRENT_TIMESTAMP
+            WHERE job_id = %s
+        ''', (job['status'], job['message'], job_id))
+        conn.commit()
+        cur.close()
 
 
 def run_custom_heatmap_job(job_id: str, start_time: float, end_time: float, set_progress: Callable[[float], None]):
     try:
         logger.info(f"Starting custom heatmap generation for job {job_id}, time range: {start_time}-{end_time}")
-        conn = get_db_connection()
-        cur = conn.cursor()
-        cur.execute("SELECT * FROM jobs WHERE job_id = %s", (job_id,))
-        job_row = cur.fetchone()
-        cur.close()
-        conn.close()
+        from ..core.db import get_db_connection_context
+        with get_db_connection_context() as conn:
+            cur = conn.cursor()
+            cur.execute("SELECT * FROM jobs WHERE job_id = %s", (job_id,))
+            job_row = cur.fetchone()
+            cur.close()
         if not job_row or job_row[6] != 'completed':
             logger.error(f"Job {job_id} not found or not completed")
             set_progress(1.0)
@@ -278,29 +264,29 @@ def run_custom_heatmap_job(job_id: str, start_time: float, end_time: float, set_
 
     try:
         from ..core.storage import download_json_from_supabase
-        det_data = download_json_from_supabase(f"{job_id}/detections.json")
-        if det_data is None:
-            logger.error(f"Failed to download detections.json for job {job_id}")
-            set_progress(1.0)
-            return
-        detections = det_data.get("detections", [])
-        fps = det_data.get("fps")
+        from ..helpers.detections import load_detections
+        detections, fps = load_detections(job_id)
+
+        if not detections or not fps:
+            raise Exception(f"Could not load valid detections data for job {job_id}. The original job may have failed.")
+
         logger.info(f"Downloaded {len(detections)} total detections")
 
         filtered_detections = [
             det for det in detections
             if 'timestamp' in det and start_time <= det['timestamp'] <= end_time
         ]
-        logger.info(f"Filtered to {len(filtered_detections)} detections in range {start_time}-{end_time}")
-        
-        if not filtered_detections:
-            logger.warning(f"No detections found in time range {start_time}-{end_time}")
     except Exception as e:
         logger.error(f"Error processing detections: {e}")
         import traceback
         logger.error(f"Traceback: {traceback.format_exc()}")
         set_progress(1.0)
         return
+
+    logger.info(f"Filtered to {len(filtered_detections)} detections in range {start_time}-{end_time}")
+    if not filtered_detections:
+        logger.warning(f"No detections found in time range {start_time}-{end_time}. Cannot generate custom heatmap.")
+        # No need to return, the process will just create a blank heatmap which is acceptable.
 
     # Download floorplan from Supabase to local temp file
     from ..core.storage import download_image_from_supabase
@@ -406,15 +392,26 @@ def run_custom_heatmap_job(job_id: str, start_time: float, end_time: float, set_
         upload_image_to_supabase(blended_img, filename)
         logger.info(f"Successfully uploaded custom heatmap to Supabase")
         
-        # Store the identifiers in the jobs state for frontend to retrieve
+        # Store the identifiers AND construct the image URL in metadata
         from ..services.state import get_jobs_store
+        from ..core.config_manager import get_config_manager
+        config = get_config_manager()
+        supabase_url = config.supabase_url
+        project_id = supabase_url.split('https://')[-1].split('.supabase.co')[0]
+        
+        # Direct public URL to the custom heatmap
+        image_url = f"https://{project_id}.supabase.co/storage/v1/object/public/projectresults/{filename}"
+        
         jobs = get_jobs_store()
-        if job_id in jobs:
-            jobs[job_id]['custom_heatmap_meta'] = {
-                'timestamp': timestamp,
-                'uuid': unique_id
-            }
-            logger.info(f"Stored metadata: timestamp={timestamp}, uuid={unique_id}")
+        if job_id not in jobs:
+            jobs[job_id] = {}
+        jobs[job_id]['custom_heatmap_meta'] = {
+            'timestamp': timestamp,
+            'uuid': unique_id,
+            'image_url': image_url,
+            'filename': filename
+        }
+        logger.info(f"Stored metadata: timestamp={timestamp}, uuid={unique_id}, image_url={image_url}")
     except Exception as e:
         logger.error(f"Error creating/uploading custom heatmap: {e}")
         import traceback

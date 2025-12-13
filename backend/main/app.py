@@ -46,14 +46,12 @@ CORS(
 )
 
 # Add OPTIONS handler for all routes
+# Note: Flask-CORS handles CORS automatically, so we only handle OPTIONS if CORS doesn't
 @app.before_request
 def handle_preflight():
     if request.method == "OPTIONS":
+        # Let Flask-CORS handle it - don't add duplicate headers
         response = make_response()
-        response.headers.add("Access-Control-Allow-Origin", "*")
-        response.headers.add("Access-Control-Allow-Headers", "Content-Type,Authorization")
-        response.headers.add("Access-Control-Allow-Methods", "GET,POST,PUT,DELETE,OPTIONS")
-        response.headers.add("Access-Control-Expose-Headers", "Content-Type,Authorization,Content-Disposition")
         return response
 
 
@@ -71,6 +69,57 @@ app.register_blueprint(jobs_bp, url_prefix='/api')
 def test_route():
     return jsonify({"message": "API routing is working"})
 
+# Health check endpoint
+@app.route('/health')
+@app.route('/api/health')
+def health_check():
+    """Health check endpoint for monitoring system status."""
+    try:
+        from .services.job_queue import get_job_queue
+        from .services.tracking import _get_model
+        from .core.db import get_db_connection_context
+        
+        # Check job queue
+        job_queue = get_job_queue()
+        queue_status = job_queue.get_status()
+        
+        # Check model is loaded (cached)
+        model_loaded = False
+        try:
+            model = _get_model()
+            model_loaded = model is not None
+        except Exception as e:
+            logger.warning(f"Model check failed: {e}")
+        
+        # Check database connection
+        db_healthy = False
+        try:
+            with get_db_connection_context() as conn:
+                cur = conn.cursor()
+                cur.execute("SELECT 1")
+                cur.fetchone()
+                cur.close()
+                db_healthy = True
+        except Exception as e:
+            logger.warning(f"Database check failed: {e}")
+        
+        status = "healthy" if (model_loaded and db_healthy) else "degraded"
+        
+        return jsonify({
+            "status": status,
+            "model_loaded": model_loaded,
+            "database": "connected" if db_healthy else "disconnected",
+            "job_queue": queue_status,
+            "timestamp": __import__('datetime').datetime.now().isoformat()
+        }), 200 if status == "healthy" else 503
+        
+    except Exception as e:
+        logger.error(f"Health check failed: {e}")
+        return jsonify({
+            "status": "unhealthy",
+            "error": str(e)
+        }), 503
+
 # Direct routes for backward compatibility (without /api prefix)
 @app.route('/heatmap_jobs/<job_id>/result/image', methods=['GET', 'OPTIONS'])
 @cross_origin()
@@ -85,7 +134,17 @@ def direct_heatmap_image(job_id):
 def direct_heatmap_detections(job_id):
     """Direct access to detections without /api prefix"""
     from .api.heatmap import get_detections_logic
-    return get_detections_logic(job_id)
+    from flask_jwt_extended import get_jwt_identity
+    current_user = get_jwt_identity()
+    return get_detections_logic(job_id, current_user)
+
+@app.route('/heatmap_jobs/<job_id>/regenerate_detections', methods=['POST', 'OPTIONS'])
+@cross_origin()
+@jwt_required()
+def direct_regenerate_detections(job_id):
+    """Direct access to regenerate detections without /api prefix"""
+    from .api.heatmap import regenerate_detections
+    return regenerate_detections(job_id)
 
 @app.route('/heatmap_jobs/<job_id>/analysis', methods=['GET', 'OPTIONS'])
 @cross_origin()
@@ -172,24 +231,23 @@ def direct_export_csv(job_id):
 # On backend startup, clean up orphaned jobs left as 'pending' or 'processing' if not running in memory
 
 def cleanup_orphaned_jobs():
-    conn = get_db_connection()
-    cur = conn.cursor()
-    # Find jobs that are not completed/cancelled/errored
-    cur.execute(
-        "SELECT job_id FROM jobs WHERE status IN ('pending', 'processing')"
-    )
-    orphaned = cur.fetchall()
-    for row in orphaned:
-        job_id = row[0]  # psycopg2 returns tuples, not dicts
-        # If job is not in memory (not running), mark as error
-        if job_id not in jobs:
-            cur.execute(
-                "UPDATE jobs SET status = %s, message = %s, updated_at = CURRENT_TIMESTAMP WHERE job_id = %s",
-                ('error', 'Job was interrupted by server shutdown.', job_id)
-            )
-    cur.close()
-    conn.commit()
-    conn.close()
+    from .core.db import get_db_connection_context
+    with get_db_connection_context() as conn:
+        cur = conn.cursor()
+        # Find jobs that are not completed/cancelled/errored
+        cur.execute(
+            "SELECT job_id FROM jobs WHERE status IN ('pending', 'processing')"
+        )
+        orphaned = cur.fetchall()
+        for row in orphaned:
+            job_id = row[0]  # psycopg2 returns tuples, not dicts
+            # If job is not in memory (not running), mark as error
+            if job_id not in jobs:
+                cur.execute(
+                    "UPDATE jobs SET status = %s, message = %s, updated_at = CURRENT_TIMESTAMP WHERE job_id = %s",
+                    ('error', 'Job was interrupted by server shutdown.', job_id)
+                )
+        conn.commit()
 
 
 if __name__ == '__main__':

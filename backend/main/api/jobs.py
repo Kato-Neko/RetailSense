@@ -28,12 +28,11 @@ def create_heatmap_job():
         if reuse_file:
             video_filename = request.form.get('videoFilename')
             current_user = get_jwt_identity()
-            conn = get_db_connection()
-            cur = conn.cursor()
-            cur.execute('''SELECT job_id FROM jobs WHERE "user" = %s AND input_video_name = %s ORDER BY created_at DESC LIMIT 1''', (current_user, video_filename))
-            job_row = cur.fetchone()
-            cur.close()
-            conn.close()
+            from ..core.db import get_db_connection_context
+            with get_db_connection_context() as conn:
+                cur = conn.cursor()
+                cur.execute('''SELECT job_id FROM jobs WHERE "user" = %s AND input_video_name = %s ORDER BY created_at DESC LIMIT 1''', (current_user, video_filename))
+                job_row = cur.fetchone()
             if not job_row:
                 return jsonify({"error": "No previous upload found to reuse."}), 400
             prev_job_id = job_row['job_id'] if isinstance(job_row, dict) else job_row[0]
@@ -136,25 +135,20 @@ def create_heatmap_job():
         }
 
         current_user = get_jwt_identity()
-        conn = get_db_connection()
-        try:
+        from ..core.db import get_db_connection_context
+        with get_db_connection_context() as conn:
             cur = conn.cursor()
             cur.execute('''
                 INSERT INTO jobs (job_id, "user", input_video_name, input_floorplan_name, status, message, start_datetime, end_datetime, created_at, updated_at, output_heatmap_path, output_video_path)
                 VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)''',
                 (job_id, current_user, video_filename, floorplan_filename, 'pending', 'Job submitted, awaiting processing.', start_datetime, end_datetime, datetime.datetime.now(), datetime.datetime.now(), None, None))
             conn.commit()
-            cur.close()
-        except Exception:
-            raise
-        finally:
-            conn.close()
 
-        import threading
-        processing_thread = threading.Thread(target=process_video_job, args=(job_id,))
-        processing_thread.daemon = True
-        processing_thread.start()
-        logger.info(f"Started processing thread for job {job_id}")
+        # Use job queue instead of direct threading
+        from ..services.job_queue import get_job_queue
+        job_queue = get_job_queue()
+        job_queue.add_job(job_id, process_video_job, job_id)
+        logger.info(f"Job {job_id} submitted to queue (queue size: {job_queue.get_queue_size()})")
 
         return jsonify({"job_id": job_id, "status": "pending", "message": "Job submitted for processing."}), 202
     except Exception as e:
@@ -168,12 +162,12 @@ def get_job_status(job_id):
     if job:
         return jsonify({"job_id": job_id, "status": job['status'], "message": job.get('message', '')})
     else:
-        conn = get_db_connection()
-        cur = conn.cursor()
-        cur.execute("SELECT job_id, status, message FROM jobs WHERE job_id = %s", (job_id,))
-        db_job = cur.fetchone()
-        cur.close()
-        conn.close()
+        from ..core.db import get_db_connection_context
+        with get_db_connection_context() as conn:
+            cur = conn.cursor()
+            cur.execute("SELECT job_id, status, message FROM jobs WHERE job_id = %s", (job_id,))
+            db_job = cur.fetchone()
+            cur.close()
         if db_job:
             return jsonify({"job_id": db_job['job_id'] if isinstance(db_job, dict) else db_job[0], "status": db_job['status'] if isinstance(db_job, dict) else db_job[1], "message": db_job['message'] if isinstance(db_job, dict) else db_job[2]})
         else:
@@ -182,12 +176,11 @@ def get_job_status(job_id):
 
 @jobs_bp.route('/heatmap_jobs/<job_id>/result/video', methods=['GET'])
 def get_processed_video(job_id):
-    conn = get_db_connection()
-    cur = conn.cursor()
-    cur.execute("SELECT * FROM jobs WHERE job_id = %s", (job_id,))
-    job_row = cur.fetchone()
-    cur.close()
-    conn.close()
+    from ..core.db import get_db_connection_context
+    with get_db_connection_context() as conn:
+        cur = conn.cursor()
+        cur.execute("SELECT * FROM jobs WHERE job_id = %s", (job_id,))
+        job_row = cur.fetchone()
     if not job_row or job_row['status' if isinstance(job_row, dict) else 6] != 'completed':
         return jsonify({"error": "Job not found or not completed"}), 404
 
@@ -201,39 +194,48 @@ def get_processed_video(job_id):
 @cross_origin()
 @jwt_required()
 def get_job_history():
+    """Return job history for the current user with safe pooled connections."""
+    from ..core.db import get_db_connection_context
     current_user = get_jwt_identity()
-    conn = get_db_connection()
-    cur = conn.cursor()
-    cur.execute('''
-        SELECT job_id,
-               input_video_name,
-               input_floorplan_name,
-               status,
-               message,
-               start_datetime,
-               end_datetime,
-               created_at,
-               updated_at
-        FROM jobs WHERE "user" = %s ORDER BY created_at DESC
-    ''', (current_user,))
-    rows = cur.fetchall()
-    history_jobs = [
-        {
-            "job_id": row[0],
-            "input_video_name": row[1],
-            "input_floorplan_name": row[2],
-            "status": row[3],
-            "message": row[4],
-            "start_datetime": to_manila_iso(row[5]),
-            "end_datetime": to_manila_iso(row[6]),
-            "created_at": to_manila_iso(row[7]),
-            "updated_at": to_manila_iso(row[8]),
-        }
-        for row in rows
-    ]
-    cur.close()
-    conn.close()
-    return jsonify(history_jobs)
+
+    try:
+        with get_db_connection_context() as conn:
+            cur = conn.cursor()
+            cur.execute('''
+                SELECT job_id,
+                       input_video_name,
+                       input_floorplan_name,
+                       status,
+                       message,
+                       start_datetime,
+                       end_datetime,
+                       created_at,
+                       updated_at
+                FROM jobs WHERE "user" = %s ORDER BY created_at DESC
+            ''', (current_user,))
+            rows = cur.fetchall()
+            cur.close()
+
+        history_jobs = [
+            {
+                "job_id": row[0],
+                "input_video_name": row[1],
+                "input_floorplan_name": row[2],
+                "status": row[3],
+                "message": row[4],
+                "start_datetime": to_manila_iso(row[5]),
+                "end_datetime": to_manila_iso(row[6]),
+                "created_at": to_manila_iso(row[7]),
+                "updated_at": to_manila_iso(row[8]),
+            }
+            for row in rows
+        ]
+        return jsonify(history_jobs)
+    except Exception as e:
+        # Defensive logging to diagnose 500s
+        from ..core.config import logger
+        logger.error(f"Error fetching job history for user {current_user}: {e}")
+        return jsonify({"error": "Failed to fetch job history"}), 500
 
 
 @jobs_bp.route('/heatmap_jobs/<job_id>', methods=['DELETE'])
@@ -243,18 +245,15 @@ def delete_heatmap_job(job_id):
     from ..core.config import logger
     logger.info(f"User {current_user} attempting to delete job {job_id}")
     try:
-        conn = get_db_connection()
-        cur = conn.cursor()
-        cur.execute("SELECT * FROM jobs WHERE job_id = %s AND \"user\" = %s", (job_id, current_user))
-        job_row = cur.fetchone()
-        if not job_row:
-            cur.close()
-            conn.close()
-            return jsonify({"error": "Job not found or not authorized"}), 404
-        cur.execute("DELETE FROM jobs WHERE job_id = %s", (job_id,))
-        cur.close()
-        conn.commit()
-        conn.close()
+        from ..core.db import get_db_connection_context
+        with get_db_connection_context() as conn:
+            cur = conn.cursor()
+            cur.execute("SELECT * FROM jobs WHERE job_id = %s AND \"user\" = %s", (job_id, current_user))
+            job_row = cur.fetchone()
+            if not job_row:
+                return jsonify({"error": "Job not found or not authorized"}), 404
+            cur.execute("DELETE FROM jobs WHERE job_id = %s", (job_id,))
+            conn.commit()
         results_folder = os.path.join(RESULTS_FOLDER, job_id)
         uploads_folder = os.path.join(UPLOAD_FOLDER, job_id)
         for folder in [results_folder, uploads_folder]:
@@ -283,31 +282,28 @@ def cancel_heatmap_job(job_id):
     current_user = get_jwt_identity()
     jobs = get_jobs_store()
     job = jobs.get(job_id)
-    if job:
-        job['cancelled'] = True
-        conn = get_db_connection()
+    
+    from ..core.db import get_db_connection_context
+    with get_db_connection_context() as conn:
         cur = conn.cursor()
+        if job:
+            job['cancelled'] = True
+            cur.execute("UPDATE jobs SET status = %s, message = %s, updated_at = CURRENT_TIMESTAMP WHERE job_id = %s", ('cancelled', 'Job was cancelled by user.', job_id))
+            conn.commit()
+            return jsonify({"success": True, "message": "Job cancelled."})
+        
+        cur.execute("SELECT * FROM jobs WHERE job_id = %s", (job_id,))
+        job_row = cur.fetchone()
+        if not job_row:
+            return jsonify({"error": "Job not found"}), 404
+        
+        status_index = 6 if not isinstance(job_row, dict) else 'status'
+        if job_row[status_index] in ('completed', 'cancelled', 'error'):
+            return jsonify({"success": True, "message": f"Job already {job_row[status_index]}."})
+            
         cur.execute("UPDATE jobs SET status = %s, message = %s, updated_at = CURRENT_TIMESTAMP WHERE job_id = %s", ('cancelled', 'Job was cancelled by user.', job_id))
-        cur.close()
         conn.commit()
-        conn.close()
-        return jsonify({"success": True, "message": "Job cancelled."})
-    conn = get_db_connection()
-    cur = conn.cursor()
-    cur.execute("SELECT * FROM jobs WHERE job_id = %s", (job_id,))
-    job_row = cur.fetchone()
-    if not job_row:
-        cur.close()
-        conn.close()
-        return jsonify({"error": "Job not found"}), 404
-    if job_row['status' if isinstance(job_row, dict) else 6] in ('completed', 'cancelled', 'error'):
-        cur.close()
-        conn.close()
-        return jsonify({"success": True, "message": f"Job already {job_row['status' if isinstance(job_row, dict) else 6]}."})
-    cur.execute("UPDATE jobs SET status = %s, message = %s, updated_at = CURRENT_TIMESTAMP WHERE job_id = %s", ('cancelled', 'Job was cancelled by user.', job_id))
-    cur.close()
-    conn.commit()
-    conn.close()
+
     return jsonify({"success": True, "message": "Job cancelled in DB."})
 
 
@@ -331,12 +327,11 @@ def get_job_points(job_id):
 @jobs_bp.route('/heatmap_jobs/<job_id>/time_range', methods=['GET'])
 @jwt_required()
 def get_job_time_range(job_id):
-    conn = get_db_connection()
-    cur = conn.cursor()
-    cur.execute("SELECT start_datetime, end_datetime FROM jobs WHERE job_id = %s", (job_id,))
-    job_row = cur.fetchone()
-    cur.close()
-    conn.close()
+    from ..core.db import get_db_connection_context
+    with get_db_connection_context() as conn:
+        cur = conn.cursor()
+        cur.execute("SELECT start_datetime, end_datetime FROM jobs WHERE job_id = %s", (job_id,))
+        job_row = cur.fetchone()
     if not job_row:
         return jsonify({"error": "Job not found"}), 404
     start_dt = to_manila_iso(job_row[0])
@@ -355,3 +350,98 @@ def get_job_time_range(job_id):
         "start_time": start_time,
         "end_time": end_time
     })
+
+@jobs_bp.route('/heatmap_jobs/<job_id>/recommendations/stream', methods=['GET'])
+@cross_origin()
+@jwt_required()
+def stream_ai_recommendations(job_id):
+    current_user = get_jwt_identity()
+    from ..core.db import get_db_connection_context
+    from ..helpers.analysis import analyze_heatmap
+    from ..helpers.ai_analysis import generate_ai_recommendations_stream
+    from ..core.storage import download_json_from_supabase
+    
+    try:
+        with get_db_connection_context() as conn:
+            cur = conn.cursor()
+            cur.execute("SELECT * FROM jobs WHERE job_id = %s AND \"user\" = %s", (job_id, current_user))
+            job_row = cur.fetchone()
+            cur.close()
+
+        if not job_row:
+            return jsonify({"error": "Job not found or not authorized"}), 404
+        
+        status = job_row[job_row_mapping['status']] if not isinstance(job_row, dict) else job_row['status']
+        if status != 'completed':
+            return jsonify({"error": "Job must be completed to generate recommendations"}), 400
+
+        # Load detections and fps
+        detections_data = download_json_from_supabase(f"{job_id}/detections.json")
+        if not detections_data:
+            return jsonify({"error": "Detections data not found for this job"}), 404
+        
+        detections = detections_data.get("detections", [])
+        fps = detections_data.get("fps", 25) # Default fps if not found
+
+        # For recommendations, we need a "heatmap" representation (even if not visual)
+        # We can simulate this by extracting relevant info from detections
+        # For a true heatmap analysis, we'd need to re-run or store more data
+        # For now, let's assume `analyze_heatmap` can derive what's needed from detections
+        # We need a dummy floorplan_shape for analyze_heatmap
+        # Let's get the video dimensions from the job row, or use a default
+        try:
+            # Assuming output_video_path contains the original video dimensions in its metadata
+            # This is a bit of a hack, ideally dimensions would be stored more directly
+            output_video_path = job_row[job_row_mapping['output_video_path']] if not isinstance(job_row, dict) else job_row['output_video_path']
+            cap = cv2.VideoCapture(output_video_path)
+            if cap.isOpened():
+                video_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+                video_height = int(cap.get(cv2.CAP_PROP_PROP_FRAME_HEIGHT))
+                cap.release()
+                floorplan_shape = (video_height, video_width) # (height, width)
+            else:
+                floorplan_shape = (720, 1280) # Default if video not accessible
+        except Exception as e:
+            logger.warning(f"Could not determine video dimensions for job {job_id}: {e}. Using default.")
+            floorplan_shape = (720, 1280) # Default to 720p
+
+        # A dummy heatmap data for analyze_heatmap. We only care about areas, total_visitors, peak_hours
+        # which are derived from detections
+        dummy_heatmap = np.zeros(floorplan_shape, dtype=np.uint8)
+        
+        analysis_results = analyze_heatmap(dummy_heatmap, floorplan_shape, detections=detections, fps=fps)
+        areas = analysis_results['areas']
+        total_visitors = analysis_results['total_visitors']
+        peak_hours = analysis_results['peak_hours']
+
+        def generate():
+            yield 'event: start\n'
+            yield 'data: {"status": "started"}\n\n'
+            
+            full_response_content = ""
+            try:
+                for chunk in generate_ai_recommendations_stream(areas, total_visitors, peak_hours):
+                    full_response_content += chunk
+                    # Send each chunk as a separate data event
+                    yield f"data: {json.dumps({'chunk': chunk})}\n\n"
+
+                # After all chunks are received, parse the full response as JSON array
+                # and send final recommendations
+                parsed_recommendations = _parse_final_recommendations(full_response_content)
+                for rec in parsed_recommendations:
+                    yield f"data: {json.dumps({'recommendation': rec})}\n\n"
+                
+                yield 'event: end\n'
+                yield 'data: {"status": "completed"}\n\n'
+            except Exception as e:
+                logger.error(f"Streaming AI recommendations failed for job {job_id}: {e}")
+                yield 'event: error\n'
+                yield f'data: {json.dumps({"error": str(e)})}\n\n'
+                yield 'event: end\n'
+                yield 'data: {"status": "completed"}\n\n'
+
+        return Response(stream_with_context(generate()), mimetype='text/event-stream')
+
+    except Exception as e:
+        logger.error(f"Error in stream_ai_recommendations endpoint for job {job_id}: {e}")
+        return jsonify({"error": f"Server error: {str(e)}"}), 500

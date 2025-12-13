@@ -1,5 +1,13 @@
 import numpy as np
 import cv2
+import os
+
+# Try to import AI analysis module (optional)
+try:
+    from .ai_analysis import generate_ai_recommendations
+    AI_AVAILABLE = True
+except ImportError:
+    AI_AVAILABLE = False
 
 
 def analyze_peak_hours(detections, fps, bin_minutes=5):
@@ -66,14 +74,6 @@ def analyze_heatmap(heatmap, floorplan_shape, detections=None, fps=None):
     for category in areas:
         areas[category]['percentage'] = round((areas[category]['pixels'] / total_area) * 100, 1)
 
-    recommendations = []
-    if areas['high']['percentage'] > 30:
-        recommendations.append("Consider redistributing traffic from high-density areas to improve customer flow")
-    if areas['low']['percentage'] > 40:
-        recommendations.append("Implement strategies to increase traffic in low-density areas")
-    if areas['medium']['percentage'] < 30:
-        recommendations.append("Optimize store layout to create more balanced traffic distribution")
-
     if detections and fps:
         peak_hours = analyze_peak_hours(detections, fps)
     else:
@@ -85,9 +85,44 @@ def analyze_heatmap(heatmap, floorplan_shape, detections=None, fps=None):
     else:
         total_visitors = 0
 
+    # Generate recommendations using AI if available and enabled, otherwise use rule-based
+    use_ai = os.getenv('USE_AI_RECOMMENDATIONS', 'false').lower() == 'true'
+    ai_provider = os.getenv('AI_PROVIDER', None)  # 'groq', 'gemini', 'openai', or None for auto-detect
+    recommendations = []
+    
+    if AI_AVAILABLE and use_ai:
+        try:
+            recommendations, used_ai = generate_ai_recommendations(areas, total_visitors, peak_hours, provider=ai_provider)
+        except Exception as e:
+            recommendations = []
+            used_ai = False
+            import logging
+            logging.getLogger(__name__).error(f"AI generation failed: {e}")
+        if used_ai:
+            recommendations_source = 'ai'
+            recommendations_provider = (ai_provider or 'auto')
+        else:
+            # Will fall back below to rule-based if empty
+            recommendations_source = 'rule'
+            recommendations_provider = None
+    else:
+        # Fallback to rule-based recommendations
+        if areas['high']['percentage'] > 30:
+            recommendations.append("Consider redistributing traffic from high-density areas to improve customer flow")
+        if areas['low']['percentage'] > 40:
+            recommendations.append("Implement strategies to increase traffic in low-density areas")
+        if areas['medium']['percentage'] < 30:
+            recommendations.append("Optimize store layout to create more balanced traffic distribution")
+        if not recommendations:
+            recommendations.append("Monitor traffic patterns over time to identify optimization opportunities")
+        recommendations_source = 'rule'
+        recommendations_provider = None
+
     return {
         'areas': areas,
         'recommendations': recommendations,
+        'recommendations_source': recommendations_source,
+        'recommendations_provider': recommendations_provider,
         'peak_hours': peak_hours,
         'total_visitors': total_visitors
     }
