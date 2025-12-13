@@ -192,7 +192,8 @@ class JobsHandler:
 
             return jsonify({"job_id": job_id, "status": "pending", "message": "Job submitted for processing."}), 202
         except Exception as e:
-            return jsonify({"error": f"Server error: {str(e)}"}), 500
+            self.logger.error(f"Error creating heatmap job: {e}", exc_info=True)
+            return jsonify({"error": f"Failed to start video processing. Please try again."}), 500
     
     def get_job_status(self, job_id):
         """Get status of a job."""

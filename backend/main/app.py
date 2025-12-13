@@ -125,50 +125,48 @@ def health_check():
 @cross_origin()
 def direct_heatmap_image(job_id):
     """Direct access to heatmap image without /api prefix"""
-    from .api.heatmap import get_heatmap_image_logic
-    return get_heatmap_image_logic(job_id)
+    from .api.heatmap import heatmap_handler
+    return heatmap_handler.get_heatmap_image(job_id)
 
 @app.route('/heatmap_jobs/<job_id>/detections', methods=['GET', 'OPTIONS'])
 @cross_origin()
 @jwt_required()
 def direct_heatmap_detections(job_id):
     """Direct access to detections without /api prefix"""
-    from .api.heatmap import get_detections_logic
-    from flask_jwt_extended import get_jwt_identity
-    current_user = get_jwt_identity()
-    return get_detections_logic(job_id, current_user)
+    from .api.heatmap import heatmap_handler
+    return heatmap_handler.get_detections_from_json(job_id)
 
 @app.route('/heatmap_jobs/<job_id>/regenerate_detections', methods=['POST', 'OPTIONS'])
 @cross_origin()
 @jwt_required()
 def direct_regenerate_detections(job_id):
     """Direct access to regenerate detections without /api prefix"""
-    from .api.heatmap import regenerate_detections
-    return regenerate_detections(job_id)
+    from .api.heatmap import heatmap_handler
+    return heatmap_handler.regenerate_detections(job_id)
 
 @app.route('/heatmap_jobs/<job_id>/analysis', methods=['GET', 'OPTIONS'])
 @cross_origin()
 @jwt_required()
 def direct_heatmap_analysis(job_id):
     """Direct access to analysis without /api prefix"""
-    from .api.heatmap import get_heatmap_analysis_logic
-    return get_heatmap_analysis_logic(job_id)
+    from .api.heatmap import heatmap_handler
+    return heatmap_handler.get_heatmap_analysis(job_id)
 
 @app.route('/heatmap_jobs/<job_id>/export/pdf', methods=['GET', 'OPTIONS'])
 @cross_origin()
 @jwt_required()
 def direct_export_pdf(job_id):
     """Direct access to PDF export without /api prefix"""
-    from .api.heatmap import export_heatmap_pdf
-    return export_heatmap_pdf(job_id)
+    from .api.heatmap import heatmap_handler
+    return heatmap_handler.export_heatmap_pdf(job_id)
 
 @app.route('/heatmap_jobs/<job_id>/export/csv', methods=['GET', 'OPTIONS'])
 @cross_origin()
 @jwt_required()
 def direct_export_csv(job_id):
     """Direct access to CSV export without /api prefix"""
-    from .api.heatmap import export_heatmap_csv
-    return export_heatmap_csv(job_id)
+    from .api.heatmap import heatmap_handler
+    return heatmap_handler.export_heatmap_csv(job_id)
 
 ## no in-memory progress kept here; services.state manages progress
 
