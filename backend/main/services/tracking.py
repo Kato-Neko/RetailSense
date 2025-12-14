@@ -21,7 +21,7 @@ def _get_model():
         
         # Load model with CPU optimizations
         # The model will be pre-downloaded during Docker build
-        _model = YOLO('yolov8n.pt')
+        _model = YOLO('yolov8s.pt')
         
         # Optimize model for CPU inference
         _model.model.eval()  # Set to evaluation mode
@@ -70,7 +70,7 @@ def detect_and_track(
     total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
 
     # Resize frames for faster processing - more aggressive resizing
-    max_width = 256  # More aggressive resizing for speed
+    max_width = 640  # More aggressive resizing for speed
     if original_width > max_width:
         scale_factor = max_width / original_width
         width = max_width
@@ -89,7 +89,7 @@ def detect_and_track(
     detections_for_heatmap: List[Dict[str, Any]] = []
     frame_count = 0
     processed_frames = 0  # Track actually processed frames
-    frame_skip = 5  # Process every 5th frame for a balance of speed and accuracy
+    frame_skip = 3  # Process every 5th frame for a balance of speed and accuracy
     
     # Calculate total frames that will be processed
     total_processed_frames = (total_frames + frame_skip - 1) // frame_skip
@@ -156,10 +156,10 @@ def detect_and_track(
                     results = model(frame_resized, 
                                   classes=[0], 
                                   verbose=False,
-                                  conf=0.3,   # Confidence threshold
+                                  conf=0.5,   # Confidence threshold
                                   iou=0.5,    # NMS IoU threshold
                                   device='cpu',
-                                  max_det=10, # Max detections per image
+                                  max_det=50, # Max detections per image
                                   half=False) # Disable half precision on CPU
                 except Exception as e:
                     logger.error(f"Error processing frame {frame_count} with YOLO: {e}")
@@ -179,7 +179,7 @@ def detect_and_track(
                         x1, y1, x2, y2 = map(int, box.xyxy[0])
                         conf = float(box.conf[0])
                         total_detections += 1
-                        if conf > 0.3:
+                        if conf > 0.5:
                             detections.append(([x1, y1, x2, y2], conf, 0))
 
                 # Debug logging for first few processed frames
