@@ -76,6 +76,10 @@ def login_api():
         return jsonify({"error": "Missing email or password"}), 400
         
     try:
+        # First, check if the email exists in the users table
+        user_check = supabase.table('users').select('email').eq('email', email).execute()
+        email_exists = bool(user_check.data and len(user_check.data) > 0)
+        
         # Test if supabase client is working
         logger.info("Attempting Supabase auth...")
         response = supabase.auth.sign_in_with_password({"email": email, "password": password})
@@ -84,12 +88,48 @@ def login_api():
             access_token = create_access_token(identity=response.user.id, expires_delta=timedelta(days=1))
             return jsonify({"success": True, "message": "Login successful", "access_token": access_token}), 200
         else:
-            return jsonify({"error": "Invalid credentials"}), 401
+            # If we get here, authentication failed
+            # Check if email exists to provide specific error message
+            if not email_exists:
+                return jsonify({"error": "Incorrect email"}), 401
+            else:
+                return jsonify({"error": "Incorrect password"}), 401
     except Exception as e:
+        error_str = str(e).lower()
         logger.error(f"Error during login: {str(e)}")
         logger.error(f"Exception type: {type(e).__name__}")
         import traceback
         logger.error(f"Traceback: {traceback.format_exc()}")
+        
+        # Check if Supabase returned an error response
+        if hasattr(e, 'message'):
+            error_message = str(e.message).lower()
+            if 'invalid login credentials' in error_message or 'email not confirmed' in error_message:
+                # Check if email exists to provide specific error
+                try:
+                    user_check = supabase.table('users').select('email').eq('email', email).execute()
+                    email_exists = bool(user_check.data and len(user_check.data) > 0)
+                    if not email_exists:
+                        return jsonify({"error": "Incorrect email"}), 401
+                    else:
+                        return jsonify({"error": "Incorrect password"}), 401
+                except:
+                    return jsonify({"error": "Incorrect password"}), 401
+            elif 'email' in error_message and ('not found' in error_message or 'does not exist' in error_message):
+                return jsonify({"error": "Incorrect email"}), 401
+        
+        # For other errors, check email existence if possible
+        try:
+            user_check = supabase.table('users').select('email').eq('email', email).execute()
+            email_exists = bool(user_check.data and len(user_check.data) > 0)
+            if 'password' in error_str or 'credential' in error_str:
+                if not email_exists:
+                    return jsonify({"error": "Incorrect email"}), 401
+                else:
+                    return jsonify({"error": "Incorrect password"}), 401
+        except:
+            pass
+        
         return jsonify({"error": f"Error: {str(e)}"}), 500
 
 

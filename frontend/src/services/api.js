@@ -11,7 +11,8 @@ const apiClient = axios.create({
 apiClient.interceptors.response.use(
   (response) => response,
   (error) => {
-    if (error?.response?.status === 401) {
+    // Only redirect on 401 if it's not a login attempt
+    if (error?.response?.status === 401 && !error?.config?.url?.includes('/api/login')) {
       localStorage.removeItem('access_token');
       window.location.href = '/';
     }
@@ -48,7 +49,9 @@ export const authService = {
       } else if (error.response?.status === 500) {
         throw { error: 'Server error. Please try again later or contact support if the issue persists.' };
       } else if (error.response?.status === 401) {
-        throw { error: 'Invalid email or password. Please check your credentials and try again.' };
+        // Use the specific error message from backend (e.g., "Incorrect email" or "Incorrect password")
+        const errorMessage = error.response?.data?.error || 'Invalid email or password. Please check your credentials and try again.';
+        throw { error: errorMessage };
       } else if (error.response?.status === 429) {
         throw { error: 'Too many login attempts. Please wait a moment before trying again.' };
       } else if (error.response?.data?.error) {
