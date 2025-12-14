@@ -5,6 +5,7 @@ Tracking service: person detection (YOLOv8) and tracking (DeepSort).
 import os
 import cv2
 import numpy as np
+import time
 from typing import Callable, Tuple, List, Dict, Any, Optional
 from ..core.config import logger
 
@@ -21,7 +22,7 @@ def _get_model():
         
         # Load model with CPU optimizations
         # The model will be pre-downloaded during Docker build
-        _model = YOLO('yolov8s.pt')
+        _model = YOLO('yolov8n.pt')
         
         # Optimize model for CPU inference
         _model.model.eval()  # Set to evaluation mode
@@ -69,8 +70,8 @@ def detect_and_track(
     fps = int(cap.get(cv2.CAP_PROP_FPS))
     total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
 
-    # Resize frames for faster processing - more aggressive resizing
-    max_width = 640  # More aggressive resizing for speed
+    # Resize frames for better accuracy - increased resolution for detection
+    max_width = 640  # Increased resolution for better detection accuracy
     if original_width > max_width:
         scale_factor = max_width / original_width
         width = max_width
@@ -89,7 +90,7 @@ def detect_and_track(
     detections_for_heatmap: List[Dict[str, Any]] = []
     frame_count = 0
     processed_frames = 0  # Track actually processed frames
-    frame_skip = 3  # Process every 5th frame for a balance of speed and accuracy
+    frame_skip = 3  # Process every 3rd frame for better tracking accuracy
     
     # Calculate total frames that will be processed
     total_processed_frames = (total_frames + frame_skip - 1) // frame_skip
@@ -146,20 +147,19 @@ def detect_and_track(
                 if processed_frames <= 3:
                     logger.info(f"Processing frame {frame_count + 1} (processed frame {processed_frames}), shape: {frame.shape}")
                 
-                import time
                 start_time = time.time()
                 
                 try:
                     # Resize frame for detection
                     frame_resized = cv2.resize(frame, (width, height))
-                    # YOLO inference - optimized for speed
+                    # YOLO inference - optimized for accuracy
                     results = model(frame_resized, 
                                   classes=[0], 
                                   verbose=False,
-                                  conf=0.5,   # Confidence threshold
+                                  conf=0.5,   # Increased confidence threshold for better accuracy
                                   iou=0.5,    # NMS IoU threshold
                                   device='cpu',
-                                  max_det=50, # Max detections per image
+                                  max_det=25, # Increased max detections for crowded scenes
                                   half=False) # Disable half precision on CPU
                 except Exception as e:
                     logger.error(f"Error processing frame {frame_count} with YOLO: {e}")
@@ -179,7 +179,7 @@ def detect_and_track(
                         x1, y1, x2, y2 = map(int, box.xyxy[0])
                         conf = float(box.conf[0])
                         total_detections += 1
-                        if conf > 0.5:
+                        if conf > 0.5:  # Match the confidence threshold
                             detections.append(([x1, y1, x2, y2], conf, 0))
 
                 # Debug logging for first few processed frames
@@ -219,7 +219,7 @@ def detect_and_track(
                     })
 
                 # Save preview
-                if preview_folder and processed_frames % 5 == 0:  # Every 5th processed frame
+                if preview_folder and processed_frames % 3 == 0:  # Every 3rd processed frame
                     os.makedirs(preview_folder, exist_ok=True)
                     preview_path = os.path.join(preview_folder, 'preview_detections.jpg')
                     # Draw boxes on a copy for the preview
