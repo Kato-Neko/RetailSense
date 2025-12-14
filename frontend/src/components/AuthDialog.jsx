@@ -94,7 +94,22 @@ const AuthDialog = ({ isOpen, onOpenChange, setIsAuthenticated, defaultTab = "lo
     } catch (error) {
       console.error("Login error:", error)
       // Display the specific error message from backend (e.g., "Incorrect email" or "Incorrect password")
-      toast.error(error.error || error.message || "Login failed")
+      // Handle different error formats
+      let errorMessage = "Login failed"
+      
+      if (error) {
+        if (typeof error === 'string') {
+          errorMessage = error
+        } else if (error.error) {
+          errorMessage = error.error
+        } else if (error.message) {
+          errorMessage = error.message
+        } else if (error.response?.data?.error) {
+          errorMessage = error.response.data.error
+        }
+      }
+      
+      toast.error(errorMessage)
     }
   }
 

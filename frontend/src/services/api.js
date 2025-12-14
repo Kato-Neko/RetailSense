@@ -43,22 +43,31 @@ export const authService = {
       const response = await apiClient.post("/api/login", { email, password });
       return response.data;  // Ensure this returns the expected structure
     } catch (error) {
-      // Handle different types of errors with better messages
-      if (error.code === 'ERR_NETWORK' || error.message?.includes('Name or service not known')) {
-        throw { error: 'Cannot connect to server. Please check your internet connection and try again.' };
-      } else if (error.response?.status === 500) {
-        throw { error: 'Server error. Please try again later or contact support if the issue persists.' };
-      } else if (error.response?.status === 401) {
-        // Use the specific error message from backend (e.g., "Incorrect email" or "Incorrect password")
-        const errorMessage = error.response?.data?.error || 'Invalid email or password. Please check your credentials and try again.';
-        throw { error: errorMessage };
-      } else if (error.response?.status === 429) {
-        throw { error: 'Too many login attempts. Please wait a moment before trying again.' };
-      } else if (error.response?.data?.error) {
-        throw error.response.data;
-      } else {
-        throw { error: 'Login failed. Please try again.' };
+      // The interceptor already extracts error.response.data, so error is the payload
+      // The payload should be {error: "..."} from the backend
+      
+      // Handle different error formats
+      let errorMessage = null;
+      
+      // If error is a string, use it directly
+      if (typeof error === 'string') {
+        errorMessage = error;
       }
+      // If error.error exists, use it (this is the message from backend)
+      else if (error && typeof error === 'object' && error.error) {
+        errorMessage = error.error;
+      }
+      // If error.message exists, use it
+      else if (error && error.message) {
+        errorMessage = error.message;
+      }
+      // Handle network errors (these might not go through the interceptor)
+      else if (error && error.code === 'ERR_NETWORK') {
+        errorMessage = 'Cannot connect to server. Please check your internet connection and try again.';
+      }
+      
+      // Throw with the error message, or fallback
+      throw { error: errorMessage || 'Login failed. Please try again.' };
     }
   },
 
