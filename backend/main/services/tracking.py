@@ -21,13 +21,14 @@ def _get_model():
         
         # Load model with CPU optimizations
         # The model will be pre-downloaded during Docker build
-        _model = YOLO('yolov8n.pt')
+        # Using yolov8s for better accuracy while maintaining reasonable speed
+        _model = YOLO('yolov8s.pt')
         
         # Optimize model for CPU inference
         _model.model.eval()  # Set to evaluation mode
         torch.set_num_threads(1)  # Use single thread for better performance on small instances
         
-        logger.info("YOLO model loaded and optimized for CPU inference")
+        logger.info("YOLOv8s model loaded and optimized for CPU inference")
     return _model
 
 
@@ -35,7 +36,8 @@ def _get_tracker():
     global _tracker
     if _tracker is None:
         from deep_sort_realtime.deepsort_tracker import DeepSort
-        _tracker = DeepSort(max_age=30)
+        # Balanced max_age for better tracking continuity without excessive memory
+        _tracker = DeepSort(max_age=40)
     return _tracker
 
 
@@ -69,8 +71,8 @@ def detect_and_track(
     fps = int(cap.get(cv2.CAP_PROP_FPS))
     total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
 
-    # Resize frames for faster processing - more aggressive resizing
-    max_width = 256  # More aggressive resizing for speed
+    # Resize frames for balanced processing - optimized for yolov8s
+    max_width = 480  # Balanced resolution for better accuracy while maintaining speed
     if original_width > max_width:
         scale_factor = max_width / original_width
         width = max_width
@@ -89,7 +91,7 @@ def detect_and_track(
     detections_for_heatmap: List[Dict[str, Any]] = []
     frame_count = 0
     processed_frames = 0  # Track actually processed frames
-    frame_skip = 5  # Process every 5th frame for a balance of speed and accuracy
+    frame_skip = 3  # Process every 3rd frame for better tracking continuity
     
     # Calculate total frames that will be processed
     total_processed_frames = (total_frames + frame_skip - 1) // frame_skip
@@ -152,14 +154,14 @@ def detect_and_track(
                 try:
                     # Resize frame for detection
                     frame_resized = cv2.resize(frame, (width, height))
-                    # YOLO inference - optimized for speed
+                    # YOLO inference - balanced for accuracy and speed
                     results = model(frame_resized, 
                                   classes=[0], 
                                   verbose=False,
-                                  conf=0.3,   # Confidence threshold
-                                  iou=0.5,    # NMS IoU threshold
+                                  conf=0.3,   # Confidence threshold (balanced)
+                                  iou=0.45,   # Tighter NMS IoU threshold for better precision
                                   device='cpu',
-                                  max_det=10, # Max detections per image
+                                  max_det=15, # Increased max detections for crowded scenes
                                   half=False) # Disable half precision on CPU
                 except Exception as e:
                     logger.error(f"Error processing frame {frame_count} with YOLO: {e}")

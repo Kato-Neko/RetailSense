@@ -5,7 +5,7 @@ from scipy.ndimage import gaussian_filter
 from ..core.config import logger
 
 
-def _generate_heatmap_data(detections, target_shape, video_dimensions, homography_matrix=None):
+def _generate_heatmap_data(detections, target_shape, video_dimensions, homography_matrix=None, radius=20):
     """
     Generates raw heatmap data from detections.
     
@@ -14,6 +14,7 @@ def _generate_heatmap_data(detections, target_shape, video_dimensions, homograph
         target_shape: Tuple of (height, width) for the heatmap.
         video_dimensions: Tuple of (width, height) of the video.
         homography_matrix: Optional 3x3 numpy array for perspective transformation.
+        radius: Radius of circles for detection points (default: 20).
         
     Returns:
         numpy array of the raw heatmap.
@@ -30,7 +31,7 @@ def _generate_heatmap_data(detections, target_shape, video_dimensions, homograph
             for pt in transformed_pts:
                 mx, my = int(pt[0][0]), int(pt[0][1])
                 if 0 <= mx < target_width and 0 <= my < target_height:
-                    cv2.circle(heatmap, (mx, my), 15, 1.0, -1)
+                    cv2.circle(heatmap, (mx, my), radius, 1.0, -1)
     else:
         # Fallback to linear scaling if no homography matrix is provided
         for det in detections:
@@ -41,7 +42,7 @@ def _generate_heatmap_data(detections, target_shape, video_dimensions, homograph
             my = int(center_y * target_height / video_height)
             mx = max(0, min(mx, target_width - 1))
             my = max(0, min(my, target_height - 1))
-            cv2.circle(heatmap, (mx, my), 15, 1.0, -1)
+            cv2.circle(heatmap, (mx, my), radius, 1.0, -1)
             
     return heatmap
 
@@ -64,7 +65,8 @@ def create_custom_heatmap(detections, floorplan_path, dimensions=(1920, 1080), p
     logger.info("===== CREATE_CUSTOM_HEATMAP STARTED =====")
     
     if heatmap_params is None:
-        heatmap_params = {'power': 0.6, 'sigma': 10, 'alpha': 0.7, 'radius': 15}
+        # Optimized heatmap parameters for better visualization
+        heatmap_params = {'power': 0.5, 'sigma': 15, 'alpha': 0.65, 'radius': 20}
 
     try:
         floorplan = cv2.imread(floorplan_path)
@@ -81,7 +83,7 @@ def create_custom_heatmap(detections, floorplan_path, dimensions=(1920, 1080), p
         floorplan_pts = np.array(points, dtype=np.float32)
         homography_matrix, _ = cv2.findHomography(video_pts, floorplan_pts)
 
-    heatmap = _generate_heatmap_data(detections, (floorplan_height, floorplan_width), dimensions, homography_matrix)
+    heatmap = _generate_heatmap_data(detections, (floorplan_height, floorplan_width), dimensions, homography_matrix, radius=heatmap_params['radius'])
     
     if np.count_nonzero(heatmap) == 0:
         logger.warning("No valid detections to create heatmap, returning original floorplan.")
@@ -121,7 +123,8 @@ def blend_heatmap(detections, floorplan_path, output_heatmap_path, output_video_
     """
     logger.info("Starting heatmap blending process...")
     if heatmap_params is None:
-        heatmap_params = {'power': 0.6, 'sigma': 10, 'alpha': 0.7, 'radius': 15}
+        # Optimized heatmap parameters for better visualization
+        heatmap_params = {'power': 0.5, 'sigma': 15, 'alpha': 0.65, 'radius': 20}
 
     try:
         floorplan = cv2.imread(floorplan_path)
@@ -148,7 +151,7 @@ def blend_heatmap(detections, floorplan_path, output_heatmap_path, output_video_
         floorplan_pts = np.array(pixel_points, dtype=np.float32)
         homography_matrix, _ = cv2.findHomography(video_pts, floorplan_pts)
 
-    heatmap = _generate_heatmap_data(detections, (floorplan_height, floorplan_width), (video_width, video_height), homography_matrix)
+    heatmap = _generate_heatmap_data(detections, (floorplan_height, floorplan_width), (video_width, video_height), homography_matrix, radius=heatmap_params['radius'])
 
     if progress_callback:
         progress_callback(0.5)
@@ -195,7 +198,8 @@ def create_progressive_heatmap_video_local(detections, floorplan, job_id, video_
     """
     logger.info(f"Starting progressive video creation for job {job_id}.")
     if heatmap_params is None:
-        heatmap_params = {'power': 0.6, 'sigma': 10, 'alpha': 0.7, 'radius': 15}
+        # Optimized heatmap parameters for better visualization
+        heatmap_params = {'power': 0.5, 'sigma': 15, 'alpha': 0.65, 'radius': 20}
 
     try:
         cap = cv2.VideoCapture(video_path)
@@ -221,7 +225,7 @@ def create_progressive_heatmap_video_local(detections, floorplan, job_id, video_
             floorplan_pts = np.array(points, dtype=np.float32)
             homography_matrix, _ = cv2.findHomography(video_pts, floorplan_pts)
             
-        heatmap_data = _generate_heatmap_data(detections, (video_height, video_width), (video_width, video_height), homography_matrix)
+        heatmap_data = _generate_heatmap_data(detections, (video_height, video_width), (video_width, video_height), homography_matrix, radius=heatmap_params['radius'])
 
         if np.count_nonzero(heatmap_data) > 0:
             heatmap_data = np.power(heatmap_data, heatmap_params['power'])
