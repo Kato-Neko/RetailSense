@@ -120,7 +120,24 @@ const AuthDialog = ({ isOpen, onOpenChange, setIsAuthenticated, defaultTab = "lo
       setActiveTab("login")
       registerForm.reset()
     } catch (error) {
-      toast.error(error.message || "Registration failed")
+      console.error("Registration error:", error)
+      // Display the specific error message from backend (e.g., "Username is already taken" or "Email is already registered")
+      // Handle different error formats
+      let errorMessage = "Registration failed"
+      
+      if (error) {
+        if (typeof error === 'string') {
+          errorMessage = error
+        } else if (error.error) {
+          errorMessage = error.error
+        } else if (error.message) {
+          errorMessage = error.message
+        } else if (error.response?.data?.error) {
+          errorMessage = error.response.data.error
+        }
+      }
+      
+      toast.error(errorMessage)
     }
   }
 

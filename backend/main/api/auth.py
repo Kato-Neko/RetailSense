@@ -22,18 +22,33 @@ def register():
     username = data.get('username')
     password = data.get('password')
     email = data.get('email')
-    if not all([username, password, email]):
-        return jsonify({"error": "Missing required fields"}), 400
+    
+    # Validate required fields with specific messages
+    if not username:
+        return jsonify({"error": "Username is required"}), 400
+    if not email:
+        return jsonify({"error": "Email is required"}), 400
+    if not password:
+        return jsonify({"error": "Password is required"}), 400
+    
+    # Validate password length
+    if len(password) < 6:
+        return jsonify({"error": "Password must be at least 6 characters long"}), 400
+    
+    # Validate email format (basic check)
+    if '@' not in email or '.' not in email.split('@')[1]:
+        return jsonify({"error": "Invalid email format"}), 400
+    
     try:
         # Check if username already exists
         existing_username = supabase.table('users').select('username').eq('username', username).execute()
         if existing_username.data:
-            return jsonify({"error": "Username already exists"}), 409
+            return jsonify({"error": "Username is already taken"}), 409
         
         # Check if email already exists in users table
         existing_email = supabase.table('users').select('email').eq('email', email).execute()
         if existing_email.data:
-            return jsonify({"error": "Email already registered"}), 409
+            return jsonify({"error": "Email is already registered"}), 409
         
         # Try to sign up with Supabase Auth
         response = supabase.auth.sign_up({"email": email, "password": password})
@@ -41,8 +56,19 @@ def register():
         # Check if Supabase Auth sign up failed (e.g., email already exists in auth)
         if hasattr(response, 'error') and response.error:
             error_message = str(response.error.message) if hasattr(response.error, 'message') else str(response.error)
+            error_message_lower = error_message.lower()
             logger.error(f"Supabase Auth error: {error_message}")
-            return jsonify({"error": f"Registration failed: {error_message}"}), 400
+            
+            # Parse specific Supabase error messages
+            if 'email' in error_message_lower and ('already' in error_message_lower or 'exists' in error_message_lower or 'registered' in error_message_lower):
+                return jsonify({"error": "Email is already registered"}), 409
+            elif 'password' in error_message_lower and ('weak' in error_message_lower or 'short' in error_message_lower):
+                return jsonify({"error": "Password is too weak. Please choose a stronger password"}), 400
+            elif 'invalid' in error_message_lower and 'email' in error_message_lower:
+                return jsonify({"error": "Invalid email format"}), 400
+            else:
+                # Return a more user-friendly message
+                return jsonify({"error": error_message}), 400
         
         if response.user:
             password_hash = hash_password(password)
@@ -54,10 +80,17 @@ def register():
             }).execute()
             return jsonify({"success": True, "message": "Registration successful"}), 201
         else:
-            return jsonify({"error": "Registration failed"}), 400
+            return jsonify({"error": "Registration failed. Please try again"}), 400
     except Exception as e:
         logger.error(f"Error during registration: {str(e)}")
-        return jsonify({"error": f"Error: {str(e)}"}), 500
+        error_str = str(e).lower()
+        # Provide more specific error messages for common exceptions
+        if 'unique' in error_str or 'duplicate' in error_str:
+            if 'username' in error_str:
+                return jsonify({"error": "Username is already taken"}), 409
+            elif 'email' in error_str:
+                return jsonify({"error": "Email is already registered"}), 409
+        return jsonify({"error": "An error occurred during registration. Please try again"}), 500
 
 
 @auth_bp.route('/api/login', methods=['POST'])
@@ -91,13 +124,23 @@ def login_api():
         
         # Check if Supabase returned an error in the response
         if hasattr(response, 'error') and response.error:
-            error_message = str(response.error).lower()
+            error_message = str(response.error.message) if hasattr(response.error, 'message') else str(response.error)
+            error_message_lower = error_message.lower()
             logger.info(f"Supabase auth error in response: {error_message}")
-            # Authentication failed - determine which credential is wrong
-            if not email_exists:
-                return jsonify({"error": "Incorrect email"}), 401
-            else:
+            
+            # Parse specific Supabase error messages
+            if 'email' in error_message_lower and ('not found' in error_message_lower or 'does not exist' in error_message_lower or 'invalid' in error_message_lower):
+                return jsonify({"error": "Email address not found"}), 401
+            elif 'password' in error_message_lower and ('incorrect' in error_message_lower or 'wrong' in error_message_lower or 'invalid' in error_message_lower):
                 return jsonify({"error": "Incorrect password"}), 401
+            elif 'email' in error_message_lower and 'not confirmed' in error_message_lower:
+                return jsonify({"error": "Email address not verified. Please check your email for verification link"}), 401
+            else:
+                # Fallback: determine which credential is wrong based on email existence
+                if not email_exists:
+                    return jsonify({"error": "Email address not found"}), 401
+                else:
+                    return jsonify({"error": "Incorrect password"}), 401
         
         # Check if user exists in response
         if response.user:
@@ -106,7 +149,7 @@ def login_api():
         else:
             # If we get here, authentication failed (no user in response)
             if not email_exists:
-                return jsonify({"error": "Incorrect email"}), 401
+                return jsonify({"error": "Email address not found"}), 401
             else:
                 return jsonify({"error": "Incorrect password"}), 401
                 
@@ -133,9 +176,14 @@ def login_api():
                        any(keyword in error_str for keyword in auth_keywords)
         
         if is_auth_error:
+            # Parse specific error types
+            if 'email not confirmed' in error_message or 'email not confirmed' in error_str:
+                return jsonify({"error": "Email address not verified. Please check your email for verification link"}), 401
+            elif 'password' in error_message or 'password' in error_str:
+                return jsonify({"error": "Incorrect password"}), 401
             # Authentication failed - determine which credential is wrong
-            if not email_exists:
-                return jsonify({"error": "Incorrect email"}), 401
+            elif not email_exists:
+                return jsonify({"error": "Email address not found"}), 401
             else:
                 return jsonify({"error": "Incorrect password"}), 401
         
@@ -143,7 +191,7 @@ def login_api():
         # and determine based on email existence
         logger.error(f"Unexpected error during login, treating as auth failure")
         if not email_exists:
-            return jsonify({"error": "Incorrect email"}), 401
+            return jsonify({"error": "Email address not found"}), 401
         else:
             return jsonify({"error": "Incorrect password"}), 401
 
