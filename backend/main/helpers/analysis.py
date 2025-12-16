@@ -102,21 +102,32 @@ def count_unique_visitors(detections, fps=None, min_track_duration=1.0, min_dete
             
             track_j = valid_tracks[other_id]
             
-            # Calculate time gap between tracks
+            # Calculate time overlap and gap between tracks
+            # Check if tracks overlap in time (same person detected simultaneously)
+            time_overlap = min(track_i['end_time'], track_j['end_time']) - max(track_i['start_time'], track_j['start_time'])
             time_gap = min(
                 abs(track_i['start_time'] - track_j['end_time']),
                 abs(track_j['start_time'] - track_i['end_time'])
             )
             
-            # Calculate spatial distance (normalized by typical person size ~100 pixels)
-            spatial_dist = np.sqrt(
+            # Calculate spatial distance in pixels (not normalized)
+            spatial_dist_pixels = np.sqrt(
                 (track_i['avg_position'][0] - track_j['avg_position'][0])**2 +
                 (track_i['avg_position'][1] - track_j['avg_position'][1])**2
-            ) / 100.0  # Normalize
+            )
             
-            # Merge if tracks are close in time (< 3 seconds) and space (< 200 pixels)
-            # This catches cases where person briefly leaves frame
-            if time_gap < 3.0 and spatial_dist < 2.0:
+            # More aggressive merging criteria:
+            # 1. If tracks overlap in time (> 0.5s) and are close in space (< 150px) - likely duplicate
+            # 2. If tracks are close in time (< 2s gap) and space (< 200px) - same person re-entering
+            should_merge = False
+            if time_overlap > 0.5 and spatial_dist_pixels < 150:
+                # Overlapping tracks - definitely same person
+                should_merge = True
+            elif time_gap < 2.0 and spatial_dist_pixels < 200:
+                # Close in time and space - likely same person
+                should_merge = True
+            
+            if should_merge:
                 similar_tracks.append(other_id)
                 merged_tracks[other_id] = track_id
         
@@ -133,6 +144,30 @@ def count_unique_visitors(detections, fps=None, min_track_duration=1.0, min_dete
         # Get the representative track (either itself or merged track)
         representative = merged_tracks.get(track_id, track_id)
         unique_visitors.add(representative)
+    
+    # Additional safety check: if we have too many tracks relative to video duration,
+    # apply additional filtering by prioritizing longer, more substantial tracks
+    if detections and len(detections) > 0:
+        timestamps = [det.get('timestamp', 0) for det in detections if 'timestamp' in det]
+        if timestamps:
+            video_duration = max(timestamps) - min(timestamps)
+            if video_duration > 0:
+                # For very short videos (< 60s), if we have more than 1 track per 5 seconds, be more aggressive
+                current_count = len(unique_visitors)
+                if video_duration < 60 and current_count > video_duration / 5:
+                    # Keep only the top tracks by duration and detection count
+                    track_scores = {}
+                    for track_id in unique_visitors:
+                        if track_id in valid_tracks:
+                            # Score = duration * detections (prioritize substantial tracks)
+                            track_scores[track_id] = valid_tracks[track_id]['duration'] * valid_tracks[track_id]['detections']
+                    
+                    # Sort by score and keep top tracks
+                    sorted_tracks = sorted(track_scores.items(), key=lambda x: x[1], reverse=True)
+                    # Keep at most video_duration / 5 tracks (1 per 5 seconds), but at least 1
+                    max_tracks = max(1, int(video_duration / 5))
+                    top_track_ids = {tid for tid, _ in sorted_tracks[:max_tracks]}
+                    unique_visitors = top_track_ids
     
     return len(unique_visitors)
 
@@ -208,15 +243,16 @@ def analyze_heatmap(heatmap, floorplan_shape, detections=None, fps=None):
 
     if detections:
         # Use smart visitor counting to avoid overcounting from track fragmentation
-        # For short videos (< 1 min), use stricter filters to reduce false positives
+        # For short videos (< 1 min), use much stricter filters to reduce false positives
         video_duration = max([det.get('timestamp', 0) for det in detections]) if detections else 0
         if video_duration < 60:  # Short video (< 1 minute)
-            # Stricter filters for short videos
+            # Much stricter filters for short videos to reduce overcounting
+            # For 30-second videos, we need to be very aggressive
             total_visitors = count_unique_visitors(
                 detections, 
                 fps=fps,
-                min_track_duration=1.5,  # Require 1.5 seconds minimum
-                min_detections=5,      # Require at least 5 detections
+                min_track_duration=2.0,  # Require 2 seconds minimum (was 1.5)
+                min_detections=8,        # Require at least 8 detections (was 5)
                 merge_close_tracks=True
             )
         else:
@@ -224,8 +260,8 @@ def analyze_heatmap(heatmap, floorplan_shape, detections=None, fps=None):
             total_visitors = count_unique_visitors(
                 detections,
                 fps=fps,
-                min_track_duration=1.0,  # Require 1 second minimum
-                min_detections=3,        # Require at least 3 detections
+                min_track_duration=1.5,  # Require 1.5 seconds minimum (was 1.0)
+                min_detections=5,       # Require at least 5 detections (was 3)
                 merge_close_tracks=True
             )
     else:
