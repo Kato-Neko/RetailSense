@@ -21,7 +21,7 @@ def _get_model():
         
         # Load model with CPU optimizations
         # The model will be pre-downloaded during Docker build
-        _model = YOLO('yolov8n.pt')
+        _model = YOLO('yolov8m.pt') # Upgraded to medium model for higher accuracy
         
         # Optimize model for CPU inference
         _model.model.eval()  # Set to evaluation mode
@@ -35,7 +35,7 @@ def _get_tracker():
     global _tracker
     if _tracker is None:
         from deep_sort_realtime.deepsort_tracker import DeepSort
-        _tracker = DeepSort(max_age=30)
+        _tracker = DeepSort(max_age=90)  # Increased from 30 to make tracking more persistent
     return _tracker
 
 
@@ -70,7 +70,7 @@ def detect_and_track(
     total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
 
     # Resize frames for faster processing - more aggressive resizing
-    max_width = 256  # More aggressive resizing for speed
+    max_width = 1280  # Increased for high-resolution processing, uses more memory
     if original_width > max_width:
         scale_factor = max_width / original_width
         width = max_width
@@ -89,7 +89,7 @@ def detect_and_track(
     detections_for_heatmap: List[Dict[str, Any]] = []
     frame_count = 0
     processed_frames = 0  # Track actually processed frames
-    frame_skip = 5  # Process every 5th frame for a balance of speed and accuracy
+    frame_skip = 1  # Process every frame for maximum tracking accuracy
     
     # Calculate total frames that will be processed
     total_processed_frames = (total_frames + frame_skip - 1) // frame_skip
