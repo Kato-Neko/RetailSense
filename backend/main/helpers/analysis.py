@@ -10,6 +10,133 @@ except ImportError:
     AI_AVAILABLE = False
 
 
+def count_unique_visitors(detections, fps=None, min_track_duration=1.0, min_detections=3, merge_close_tracks=True):
+    """
+    Count unique visitors with smart filtering to avoid overcounting.
+    
+    Args:
+        detections: List of detection dicts with 'track_id', 'timestamp', and 'bbox'
+        fps: Frames per second (optional, for duration calculation)
+        min_track_duration: Minimum track duration in seconds to count as a visitor (default: 1.0)
+        min_detections: Minimum number of detections per track to count (default: 3)
+        merge_close_tracks: Whether to merge tracks that are close in space and time (default: True)
+    
+    Returns:
+        int: Count of unique visitors after filtering and deduplication
+    """
+    if not detections:
+        return 0
+    
+    # Group detections by track_id
+    tracks = {}
+    for det in detections:
+        track_id = det.get('track_id')
+        if track_id is None:
+            continue
+        
+        if track_id not in tracks:
+            tracks[track_id] = {
+                'detections': [],
+                'timestamps': [],
+                'positions': []
+            }
+        
+        tracks[track_id]['detections'].append(det)
+        if 'timestamp' in det:
+            tracks[track_id]['timestamps'].append(det['timestamp'])
+        
+        # Calculate center position from bbox
+        if 'bbox' in det and len(det['bbox']) >= 4:
+            bbox = det['bbox']
+            center_x = (bbox[0] + bbox[2]) / 2
+            center_y = (bbox[1] + bbox[3]) / 2
+            tracks[track_id]['positions'].append((center_x, center_y))
+    
+    # Filter tracks by minimum duration and detection count
+    valid_tracks = {}
+    for track_id, track_data in tracks.items():
+        detections_count = len(track_data['detections'])
+        
+        # Calculate track duration
+        if track_data['timestamps']:
+            duration = max(track_data['timestamps']) - min(track_data['timestamps'])
+        elif fps and detections_count > 1:
+            # Estimate duration from frame numbers if timestamps not available
+            frames = [det.get('frame', 0) for det in track_data['detections']]
+            duration = (max(frames) - min(frames)) / fps if fps > 0 else 0
+        else:
+            duration = 0
+        
+        # Filter: must have minimum duration AND minimum detections
+        if duration >= min_track_duration and detections_count >= min_detections:
+            valid_tracks[track_id] = {
+                'duration': duration,
+                'detections': detections_count,
+                'start_time': min(track_data['timestamps']) if track_data['timestamps'] else 0,
+                'end_time': max(track_data['timestamps']) if track_data['timestamps'] else 0,
+                'avg_position': (
+                    np.mean([p[0] for p in track_data['positions']]) if track_data['positions'] else 0,
+                    np.mean([p[1] for p in track_data['positions']]) if track_data['positions'] else 0
+                )
+            }
+    
+    if not merge_close_tracks:
+        return len(valid_tracks)
+    
+    # Merge tracks that are close in space and time (likely same person re-entering)
+    # This helps reduce overcounting when people leave and re-enter the frame
+    merged_tracks = {}
+    track_ids = list(valid_tracks.keys())
+    
+    for i, track_id in enumerate(track_ids):
+        if track_id in merged_tracks:
+            continue  # Already merged
+        
+        # Find tracks that might be the same person
+        similar_tracks = [track_id]
+        track_i = valid_tracks[track_id]
+        
+        for j, other_id in enumerate(track_ids[i+1:], start=i+1):
+            if other_id in merged_tracks:
+                continue
+            
+            track_j = valid_tracks[other_id]
+            
+            # Calculate time gap between tracks
+            time_gap = min(
+                abs(track_i['start_time'] - track_j['end_time']),
+                abs(track_j['start_time'] - track_i['end_time'])
+            )
+            
+            # Calculate spatial distance (normalized by typical person size ~100 pixels)
+            spatial_dist = np.sqrt(
+                (track_i['avg_position'][0] - track_j['avg_position'][0])**2 +
+                (track_i['avg_position'][1] - track_j['avg_position'][1])**2
+            ) / 100.0  # Normalize
+            
+            # Merge if tracks are close in time (< 3 seconds) and space (< 200 pixels)
+            # This catches cases where person briefly leaves frame
+            if time_gap < 3.0 and spatial_dist < 2.0:
+                similar_tracks.append(other_id)
+                merged_tracks[other_id] = track_id
+        
+        # Keep the longest track as the representative
+        if len(similar_tracks) > 1:
+            longest_track = max(similar_tracks, key=lambda tid: valid_tracks[tid]['duration'])
+            for tid in similar_tracks:
+                if tid != longest_track:
+                    merged_tracks[tid] = longest_track
+    
+    # Count unique tracks after merging
+    unique_visitors = set()
+    for track_id in valid_tracks.keys():
+        # Get the representative track (either itself or merged track)
+        representative = merged_tracks.get(track_id, track_id)
+        unique_visitors.add(representative)
+    
+    return len(unique_visitors)
+
+
 def analyze_peak_hours(detections, fps, bin_minutes=5):
     """
     Analyze detections to find peak time frames.
@@ -80,8 +207,27 @@ def analyze_heatmap(heatmap, floorplan_shape, detections=None, fps=None):
         peak_hours = []
 
     if detections:
-        unique_ids = set(det['track_id'] for det in detections if 'track_id' in det)
-        total_visitors = len(unique_ids)
+        # Use smart visitor counting to avoid overcounting from track fragmentation
+        # For short videos (< 1 min), use stricter filters to reduce false positives
+        video_duration = max([det.get('timestamp', 0) for det in detections]) if detections else 0
+        if video_duration < 60:  # Short video (< 1 minute)
+            # Stricter filters for short videos
+            total_visitors = count_unique_visitors(
+                detections, 
+                fps=fps,
+                min_track_duration=1.5,  # Require 1.5 seconds minimum
+                min_detections=5,      # Require at least 5 detections
+                merge_close_tracks=True
+            )
+        else:
+            # Standard filters for longer videos
+            total_visitors = count_unique_visitors(
+                detections,
+                fps=fps,
+                min_track_duration=1.0,  # Require 1 second minimum
+                min_detections=3,        # Require at least 3 detections
+                merge_close_tracks=True
+            )
     else:
         total_visitors = 0
 

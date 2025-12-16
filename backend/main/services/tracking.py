@@ -36,8 +36,10 @@ def _get_tracker():
     global _tracker
     if _tracker is None:
         from deep_sort_realtime.deepsort_tracker import DeepSort
-        # Balanced max_age for better tracking continuity without excessive memory
-        _tracker = DeepSort(max_age=40)
+        # Optimized for better tracking continuity and reduced fragmentation
+        # max_age: frames to keep track alive after last detection (higher = better for occlusions)
+        # n_init: frames required before track is confirmed (higher = fewer false tracks)
+        _tracker = DeepSort(max_age=50, n_init=3)
     return _tracker
 
 
@@ -154,11 +156,11 @@ def detect_and_track(
                 try:
                     # Resize frame for detection
                     frame_resized = cv2.resize(frame, (width, height))
-                    # YOLO inference - balanced for accuracy and speed
+                    # YOLO inference - optimized to reduce false positives
                     results = model(frame_resized, 
                                   classes=[0], 
                                   verbose=False,
-                                  conf=0.3,   # Confidence threshold (balanced)
+                                  conf=0.35,  # Slightly higher confidence to reduce false positives
                                   iou=0.45,   # Tighter NMS IoU threshold for better precision
                                   device='cpu',
                                   max_det=15, # Increased max detections for crowded scenes
@@ -181,7 +183,8 @@ def detect_and_track(
                         x1, y1, x2, y2 = map(int, box.xyxy[0])
                         conf = float(box.conf[0])
                         total_detections += 1
-                        if conf > 0.3:
+                        # Use same confidence threshold as YOLO inference
+                        if conf > 0.35:
                             detections.append(([x1, y1, x2, y2], conf, 0))
 
                 # Debug logging for first few processed frames
