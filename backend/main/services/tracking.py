@@ -21,14 +21,14 @@ def _get_model():
         
         # Load model with CPU optimizations
         # The model will be pre-downloaded during Docker build
-        # Using yolov8s for better accuracy while maintaining reasonable speed
-        _model = YOLO('yolov8s.pt')
+        # Using yolov8n (nano) for faster processing
+        _model = YOLO('yolov8n.pt')
         
         # Optimize model for CPU inference
         _model.model.eval()  # Set to evaluation mode
         torch.set_num_threads(1)  # Use single thread for better performance on small instances
         
-        logger.info("YOLOv8s model loaded and optimized for CPU inference")
+        logger.info("YOLOv8n model loaded and optimized for CPU inference")
     return _model
 
 
@@ -39,7 +39,7 @@ def _get_tracker():
         # Optimized for better tracking continuity and reduced fragmentation
         # max_age: frames to keep track alive after last detection (higher = better for occlusions)
         # n_init: frames required before track is confirmed (higher = fewer false tracks)
-        _tracker = DeepSort(max_age=50, n_init=3)
+        _tracker = DeepSort(max_age=80, n_init=3)
     return _tracker
 
 
@@ -156,11 +156,11 @@ def detect_and_track(
                 try:
                     # Resize frame for detection
                     frame_resized = cv2.resize(frame, (width, height))
-                    # YOLO inference - optimized to reduce false positives
+                    # YOLO inference - optimized for speed and detection
                     results = model(frame_resized, 
                                   classes=[0], 
                                   verbose=False,
-                                  conf=0.35,  # Slightly higher confidence to reduce false positives
+                                  conf=0.25,  # Lower confidence for better detection
                                   iou=0.45,   # Tighter NMS IoU threshold for better precision
                                   device='cpu',
                                   max_det=15, # Increased max detections for crowded scenes
@@ -184,7 +184,7 @@ def detect_and_track(
                         conf = float(box.conf[0])
                         total_detections += 1
                         # Use same confidence threshold as YOLO inference
-                        if conf > 0.35:
+                        if conf > 0.25:
                             detections.append(([x1, y1, x2, y2], conf, 0))
 
                 # Debug logging for first few processed frames
