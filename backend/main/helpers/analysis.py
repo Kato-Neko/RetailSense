@@ -145,17 +145,31 @@ def count_unique_visitors(detections, fps=None, min_track_duration=1.0, min_dete
         representative = merged_tracks.get(track_id, track_id)
         unique_visitors.add(representative)
     
-    # Additional safety check: if we have too many tracks relative to video duration,
-    # apply additional filtering by prioritizing longer, more substantial tracks
+    # Adaptive safety check: only apply aggressive filtering if we detect overcounting patterns
+    # Don't cap tracks for crowded scenes - use detection density as a signal
     if detections and len(detections) > 0:
         timestamps = [det.get('timestamp', 0) for det in detections if 'timestamp' in det]
         if timestamps:
             video_duration = max(timestamps) - min(timestamps)
             if video_duration > 0:
-                # For very short videos (< 60s), if we have more than 1 track per 5 seconds, be more aggressive
                 current_count = len(unique_visitors)
-                if video_duration < 60 and current_count > video_duration / 5:
-                    # Keep only the top tracks by duration and detection count
+                total_detections = len(detections)
+                detection_density = total_detections / video_duration if video_duration > 0 else 0
+                
+                # Calculate average detections per track (indicator of track quality)
+                avg_detections_per_track = total_detections / current_count if current_count > 0 else 0
+                
+                # Only apply aggressive filtering if:
+                # 1. Video is short (< 60s)
+                # 2. Count is suspiciously high relative to duration (more than 1 per 3 seconds)
+                # 3. Detection density is LOW (suggests false positives, not crowded scene)
+                # 4. Average detections per track is LOW (suggests many short/fragmented tracks)
+                
+                # For crowded scenes: high detection density + reasonable detections per track = don't cap
+                is_crowded_scene = detection_density > 10 and avg_detections_per_track > 5
+                
+                if video_duration < 60 and current_count > video_duration / 3 and not is_crowded_scene:
+                    # Suspicious overcounting pattern - apply filtering
                     track_scores = {}
                     for track_id in unique_visitors:
                         if track_id in valid_tracks:
@@ -164,8 +178,13 @@ def count_unique_visitors(detections, fps=None, min_track_duration=1.0, min_dete
                     
                     # Sort by score and keep top tracks
                     sorted_tracks = sorted(track_scores.items(), key=lambda x: x[1], reverse=True)
-                    # Keep at most video_duration / 5 tracks (1 per 5 seconds), but at least 1
-                    max_tracks = max(1, int(video_duration / 5))
+                    # For suspicious overcounting, cap at 1 per 3 seconds (more lenient than before)
+                    # But allow up to 2x that if detection density is high
+                    base_max = max(1, int(video_duration / 3))
+                    if detection_density > 15:  # Very high density = likely crowded
+                        max_tracks = min(current_count, int(base_max * 1.5))  # Allow 50% more
+                    else:
+                        max_tracks = base_max
                     top_track_ids = {tid for tid, _ in sorted_tracks[:max_tracks]}
                     unique_visitors = top_track_ids
     
@@ -242,26 +261,38 @@ def analyze_heatmap(heatmap, floorplan_shape, detections=None, fps=None):
         peak_hours = []
 
     if detections:
-        # Use smart visitor counting to avoid overcounting from track fragmentation
-        # For short videos (< 1 min), use much stricter filters to reduce false positives
+        # Use smart visitor counting with adaptive filtering based on scene density
         video_duration = max([det.get('timestamp', 0) for det in detections]) if detections else 0
+        total_detections = len(detections)
+        detection_density = total_detections / video_duration if video_duration > 0 else 0
+        
         if video_duration < 60:  # Short video (< 1 minute)
-            # Much stricter filters for short videos to reduce overcounting
-            # For 30-second videos, we need to be very aggressive
-            total_visitors = count_unique_visitors(
-                detections, 
-                fps=fps,
-                min_track_duration=2.0,  # Require 2 seconds minimum (was 1.5)
-                min_detections=8,        # Require at least 8 detections (was 5)
-                merge_close_tracks=True
-            )
+            # Adaptive filtering: stricter for sparse scenes, more lenient for crowded scenes
+            if detection_density > 15:  # Crowded scene (high detection density)
+                # More lenient thresholds for crowded scenes to avoid undercounting
+                total_visitors = count_unique_visitors(
+                    detections, 
+                    fps=fps,
+                    min_track_duration=1.0,  # Lower threshold for crowded scenes
+                    min_detections=5,        # Lower threshold for crowded scenes
+                    merge_close_tracks=True
+                )
+            else:  # Sparse scene (low detection density)
+                # Stricter filters for sparse scenes to reduce overcounting
+                total_visitors = count_unique_visitors(
+                    detections, 
+                    fps=fps,
+                    min_track_duration=2.0,  # Higher threshold to filter false positives
+                    min_detections=8,        # Higher threshold to filter false positives
+                    merge_close_tracks=True
+                )
         else:
             # Standard filters for longer videos
             total_visitors = count_unique_visitors(
                 detections,
                 fps=fps,
-                min_track_duration=1.5,  # Require 1.5 seconds minimum (was 1.0)
-                min_detections=5,       # Require at least 5 detections (was 3)
+                min_track_duration=1.5,  # Require 1.5 seconds minimum
+                min_detections=5,       # Require at least 5 detections
                 merge_close_tracks=True
             )
     else:
