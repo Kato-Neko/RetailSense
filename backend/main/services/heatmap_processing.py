@@ -106,6 +106,13 @@ def create_custom_heatmap(detections, floorplan_path, dimensions=(1920, 1080), p
         logger.warning("No valid detections to create heatmap, returning original floorplan.")
         return floorplan
 
+    # Calculate time range for adaptive threshold adjustment
+    if detections and len(detections) > 0:
+        timestamps = [det.get('timestamp', 0) for det in detections if 'timestamp' in det]
+        time_range = max(timestamps) - min(timestamps) if timestamps else 0
+    else:
+        time_range = 0
+
     # Apply power curve for better contrast
     heatmap = np.power(heatmap, heatmap_params.get('power', 0.4))
     
@@ -120,9 +127,27 @@ def create_custom_heatmap(detections, floorplan_path, dimensions=(1920, 1080), p
     else:
         heatmap_norm = cv2.normalize(heatmap, None, 0, 1, cv2.NORM_MINMAX)
     
-    # Apply minimum threshold to reduce noise
-    min_threshold = heatmap_params.get('min_threshold', 0.05)
-    heatmap_norm[heatmap_norm < min_threshold] = 0
+    # Apply adaptive minimum threshold: lower for short segments to ensure visibility
+    base_min_threshold = heatmap_params.get('min_threshold', 0.05)
+    num_data_points = np.count_nonzero(heatmap_norm)
+    
+    if time_range > 0 and time_range < 10:  # Very short segments (< 10 seconds)
+        # Lower threshold for short segments to ensure heatmap is visible
+        min_threshold = max(0.01, base_min_threshold * 0.2)  # Much lower threshold
+        logger.info(f"Using lower min_threshold ({min_threshold}) for short segment ({time_range:.1f}s, {num_data_points} data points)")
+    elif num_data_points < 20:  # Sparse data regardless of duration
+        # For sparse data, use very low threshold to ensure visibility
+        min_threshold = max(0.005, base_min_threshold * 0.1)
+        logger.info(f"Using very low min_threshold ({min_threshold}) for sparse data ({num_data_points} data points)")
+    else:
+        min_threshold = base_min_threshold
+    
+    # Only apply threshold if we have enough data points, otherwise keep all visible data
+    if num_data_points > 10:  # Only filter if we have substantial data
+        heatmap_norm[heatmap_norm < min_threshold] = 0
+    else:
+        # For very sparse data, keep all non-zero values visible (no threshold filtering)
+        logger.info(f"Keeping all heatmap data visible for sparse segment ({num_data_points} data points, no threshold applied)")
     
     # Normalize to 0-255 for color mapping
     heatmap_img = (heatmap_norm * 255).astype(np.uint8)
@@ -200,6 +225,13 @@ def blend_heatmap(detections, floorplan_path, output_heatmap_path, output_video_
                 cv2.imwrite(output_heatmap_path, floorplan)
             return None
 
+    # Calculate time range for adaptive threshold adjustment
+    if detections and len(detections) > 0:
+        timestamps = [det.get('timestamp', 0) for det in detections if 'timestamp' in det]
+        time_range = max(timestamps) - min(timestamps) if timestamps else 0
+    else:
+        time_range = 0
+
     # Apply power curve for better contrast
     heatmap = np.power(heatmap, heatmap_params.get('power', 0.4))
     
@@ -214,9 +246,27 @@ def blend_heatmap(detections, floorplan_path, output_heatmap_path, output_video_
     else:
         heatmap_norm = cv2.normalize(heatmap, None, 0, 1, cv2.NORM_MINMAX)
     
-    # Apply minimum threshold to reduce noise
-    min_threshold = heatmap_params.get('min_threshold', 0.05)
-    heatmap_norm[heatmap_norm < min_threshold] = 0
+    # Apply adaptive minimum threshold: lower for short segments to ensure visibility
+    base_min_threshold = heatmap_params.get('min_threshold', 0.05)
+    num_data_points = np.count_nonzero(heatmap_norm)
+    
+    if time_range > 0 and time_range < 10:  # Very short segments (< 10 seconds)
+        # Lower threshold for short segments to ensure heatmap is visible
+        min_threshold = max(0.01, base_min_threshold * 0.2)  # Much lower threshold
+        logger.info(f"Using lower min_threshold ({min_threshold}) for short segment ({time_range:.1f}s, {num_data_points} data points)")
+    elif num_data_points < 20:  # Sparse data regardless of duration
+        # For sparse data, use very low threshold to ensure visibility
+        min_threshold = max(0.005, base_min_threshold * 0.1)
+        logger.info(f"Using very low min_threshold ({min_threshold}) for sparse data ({num_data_points} data points)")
+    else:
+        min_threshold = base_min_threshold
+    
+    # Only apply threshold if we have enough data points, otherwise keep all visible data
+    if num_data_points > 10:  # Only filter if we have substantial data
+        heatmap_norm[heatmap_norm < min_threshold] = 0
+    else:
+        # For very sparse data, keep all non-zero values visible (no threshold filtering)
+        logger.info(f"Keeping all heatmap data visible for sparse segment ({num_data_points} data points, no threshold applied)")
     
     # Normalize to 0-255 for color mapping
     heatmap_img = (heatmap_norm * 255).astype(np.uint8)

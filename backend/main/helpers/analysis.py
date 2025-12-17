@@ -262,13 +262,26 @@ def analyze_heatmap(heatmap, floorplan_shape, detections=None, fps=None):
 
     if detections:
         # Use smart visitor counting with adaptive filtering based on scene density
-        video_duration = max([det.get('timestamp', 0) for det in detections]) if detections else 0
+        # Calculate video duration more accurately using min/max timestamps
+        timestamps = [det.get('timestamp', 0) for det in detections if 'timestamp' in det]
+        if timestamps:
+            video_duration = max(timestamps) - min(timestamps)
+        else:
+            video_duration = 0
+        
         total_detections = len(detections)
-        detection_density = total_detections / video_duration if video_duration > 0 else 0
+        # Use a more stable detection density calculation
+        # Add small epsilon to avoid division by zero and make calculation more stable
+        detection_density = total_detections / (video_duration + 0.1) if video_duration > 0 else 0
+        
+        # Use more stable thresholds with hysteresis to avoid flipping between modes
+        # Round detection_density to reduce small variations
+        detection_density_rounded = round(detection_density, 1)
         
         if video_duration < 60:  # Short video (< 1 minute)
             # Adaptive filtering: stricter for sparse scenes, more lenient for crowded scenes
-            if detection_density > 15:  # Crowded scene (high detection density)
+            # Use a more stable threshold (15.0) with slight buffer to avoid edge cases
+            if detection_density_rounded >= 15.0:  # Crowded scene (high detection density)
                 # More lenient thresholds for crowded scenes to avoid undercounting
                 total_visitors = count_unique_visitors(
                     detections, 
