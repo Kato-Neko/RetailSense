@@ -267,10 +267,27 @@ def run_custom_heatmap_job(job_id: str, start_time: float, end_time: float, set_
     try:
         from ..core.storage import download_json_from_supabase
         from ..helpers.detections import load_detections
-        detections, fps = load_detections(job_id)
+        import time
+        
+        # Retry mechanism for newly processed videos - detections might still be uploading
+        detections = None
+        fps = None
+        max_retries = 5
+        retry_delay = 1.0  # Start with 1 second delay
+        
+        for attempt in range(max_retries):
+            detections, fps = load_detections(job_id)
+            if detections and fps:
+                break
+            if attempt < max_retries - 1:
+                logger.warning(f"Detections not available yet for job {job_id}, retrying in {retry_delay}s (attempt {attempt + 1}/{max_retries})")
+                time.sleep(retry_delay)
+                retry_delay *= 1.5  # Exponential backoff
+            else:
+                logger.error(f"Could not load detections after {max_retries} attempts for job {job_id}")
 
         if not detections or not fps:
-            raise Exception(f"Could not load valid detections data for job {job_id}. The original job may have failed.")
+            raise Exception(f"Could not load valid detections data for job {job_id} after {max_retries} attempts. The detections file may still be uploading or the original job may have failed.")
 
         logger.info(f"Downloaded {len(detections)} total detections")
         set_progress(0.2)  # 20% - Detections loaded

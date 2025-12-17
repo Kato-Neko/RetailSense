@@ -21,14 +21,14 @@ def _get_model():
         
         # Load model with CPU optimizations
         # The model will be pre-downloaded during Docker build
-        # Using yolov8s (small) for better accuracy while maintaining reasonable speed
-        _model = YOLO('yolov8s.pt')
+        # Using yolov8n (nano) for faster processing
+        _model = YOLO('yolov8n.pt')
         
         # Optimize model for CPU inference
         _model.model.eval()  # Set to evaluation mode
         torch.set_num_threads(1)  # Use single thread for better performance on small instances
         
-        logger.info("YOLOv8s model loaded and optimized for CPU inference")
+        logger.info("YOLOv8n model loaded and optimized for CPU inference")
     return _model
 
 
@@ -74,8 +74,8 @@ def detect_and_track(
     fps = int(cap.get(cv2.CAP_PROP_FPS))
     total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
 
-    # Resize frames for balanced processing - optimized for yolov8s
-    max_width = 640  # Higher resolution for better detection accuracy
+    # Resize frames for balanced processing - optimized for yolov8n
+    max_width = 480  # Balanced resolution for better accuracy while maintaining speed
     if original_width > max_width:
         scale_factor = max_width / original_width
         width = max_width
@@ -157,14 +157,14 @@ def detect_and_track(
                 try:
                     # Resize frame for detection
                     frame_resized = cv2.resize(frame, (width, height))
-                    # YOLO inference - optimized for accuracy and quality
+                    # YOLO inference - optimized for speed and detection
                     results = model(frame_resized, 
                                   classes=[0], 
                                   verbose=False,
-                                  conf=0.3,   # Balanced confidence for better accuracy
-                                  iou=0.5,    # Standard NMS IoU threshold for better precision
+                                  conf=0.25,  # Lower confidence for better detection
+                                  iou=0.45,   # Tighter NMS IoU threshold for better precision
                                   device='cpu',
-                                  max_det=20, # Increased max detections for crowded scenes
+                                  max_det=15, # Max detections for crowded scenes
                                   half=False) # Disable half precision on CPU
                 except Exception as e:
                     logger.error(f"Error processing frame {frame_count} with YOLO: {e}")
@@ -185,7 +185,7 @@ def detect_and_track(
                         conf = float(box.conf[0])
                         total_detections += 1
                         # Use same confidence threshold as YOLO inference
-                        if conf > 0.3:
+                        if conf > 0.25:
                             detections.append(([x1, y1, x2, y2], conf, 0))
 
                 # Debug logging for first few processed frames
