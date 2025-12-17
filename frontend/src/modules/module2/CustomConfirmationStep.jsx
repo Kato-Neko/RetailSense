@@ -61,9 +61,13 @@ export default function CustomConfirmationStep({ dateRange, timeRange, onNext, p
           </div>
           {isGenerating && (
             <div className="w-full mt-2">
-              <Progress value={progress} turbo />
+              <Progress
+                value={progress || 0}
+                className="h-2"
+                turbo={true}
+              />
               <div className="text-center text-sm text-muted-foreground mt-2">
-                Generating... {typeof progressPercent === 'number' ? Math.round(progressPercent) : Math.round(progress)}%
+                Generating... {typeof progressPercent === 'number' ? Math.round(progressPercent) : Math.round(progress || 0)}%
               </div>
             </div>
           )}
