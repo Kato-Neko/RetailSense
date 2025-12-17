@@ -760,6 +760,7 @@ def get_custom_heatmap_image(job_id):
 
 
 @heatmap_bp.route('/heatmap_jobs/<job_id>/custom_heatmap_progress')
+@jwt_required()
 def get_custom_heatmap_progress(job_id):
     progress = get_custom_progress(job_id)
     from ..services.state import get_jobs_store

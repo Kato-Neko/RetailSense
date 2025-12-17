@@ -262,6 +262,8 @@ def run_custom_heatmap_job(job_id: str, start_time: float, end_time: float, set_
         set_progress(1.0)
         return
 
+    set_progress(0.1)  # 10% - Started
+    
     try:
         from ..core.storage import download_json_from_supabase
         from ..helpers.detections import load_detections
@@ -271,11 +273,13 @@ def run_custom_heatmap_job(job_id: str, start_time: float, end_time: float, set_
             raise Exception(f"Could not load valid detections data for job {job_id}. The original job may have failed.")
 
         logger.info(f"Downloaded {len(detections)} total detections")
+        set_progress(0.2)  # 20% - Detections loaded
 
         filtered_detections = [
             det for det in detections
             if 'timestamp' in det and start_time <= det['timestamp'] <= end_time
         ]
+        set_progress(0.3)  # 30% - Detections filtered
     except Exception as e:
         logger.error(f"Error processing detections: {e}")
         import traceback
@@ -300,6 +304,8 @@ def run_custom_heatmap_job(job_id: str, start_time: float, end_time: float, set_
         logger.error(f"Failed to download floorplan from Supabase: {floorplan_supabase_path}")
         set_progress(1.0)
         return
+    
+    set_progress(0.4)  # 40% - Floorplan downloaded
 
     # Save floorplan to local temp file for blend_heatmap
     temp_dir = os.path.join(UPLOAD_FOLDER, job_id)
@@ -332,8 +338,7 @@ def run_custom_heatmap_job(job_id: str, start_time: float, end_time: float, set_
         set_progress(1.0)
         return
 
-    def progress_callback(progress: float):
-        set_progress(progress)
+    set_progress(0.5)  # 50% - Floorplan saved
 
     # Load points for homography transformation
     points_path = os.path.join(UPLOAD_FOLDER, job_id, f"points_{job_id}.json")
@@ -373,6 +378,7 @@ def run_custom_heatmap_job(job_id: str, start_time: float, end_time: float, set_
 
     try:
         logger.info(f"Creating custom heatmap with {len(filtered_detections)} detections")
+        set_progress(0.6)  # 60% - Starting heatmap generation
         blended_img = create_custom_heatmap(
             filtered_detections,
             temp_floorplan_path,
@@ -380,6 +386,7 @@ def run_custom_heatmap_job(job_id: str, start_time: float, end_time: float, set_
             points=homography_points
         )
         logger.info(f"Custom heatmap generated successfully")
+        set_progress(0.8)  # 80% - Heatmap generated
         
         # Generate unique identifiers for the filename
         import time
@@ -389,6 +396,7 @@ def run_custom_heatmap_job(job_id: str, start_time: float, end_time: float, set_
         
         filename = f"{job_id}/custom_heatmap_{float(start_time):.1f}_{float(end_time):.1f}_{timestamp}_{unique_id}.jpg"
         logger.info(f"Uploading custom heatmap to Supabase: {filename}")
+        set_progress(0.9)  # 90% - Uploading to Supabase
         upload_image_to_supabase(blended_img, filename)
         logger.info(f"Successfully uploaded custom heatmap to Supabase")
         
